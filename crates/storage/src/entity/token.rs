@@ -10,6 +10,7 @@ pub struct Model {
     pub token_hash: String,
     pub created_at: DateTimeWithTimeZone,
     pub last_used_at: Option<DateTimeWithTimeZone>,
+    pub expires_at: Option<DateTimeWithTimeZone>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

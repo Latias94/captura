@@ -1,7 +1,7 @@
 //! Job scheduling and background workers.
 
 use captura_common::Result;
-use captura_pipeline::{refresh_feed as pipeline_refresh_feed, refresh_rule_with_yaml};
+use captura_pipeline::{refresh_feed_with_meta, refresh_rule_with_yaml};
 use captura_storage::entity::{entry, favicon as fv, feed, job, prelude::*, rule};
 use chrono::{FixedOffset, Utc};
 use reqwest::{Client, Url};
@@ -10,6 +10,7 @@ use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder,
     QuerySelect, Set,
 };
+use sea_orm::sea_query::OnConflict;
 use std::env;
 use tracing::{error, info, instrument};
 
@@ -36,9 +37,7 @@ impl Scheduler {
 }
 
 pub async fn run_once(db: &DatabaseConnection, max: u64) -> Result<usize> {
-    use sea_orm::Condition;
     let now = Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
-    // pick pending jobs that are due
     let jobs = Job::find()
         .filter(job::Column::Status.eq(job::JobStatus::Pending))
         .filter(job::Column::RunAt.lte(now))
@@ -48,50 +47,88 @@ pub async fn run_once(db: &DatabaseConnection, max: u64) -> Result<usize> {
         .all(db)
         .await
         .map_err(|e| captura_common::Error::Storage(e.to_string()))?;
-    let mut processed = 0usize;
+    let concurrency: usize = env::var("SCHEDULER_WORKER_CONCURRENCY")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(4);
+    let per_host: usize = env::var("SCHEDULER_PER_HOST_CONCURRENCY")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(2);
+
+    use std::collections::HashMap;
+    let mut per_host_count: HashMap<String, usize> = HashMap::new();
+    let mut scheduled: Vec<job::Model> = Vec::new();
     for j in jobs {
-        let mut am: job::ActiveModel = j.clone().into();
-        am.status = Set(job::JobStatus::Running);
-        am.attempts = Set(j.attempts + 1);
-        am.updated_at = Set(now);
-        if let Err(e) = am
-            .update(db)
-            .await
-            .map_err(|e| captura_common::Error::Storage(e.to_string()))
-        {
-            error!(?e, job_id=?j.id, "update running failed");
-            continue;
-        }
-
-        let res = match j.job_type {
-            job::JobType::FeedRefresh => refresh_feed_job(db, &j).await,
-            job::JobType::Favicon => refresh_favicon_job(db, &j).await,
-            _ => Err(captura_common::Error::Other(anyhow::anyhow!(
-                "unknown job type"
-            ))),
-        };
-
-        let mut am: job::ActiveModel = Job::find_by_id(j.id)
-            .one(db)
-            .await
-            .map_err(|e| captura_common::Error::Storage(e.to_string()))?
-            .unwrap()
-            .into();
-        match res {
-            Ok(_) => {
-                am.status = Set(job::JobStatus::Done);
-                am.last_error = Set(None);
-            }
-            Err(err) => {
-                am.status = Set(job::JobStatus::Failed);
-                am.last_error = Set(Some(err.to_string()));
-                if let Some(fid) = j.feed_id {
-                    let _ = update_feed_on_failure(db, fid, j.attempts).await;
+        // Only gate per-host for feed refresh
+        if matches!(j.job_type, job::JobType::FeedRefresh) {
+            if let Some(fid) = j.feed_id {
+                if let Some(f) = Feed::find_by_id(fid)
+                    .one(db)
+                    .await
+                    .map_err(|e| captura_common::Error::Storage(e.to_string()))?
+                {
+                    let host = reqwest::Url::parse(&f.feed_url)
+                        .ok()
+                        .and_then(|u| u.host_str().map(|s| s.to_string()))
+                        .unwrap_or_else(|| "".into());
+                    let cnt = per_host_count.entry(host.clone()).or_insert(0);
+                    if *cnt >= per_host {
+                        continue; // skip scheduling this time
+                    }
+                    *cnt += 1;
                 }
             }
         }
-        am.updated_at = Set(Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap()));
-        let _ = am.update(db).await;
+        scheduled.push(j);
+        if scheduled.len() >= concurrency { break; }
+    }
+
+    use futures::stream::{FuturesUnordered, StreamExt};
+    let mut tasks = FuturesUnordered::new();
+    for j in scheduled {
+        let db = db.clone();
+        let now = now;
+        tasks.push(async move {
+            // mark running
+            if let Some(model) = Job::find_by_id(j.id).one(&db).await.ok().flatten() {
+                let mut am: job::ActiveModel = model.into();
+                am.status = Set(job::JobStatus::Running);
+                am.attempts = Set(j.attempts + 1);
+                am.updated_at = Set(now);
+                let _ = am.update(&db).await;
+            }
+            let res = match j.job_type {
+                job::JobType::FeedRefresh => refresh_feed_job(&db, &j).await,
+                job::JobType::Favicon => refresh_favicon_job(&db, &j).await,
+                _ => Err(captura_common::Error::Other(anyhow::anyhow!(
+                    "unknown job type"
+                ))),
+            };
+            // finalize
+            if let Some(model) = Job::find_by_id(j.id).one(&db).await.ok().flatten() {
+                let mut am: job::ActiveModel = model.into();
+                match res {
+                    Ok(_) => {
+                        am.status = Set(job::JobStatus::Done);
+                        am.last_error = Set(None);
+                    }
+                    Err(err) => {
+                        am.status = Set(job::JobStatus::Failed);
+                        am.last_error = Set(Some(err.to_string()));
+                        if let Some(fid) = j.feed_id {
+                            let _ = update_feed_on_failure(&db, fid, j.attempts).await;
+                        }
+                    }
+                }
+                am.updated_at = Set(Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap()));
+                let _ = am.update(&db).await;
+            }
+            ()
+        });
+    }
+    let mut processed = 0usize;
+    while tasks.next().await.is_some() {
         processed += 1;
     }
     Ok(processed)
@@ -105,7 +142,7 @@ async fn refresh_feed_job(db: &DatabaseConnection, j: &job::Model) -> Result<()>
     else {
         return Err(captura_common::Error::NotFound("feed missing".into()));
     };
-    let entries = if matches!(f.r#type, feed::FeedType::Rule) {
+    let (entries, meta) = if matches!(f.r#type, feed::FeedType::Rule) {
         let rule_yaml = match f.rule_id {
             Some(rid) => {
                 let r = Rule::find_by_id(rid)
@@ -121,23 +158,36 @@ async fn refresh_feed_job(db: &DatabaseConnection, j: &job::Model) -> Result<()>
                 ))
             }
         };
-        refresh_rule_with_yaml(&f, &rule_yaml).await?
+        (refresh_rule_with_yaml(&f, &rule_yaml).await?, None)
     } else {
-        pipeline_refresh_feed(&f).await?
+        refresh_feed_with_meta(&f).await?
     };
     // insert entries
     let now = Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
+    let guids: Vec<String> = entries
+        .iter()
+        .filter_map(|n| n.guid.clone())
+        .collect();
+    let existing: std::collections::HashSet<String> = if guids.is_empty() {
+        Default::default()
+    } else {
+        Entry::find()
+            .filter(entry::Column::FeedId.eq(f.id))
+            .filter(entry::Column::Guid.is_in(guids.clone()))
+            .select_only()
+            .column(entry::Column::Guid)
+            .into_tuple::<Option<String>>()
+            .all(db)
+            .await
+            .map_err(|e| captura_common::Error::Storage(e.to_string()))?
+            .into_iter()
+            .flatten()
+            .collect()
+    };
+    let mut models: Vec<entry::ActiveModel> = Vec::new();
     for n in entries {
         if let Some(guid) = n.guid.clone() {
-            let exists = Entry::find()
-                .filter(entry::Column::FeedId.eq(f.id))
-                .filter(entry::Column::Guid.eq(guid.clone()))
-                .one(db)
-                .await
-                .map_err(|e| captura_common::Error::Storage(e.to_string()))?;
-            if exists.is_some() {
-                continue;
-            }
+            if existing.contains(&guid) { continue; }
             let mut am: entry::ActiveModel = Default::default();
             am.feed_id = Set(f.id);
             am.guid = Set(Some(guid));
@@ -155,16 +205,29 @@ async fn refresh_feed_job(db: &DatabaseConnection, j: &job::Model) -> Result<()>
             am.is_read = Set(false);
             am.is_starred = Set(false);
             am.extras_json = Set(Some(n.extras));
-            let _ = am
-                .insert(db)
-                .await
-                .map_err(|e| captura_common::Error::Storage(e.to_string()))?;
+            models.push(am);
         }
+    }
+    if !models.is_empty() {
+        let _ = Entry::insert_many(models)
+            .on_conflict(
+                OnConflict::columns([entry::Column::FeedId, entry::Column::Guid])
+                    .do_nothing()
+                    .to_owned(),
+            )
+            .exec(db)
+            .await
+            .map_err(|e| captura_common::Error::Storage(e.to_string()))?;
     }
     // update feed schedule on success
     let mut fm: feed::ActiveModel = f.into();
     fm.checked_at = Set(Some(now));
     fm.error_count = Set(0);
+    if let Some(m) = meta {
+        fm.last_status = Set(m.last_status.map(|s| s as i32));
+        fm.etag = Set(m.etag);
+        fm.last_modified = Set(m.last_modified);
+    }
     let ok_secs: i64 = env::var("SCHEDULER_SUCCESS_INTERVAL_SECS")
         .ok()
         .and_then(|s| s.parse().ok())

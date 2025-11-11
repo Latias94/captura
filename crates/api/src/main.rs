@@ -2,7 +2,7 @@
 
 use axum::{
     extract::{Path, Query, State},
-    routing::{get, post},
+    routing::{get, post, put},
     Json, Router,
 };
 // use axum::debug_handler;
@@ -12,7 +12,7 @@ use axum::response::{IntoResponse, Response};
 use axum_extra::typed_header::TypedHeader;
 use base64::Engine as _;
 use captura_crawler::{self as crawler, CrawlOptions};
-use captura_pipeline::{refresh_feed as pipeline_refresh_feed, refresh_rule_with_yaml};
+use captura_pipeline::{refresh_feed_with_meta, refresh_rule_with_yaml};
 use captura_rules::{parse_rule, RuleSpec};
 use captura_scheduler as scheduler;
 use captura_storage::connect as db_connect;
@@ -25,17 +25,24 @@ use migration::migrate;
 #[cfg(test)]
 use once_cell::sync::OnceCell;
 use rand_core::OsRng;
+use rand_core::RngCore;
 use scraper::{Html, Selector};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, Condition, DatabaseConnection, EntityTrait, Order,
+    ActiveModelTrait, ColumnTrait, Condition, DatabaseConnection, DbErr, EntityTrait, Order,
     PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, RelationTrait, Set,
 };
+use sea_orm::prelude::Expr;
+use sea_orm::ExprTrait;
+use sea_orm::sea_query::{Expr as QExpr};
+// use sea_orm::sea_query::{Alias as SAlias, Expr as SExpr, Func as SFunc};
+use sea_orm::sea_query::OnConflict;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::net::SocketAddr;
 use tracing::{info, Level};
 use tracing_subscriber::EnvFilter;
 use url::Url;
+use axum::Form;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -138,10 +145,27 @@ async fn main() -> anyhow::Result<()> {
             "/rules/:id",
             get(get_rule).put(update_rule).delete(delete_rule),
         )
-        .route("/rules/try", post(try_rule));
+        .route("/rules/try", post(try_rule))
+        // Google Reader compatible (read-only for now)
+        .route(
+            "/reader/api/0/subscription/list",
+            get(reader_subscription_list),
+        )
+        .route(
+            "/reader/api/0/stream/contents/user/-/state/com.google/reading-list",
+            get(reader_stream_contents),
+        )
+        .route("/reader/api/0/edit-tag", post(reader_edit_tag))
+        .route("/reader/api/0/mark-all-as-read", post(reader_mark_all_read))
+        .route("/reader/api/0/unread-count", get(reader_unread_count))
+        .route("/reader/api/0/subscription/quickadd", post(reader_subscription_quickadd))
+        .route("/reader/api/0/subscription/edit", post(reader_subscription_edit))
+        .route("/reader/api/0/stream/items/ids", get(reader_items_ids))
+        .route("/reader/api/0/stream/items/contents", get(reader_items_contents));
 
     let app = Router::new()
         .nest("/api/v1", api_v1)
+        .nest("/v1", miniflux_router())
         .with_state(AppState { db });
 
     let addr: SocketAddr = "0.0.0.0:8080".parse()?;
@@ -153,6 +177,738 @@ async fn main() -> anyhow::Result<()> {
 #[derive(Clone)]
 struct AppState {
     db: DatabaseConnection,
+}
+
+fn miniflux_router() -> Router<AppState> {
+    Router::new()
+        // feeds
+        .route("/feeds", get(mf_list_feeds).post(mf_create_feed))
+        .route("/feeds/:id", get(mf_get_feed).put(mf_update_feed).delete(mf_delete_feed))
+        .route("/feeds/:id/mark-all-read", post(mf_feed_mark_all_read))
+        .route("/feeds/:id/refresh", post(mf_feed_refresh))
+        // categories
+        .route("/categories", get(mf_list_categories).post(mf_create_category))
+        .route("/categories/counters", get(mf_categories_counters))
+        // entries
+        .route("/entries", get(mf_list_entries).put(mf_update_entries_bulk))
+        .route("/entries/:id", put(mf_update_entry))
+        .route("/entries/:id/read", post(mf_mark_read))
+        .route("/entries/:id/unread", post(mf_mark_unread))
+        .route("/entries/:id/bookmark", post(mf_mark_star))
+        .route("/entries/:id/unbookmark", post(mf_unmark_star))
+        // user
+        .route("/me", get(mf_me))
+        // import/export (OPML)
+        .route("/export", get(mf_export))
+        .route("/import", post(mf_import))
+}
+
+fn mf_auth<'a>(st: &'a AppState, headers: &'a axum::http::HeaderMap) -> impl std::future::Future<Output = ApiResult<AuthUser>> + 'a {
+    async move {
+        if let Some(v) = headers.get("X-Auth-Token") {
+            if let Ok(token) = v.to_str() {
+                return AuthUser::from_bearer(&st.db, token).await;
+            }
+        }
+        // fallback to Authorization Bearer if present (for convenience)
+        if let Some(v) = headers.get(axum::http::header::AUTHORIZATION) {
+            if let Ok(s) = v.to_str() {
+                if let Some(t) = s.strip_prefix("Bearer ") {
+                    return AuthUser::from_bearer(&st.db, t).await;
+                }
+            }
+        }
+        Err(unauthorized("missing token"))
+    }
+}
+
+#[derive(Serialize)]
+struct MfUserDto { id: i64, username: String }
+
+async fn mf_me(
+    State(st): State<AppState>,
+    headers: axum::http::HeaderMap,
+) -> ApiResult<Json<MfUserDto>> {
+    let auth = mf_auth(&st, &headers).await?;
+    let u = User::find_by_id(auth.user_id).one(&st.db).await.map_err(internal)?.ok_or_else(|| not_found("user"))?;
+    Ok(Json(MfUserDto { id: u.id, username: u.username }))
+}
+
+#[derive(Serialize)]
+struct MfCategoryDto { id: i64, title: String }
+
+async fn mf_list_categories(
+    State(st): State<AppState>,
+    headers: axum::http::HeaderMap,
+) -> ApiResult<Json<Vec<MfCategoryDto>>> {
+    let auth = mf_auth(&st, &headers).await?;
+    let cats = Category::find()
+        .filter(category::Column::UserId.eq(auth.user_id))
+        .all(&st.db)
+        .await
+        .map_err(internal)?
+        .into_iter()
+        .map(|c| MfCategoryDto { id: c.id, title: c.name })
+        .collect();
+    Ok(Json(cats))
+}
+
+#[derive(Deserialize)]
+struct MfCreateCategory { title: String }
+
+async fn mf_create_category(
+    State(st): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Json(body): Json<MfCreateCategory>,
+) -> ApiResult<Json<MfCategoryDto>> {
+    let auth = mf_auth(&st, &headers).await?;
+    if body.title.trim().is_empty() { return Err(bad_request("title required")); }
+    let now = Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
+    let am = category::ActiveModel { user_id: Set(auth.user_id), name: Set(body.title.clone()), created_at: Set(now), ..Default::default() };
+    let c = am.insert(&st.db).await.map_err(internal)?;
+    Ok(Json(MfCategoryDto { id: c.id, title: c.name }))
+}
+
+#[derive(Serialize)]
+struct MfFeedDto {
+    id: i64,
+    feed_url: String,
+    site_url: Option<String>,
+    title: Option<String>,
+    category: Option<MfCategoryDto>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    unread_count: Option<i64>,
+}
+
+fn map_feed(f: feed::Model, cat: Option<category::Model>) -> MfFeedDto {
+    MfFeedDto {
+        id: f.id,
+        feed_url: f.feed_url,
+        site_url: f.site_url,
+        title: f.title,
+        category: cat.map(|c| MfCategoryDto { id: c.id, title: c.name }),
+        unread_count: None,
+    }
+}
+
+#[derive(Deserialize)]
+struct MfFeedsQuery {
+    category_id: Option<i64>,
+    disabled: Option<bool>,
+    has_errors: Option<bool>,
+    withCounters: Option<bool>,
+    order: Option<String>,
+    direction: Option<String>,
+}
+
+async fn mf_list_feeds(
+    State(st): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Query(q): Query<MfFeedsQuery>,
+) -> ApiResult<Json<Vec<MfFeedDto>>> {
+    let auth = mf_auth(&st, &headers).await?;
+    let mut sel = Feed::find().filter(feed::Column::UserId.eq(auth.user_id)).find_also_related(Category);
+    if let Some(cid) = q.category_id { sel = sel.filter(feed::Column::CategoryId.eq(cid)); }
+    if let Some(dis) = q.disabled { sel = sel.filter(feed::Column::Disabled.eq(dis)); }
+    if let Some(err) = q.has_errors { if err { sel = sel.filter(feed::Column::ErrorCount.gt(0)); } }
+    match q.order.as_deref() {
+        Some("title") => match q.direction.as_deref() { Some("asc") => sel = sel.order_by_asc(feed::Column::Title), _ => sel = sel.order_by_desc(feed::Column::Title) },
+        _ => match q.direction.as_deref() { Some("asc") => sel = sel.order_by_asc(feed::Column::Id), _ => sel = sel.order_by_desc(feed::Column::Id) },
+    }
+    let feeds = sel
+        .all(&st.db)
+        .await
+        .map_err(internal)?;
+    let mut counters: std::collections::HashMap<i64, i64> = std::collections::HashMap::new();
+    if q.withCounters.unwrap_or(false) {
+        for (f, _) in &feeds {
+            let cnt = Entry::find()
+                .filter(entry::Column::FeedId.eq(f.id))
+                .filter(entry::Column::IsRead.eq(false))
+                .count(&st.db)
+                .await
+                .map_err(internal)? as i64;
+            counters.insert(f.id, cnt);
+        }
+    }
+    let feeds = feeds
+        .into_iter()
+        .map(|(f, c)| {
+            let mut dto = map_feed(f, c);
+            if let Some(cnt) = counters.get(&dto.id) { dto.unread_count = Some(*cnt); }
+            dto
+        })
+        .collect();
+    Ok(Json(feeds))
+}
+
+#[derive(Deserialize)]
+struct MfCreateFeed { feed_url: String, category_id: Option<i64>, title: Option<String> }
+
+async fn mf_create_feed(
+    State(st): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Json(body): Json<MfCreateFeed>,
+) -> ApiResult<Json<MfFeedDto>> {
+    let auth = mf_auth(&st, &headers).await?;
+    if body.feed_url.trim().is_empty() { return Err(bad_request("feed_url required")); }
+    if let Some(cid) = body.category_id { assert_category_ownership(&st.db, auth.user_id, cid).await?; }
+    let now = Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
+    let am = feed::ActiveModel {
+        user_id: Set(auth.user_id),
+        category_id: Set(body.category_id),
+        r#type: Set(feed::FeedType::Rss),
+        title: Set(body.title.clone()),
+        site_url: Set(None),
+        feed_url: Set(body.feed_url.clone()),
+        rule_id: Set(None),
+        user_agent: Set(None),
+        headers_json: Set(None),
+        cookies: Set(None),
+        proxy_url: Set(None),
+        fetch_via_proxy: Set(false),
+        disable_http2: Set(false),
+        allow_invalid_certs: Set(false),
+        request_timeout_ms: Set(None),
+        checked_at: Set(None),
+        next_run_at: Set(None),
+        etag: Set(None),
+        last_modified: Set(None),
+        last_status: Set(None),
+        error_count: Set(0),
+        disabled: Set(false),
+        scraper_rules: Set(None),
+        rewrite_rules: Set(None),
+        blocklist_rules: Set(None),
+        keeplist_rules: Set(None),
+        url_rewrite_rules: Set(None),
+        block_filter_entry_rules: Set(None),
+        keep_filter_entry_rules: Set(None),
+        created_at: Set(now),
+        updated_at: Set(now),
+        favicon_id: Set(None),
+        ..Default::default()
+    };
+    let f = am.insert(&st.db).await.map_err(internal)?;
+    let cat = if let Some(cid) = f.category_id { Category::find_by_id(cid).one(&st.db).await.map_err(internal)? } else { None };
+    Ok(Json(map_feed(f, cat)))
+}
+
+async fn mf_get_feed(
+    State(st): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Path(id): Path<i64>,
+) -> ApiResult<Json<MfFeedDto>> {
+    let auth = mf_auth(&st, &headers).await?;
+    let (f, c) = Feed::find_by_id(id)
+        .filter(feed::Column::UserId.eq(auth.user_id))
+        .find_also_related(Category)
+        .one(&st.db)
+        .await
+        .map_err(internal)?
+        .ok_or_else(|| not_found("feed"))?;
+    Ok(Json(map_feed(f, c)))
+}
+
+#[derive(Deserialize)]
+struct MfUpdateFeed { title: Option<String>, category_id: Option<i64>, disabled: Option<bool> }
+
+async fn mf_update_feed(
+    State(st): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Path(id): Path<i64>,
+    Json(body): Json<MfUpdateFeed>,
+) -> ApiResult<Json<MfFeedDto>> {
+    let auth = mf_auth(&st, &headers).await?;
+    let Some(f) = Feed::find_by_id(id).filter(feed::Column::UserId.eq(auth.user_id)).one(&st.db).await.map_err(internal)? else { return Err(not_found("feed")); };
+    if let Some(cid) = body.category_id { assert_category_ownership(&st.db, auth.user_id, cid).await?; }
+    let mut am: feed::ActiveModel = f.into();
+    if let Some(t) = body.title { am.title = Set(Some(t)); }
+    if let Some(cid) = body.category_id { am.category_id = Set(Some(cid)); }
+    if let Some(d) = body.disabled { am.disabled = Set(d); }
+    let f = am.update(&st.db).await.map_err(internal)?;
+    let cat = if let Some(cid) = f.category_id { Category::find_by_id(cid).one(&st.db).await.map_err(internal)? } else { None };
+    Ok(Json(map_feed(f, cat)))
+}
+
+async fn mf_delete_feed(
+    State(st): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Path(id): Path<i64>,
+) -> ApiResult<&'static str> {
+    let auth = mf_auth(&st, &headers).await?;
+    let Some(f) = Feed::find_by_id(id).filter(feed::Column::UserId.eq(auth.user_id)).one(&st.db).await.map_err(internal)? else { return Err(not_found("feed")); };
+    let am: feed::ActiveModel = f.into();
+    am.delete(&st.db).await.map_err(internal)?;
+    Ok("OK")
+}
+
+async fn mf_feed_mark_all_read(
+    State(st): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Path(id): Path<i64>,
+) -> ApiResult<&'static str> {
+    let auth = mf_auth(&st, &headers).await?;
+    let Some(f) = Feed::find_by_id(id).filter(feed::Column::UserId.eq(auth.user_id)).one(&st.db).await.map_err(internal)? else { return Err(not_found("feed")); };
+    let now = Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
+    let _ = Entry::update_many()
+        .col_expr(entry::Column::IsRead, Expr::value(true))
+        .col_expr(entry::Column::UpdatedAt, Expr::value(now))
+        .filter(entry::Column::FeedId.eq(f.id))
+        .filter(entry::Column::IsRead.eq(false))
+        .exec(&st.db)
+        .await
+        .map_err(internal)?;
+    Ok("OK")
+}
+
+#[derive(Deserialize)]
+struct MfEntriesQuery {
+    status: Option<String>,
+    starred: Option<bool>,
+    limit: Option<u64>,
+    offset: Option<u64>,
+    order: Option<String>,
+    q: Option<String>,
+    before_id: Option<i64>,
+    after_id: Option<i64>,
+    feed_id: Option<i64>,
+    category_id: Option<i64>,
+    published_before: Option<i64>,
+    published_after: Option<i64>,
+}
+
+#[derive(Serialize)]
+struct MfEntryDto {
+    id: i64,
+    feed_id: i64,
+    url: Option<String>,
+    title: Option<String>,
+    author: Option<String>,
+    content: Option<String>,
+    published_at: Option<String>,
+    status: String,
+    starred: bool,
+}
+
+async fn mf_list_entries(
+    State(st): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Query(q): Query<MfEntriesQuery>,
+) -> ApiResult<Json<Vec<MfEntryDto>>> {
+    let auth = mf_auth(&st, &headers).await?;
+    let mut sel = Entry::find()
+        .join(sea_orm::JoinType::InnerJoin, entry::Relation::Feed.def())
+        .filter(feed::Column::UserId.eq(auth.user_id));
+    if let Some(ref s) = q.status {
+        match s.as_str() {
+            "read" => sel = sel.filter(entry::Column::IsRead.eq(true)),
+            "unread" => sel = sel.filter(entry::Column::IsRead.eq(false)),
+            _ => {}
+        }
+    }
+    if let Some(star) = q.starred { if star { sel = sel.filter(entry::Column::IsStarred.eq(true)); } }
+    if let Some(bid) = q.before_id { sel = sel.filter(entry::Column::Id.lt(bid)); }
+    if let Some(aid) = q.after_id { sel = sel.filter(entry::Column::Id.gt(aid)); }
+    if let Some(fid) = q.feed_id { sel = sel.filter(entry::Column::FeedId.eq(fid)); }
+    if let Some(cid) = q.category_id { sel = sel.filter(feed::Column::CategoryId.eq(cid)); }
+    if let Some(ref qq) = q.q {
+        if !qq.trim().is_empty() {
+            let like = format!("%{}%", qq);
+            let cond = Condition::any()
+                .add(entry::Column::Title.like(like.as_str()))
+                .add(entry::Column::Summary.like(like.as_str()))
+                .add(entry::Column::ContentHtml.like(like.as_str()));
+            sel = sel.filter(cond);
+        }
+    }
+    if let Some(ts) = q.published_before {
+        if let Some(dt) = chrono::DateTime::from_timestamp(ts, 0) {
+            let dt = dt.with_timezone(&FixedOffset::east_opt(0).unwrap());
+            let cond = Condition::any()
+                .add(entry::Column::PublishedAt.lte(dt))
+                .add(Condition::all().add(entry::Column::PublishedAt.is_null()).add(entry::Column::CreatedAt.lte(dt)));
+            sel = sel.filter(cond);
+        }
+    }
+    if let Some(ts) = q.published_after {
+        if let Some(dt) = chrono::DateTime::from_timestamp(ts, 0) {
+            let dt = dt.with_timezone(&FixedOffset::east_opt(0).unwrap());
+            let cond = Condition::any()
+                .add(entry::Column::PublishedAt.gte(dt))
+                .add(Condition::all().add(entry::Column::PublishedAt.is_null()).add(entry::Column::CreatedAt.gte(dt)));
+            sel = sel.filter(cond);
+        }
+    }
+    sel = match q.order.as_deref() {
+        Some("id") => sel.order_by_desc(entry::Column::Id),
+        _ => sel.order_by_desc(entry::Column::PublishedAt).order_by_desc(entry::Column::CreatedAt),
+    };
+    if let Some(l) = q.limit { sel = sel.limit(l); }
+    if let Some(o) = q.offset { sel = sel.offset(o); }
+    let rows = sel.all(&st.db).await.map_err(internal)?;
+    let out = rows.into_iter().map(|e| MfEntryDto {
+        id: e.id,
+        feed_id: e.feed_id,
+        url: e.url,
+        title: e.title,
+        author: e.author,
+        content: e.content_html,
+        published_at: e.published_at.map(|d| d.to_rfc3339()),
+        status: if e.is_read { "read".into() } else { "unread".into() },
+        starred: e.is_starred,
+    }).collect();
+    Ok(Json(out))
+}
+
+#[derive(Deserialize)]
+struct MfUpdateEntryBody { status: Option<String>, starred: Option<bool> }
+
+async fn mf_update_entry(
+    State(st): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Path(id): Path<i64>,
+    Json(body): Json<MfUpdateEntryBody>,
+) -> ApiResult<&'static str> {
+    let auth = mf_auth(&st, &headers).await?;
+    let Some(e) = Entry::find_by_id(id).one(&st.db).await.map_err(internal)? else { return Err(not_found("entry")); };
+    // Verify ownership
+    let owner = Feed::find_by_id(e.feed_id)
+        .filter(feed::Column::UserId.eq(auth.user_id))
+        .one(&st.db)
+        .await
+        .map_err(internal)?
+        .is_some();
+    if !owner { return Err(forbidden("not your entry")); }
+    let mut am: entry::ActiveModel = e.into();
+    if let Some(ref s) = body.status { am.is_read = Set(s == "read"); }
+    if let Some(star) = body.starred { am.is_starred = Set(star); }
+    let _ = am.update(&st.db).await.map_err(internal)?;
+    Ok("OK")
+}
+
+#[derive(Deserialize)]
+struct MfUpdateEntriesBulk { entry_ids: Vec<i64>, status: Option<String>, starred: Option<bool> }
+
+async fn mf_update_entries_bulk(
+    State(st): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Json(body): Json<MfUpdateEntriesBulk>,
+) -> ApiResult<&'static str> {
+    let auth = mf_auth(&st, &headers).await?;
+    if body.entry_ids.is_empty() { return Ok("OK"); }
+    let mut update = Entry::update_many().filter(entry::Column::Id.is_in(body.entry_ids.clone()));
+    if let Some(ref s) = body.status { update = update.col_expr(entry::Column::IsRead, Expr::value(s == "read")); }
+    if let Some(star) = body.starred { update = update.col_expr(entry::Column::IsStarred, Expr::value(star)); }
+    let _ = update.exec(&st.db).await.map_err(internal)?;
+    Ok("OK")
+}
+
+async fn mf_mark_read(State(st): State<AppState>, headers: axum::http::HeaderMap, Path(id): Path<i64>) -> ApiResult<&'static str> {
+    let _ = mf_update_entry(State(st.clone()), headers.clone(), Path(id), Json(MfUpdateEntryBody { status: Some("read".into()), starred: None })).await?;
+    Ok("OK")
+}
+async fn mf_mark_unread(State(st): State<AppState>, headers: axum::http::HeaderMap, Path(id): Path<i64>) -> ApiResult<&'static str> {
+    let _ = mf_update_entry(State(st.clone()), headers.clone(), Path(id), Json(MfUpdateEntryBody { status: Some("unread".into()), starred: None })).await?;
+    Ok("OK")
+}
+async fn mf_mark_star(State(st): State<AppState>, headers: axum::http::HeaderMap, Path(id): Path<i64>) -> ApiResult<&'static str> {
+    let _ = mf_update_entry(State(st.clone()), headers.clone(), Path(id), Json(MfUpdateEntryBody { status: None, starred: Some(true) })).await?;
+    Ok("OK")
+}
+async fn mf_unmark_star(State(st): State<AppState>, headers: axum::http::HeaderMap, Path(id): Path<i64>) -> ApiResult<&'static str> {
+    let _ = mf_update_entry(State(st.clone()), headers.clone(), Path(id), Json(MfUpdateEntryBody { status: None, starred: Some(false) })).await?;
+    Ok("OK")
+}
+
+#[derive(Serialize)]
+struct MfFeedCounter { feed_id: i64, count: i64 }
+
+async fn mf_feeds_counters(
+    State(st): State<AppState>,
+    headers: axum::http::HeaderMap,
+) -> ApiResult<Json<Vec<MfFeedCounter>>> {
+    let auth = mf_auth(&st, &headers).await?;
+    let feeds = Feed::find()
+        .filter(feed::Column::UserId.eq(auth.user_id))
+        .all(&st.db)
+        .await
+        .map_err(internal)?;
+    let feed_ids: Vec<i64> = feeds.iter().map(|f| f.id).collect();
+    let pairs: Vec<(i64, i64)> = if feed_ids.is_empty() {
+        Vec::new()
+    } else {
+        Entry::find()
+            .filter(entry::Column::FeedId.is_in(feed_ids.clone()))
+            .filter(entry::Column::IsRead.eq(false))
+            .select_only()
+            .column(entry::Column::FeedId)
+            .column_as(QExpr::col(entry::Column::Id).count(), "cnt")
+            .group_by(entry::Column::FeedId)
+            .into_tuple()
+            .all(&st.db)
+            .await
+            .map_err(internal)?
+    };
+    let mut map: std::collections::HashMap<i64, i64> = std::collections::HashMap::new();
+    for (fid, cnt) in pairs { map.insert(fid, cnt); }
+    let mut out = Vec::new();
+    for f in feeds { out.push(MfFeedCounter { feed_id: f.id, count: *map.get(&f.id).unwrap_or(&0) }); }
+    Ok(Json(out))
+}
+
+#[derive(Serialize)]
+struct MfCategoryCounter { category_id: i64, count: i64 }
+
+async fn mf_categories_counters(
+    State(st): State<AppState>,
+    headers: axum::http::HeaderMap,
+) -> ApiResult<Json<Vec<MfCategoryCounter>>> {
+    let auth = mf_auth(&st, &headers).await?;
+    let cats = Category::find()
+        .filter(category::Column::UserId.eq(auth.user_id))
+        .all(&st.db)
+        .await
+        .map_err(internal)?;
+    let cat_ids: Vec<i64> = cats.iter().map(|c| c.id).collect();
+    let pairs: Vec<(Option<i64>, i64)> = if cat_ids.is_empty() {
+        Vec::new()
+    } else {
+        Entry::find()
+            .join(sea_orm::JoinType::InnerJoin, entry::Relation::Feed.def())
+            .filter(feed::Column::UserId.eq(auth.user_id))
+            .filter(entry::Column::IsRead.eq(false))
+            .select_only()
+            .column_as(QExpr::col((Feed, feed::Column::CategoryId)), "cat")
+            .column_as(QExpr::col(entry::Column::Id).count(), "cnt")
+            .group_by(QExpr::col((Feed, feed::Column::CategoryId)))
+            .into_tuple()
+            .all(&st.db)
+            .await
+            .map_err(internal)?
+    };
+    let mut map: std::collections::HashMap<i64, i64> = std::collections::HashMap::new();
+    for (opt_cid, cnt) in pairs {
+        if let Some(cid) = opt_cid { map.insert(cid, cnt); }
+    }
+    let mut out = Vec::new();
+    for cid in cat_ids {
+        out.push(MfCategoryCounter { category_id: cid, count: *map.get(&cid).unwrap_or(&0) });
+    }
+    Ok(Json(out))
+}
+
+// Refresh a single feed (Miniflux compatible)
+#[derive(Serialize)]
+struct MfRefreshResp { result: String, inserted: usize }
+
+async fn mf_feed_refresh(
+    State(st): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Path(id): Path<i64>,
+) -> ApiResult<Json<MfRefreshResp>> {
+    let auth = mf_auth(&st, &headers).await?;
+    let Some(f) = Feed::find_by_id(id)
+        .filter(feed::Column::UserId.eq(auth.user_id))
+        .one(&st.db)
+        .await
+        .map_err(internal)? else { return Err(not_found("feed")); };
+    let (entries, meta) = if matches!(f.r#type, feed::FeedType::Rule) {
+        let rule_yaml = match f.rule_id {
+            Some(rid) => {
+                let r = Rule::find_by_id(rid)
+                    .one(&st.db)
+                    .await
+                    .map_err(internal)?
+                    .ok_or_else(|| bad_request("rule missing"))?;
+                r.yaml
+            }
+            None => return Err(bad_request("rule_id required for rule-type feed")),
+        };
+        (
+            refresh_rule_with_yaml(&f, &rule_yaml)
+                .await
+                .map_err(internal)?,
+            None,
+        )
+    } else {
+        refresh_feed_with_meta(&f).await.map_err(internal)?
+    };
+    let now = Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
+    let guids: Vec<String> = entries.iter().filter_map(|n| n.guid.clone()).collect();
+    let existing: std::collections::HashSet<String> = if guids.is_empty() {
+        Default::default()
+    } else {
+        Entry::find()
+            .filter(entry::Column::FeedId.eq(f.id))
+            .filter(entry::Column::Guid.is_in(guids.clone()))
+            .select_only()
+            .column(entry::Column::Guid)
+            .into_tuple::<Option<String>>()
+            .all(&st.db)
+            .await
+            .map_err(internal)?
+            .into_iter()
+            .flatten()
+            .collect()
+    };
+    let mut models: Vec<entry::ActiveModel> = Vec::new();
+    for n in entries {
+        if let Some(guid) = n.guid.clone() {
+            if existing.contains(&guid) { continue; }
+            let mut am: entry::ActiveModel = Default::default();
+            am.feed_id = Set(f.id);
+            am.guid = Set(Some(guid));
+            am.url = Set(n.url);
+            am.title = Set(n.title);
+            am.summary = Set(n.summary);
+            am.content_html = Set(n.content_html);
+            am.author = Set(n.author);
+            am.published_at = Set(n.published_at.map(|d| d.with_timezone(&FixedOffset::east_opt(0).unwrap())));
+            am.created_at = Set(now);
+            am.updated_at = Set(now);
+            am.hash = Set(None);
+            am.is_read = Set(false);
+            am.is_starred = Set(false);
+            am.extras_json = Set(Some(n.extras));
+            models.push(am);
+        }
+    }
+    let mut inserted = 0usize;
+    if !models.is_empty() {
+        let _ = Entry::insert_many(models)
+            .on_conflict(
+                OnConflict::columns([entry::Column::FeedId, entry::Column::Guid])
+                    .do_nothing()
+                    .to_owned(),
+            )
+            .exec(&st.db)
+            .await
+            .map_err(internal)?;
+        inserted = guids.len() - existing.len();
+    }
+    if let Some(m) = meta {
+        let mut fm: feed::ActiveModel = Feed::find_by_id(f.id).one(&st.db).await.map_err(internal)?.unwrap().into();
+        fm.checked_at = Set(Some(now));
+        fm.error_count = Set(0);
+        fm.last_status = Set(m.last_status.map(|s| s as i32));
+        fm.etag = Set(m.etag);
+        fm.last_modified = Set(m.last_modified);
+        let ok_secs: i64 = std::env::var("SCHEDULER_SUCCESS_INTERVAL_SECS").ok().and_then(|s| s.parse().ok()).unwrap_or(900);
+        fm.next_run_at = Set(Some(now + chrono::Duration::seconds(ok_secs.max(60))));
+        let _ = fm.update(&st.db).await.map_err(internal)?;
+    }
+    Ok(Json(MfRefreshResp { result: "OK".into(), inserted }))
+}
+
+// Export/Import (OPML wrapper)
+async fn mf_export(
+    State(st): State<AppState>,
+    headers: axum::http::HeaderMap,
+) -> ApiResult<(axum::http::HeaderMap, String)> {
+    let auth = mf_auth(&st, &headers).await?;
+    let cats = Category::find().filter(category::Column::UserId.eq(auth.user_id)).all(&st.db).await.map_err(internal)?;
+    let feeds = Feed::find().filter(feed::Column::UserId.eq(auth.user_id)).all(&st.db).await.map_err(internal)?;
+    let mut buf = String::new();
+    buf.push_str("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<opml version=\"2.0\">\n<head><title>Captura Export</title></head>\n<body>\n");
+    for f in feeds.iter().filter(|f| f.category_id.is_none()) {
+        buf.push_str(&format!(
+            "<outline text=\"{}\" title=\"{}\" type=\"rss\" xmlUrl=\"{}\" htmlUrl=\"{}\"/>\n",
+            xml_escape(f.title.as_deref().unwrap_or("")),
+            xml_escape(f.title.as_deref().unwrap_or("")),
+            xml_escape(&f.feed_url),
+            xml_escape(f.site_url.as_deref().unwrap_or(""))
+        ));
+    }
+    for c in cats {
+        buf.push_str(&format!("<outline text=\"{}\" title=\"{}\">\n", xml_escape(&c.name), xml_escape(&c.name)));
+        for f in feeds.iter().filter(|f| f.category_id == Some(c.id)) {
+            buf.push_str(&format!(
+                "  <outline text=\"{}\" title=\"{}\" type=\"rss\" xmlUrl=\"{}\" htmlUrl=\"{}\"/>\n",
+                xml_escape(f.title.as_deref().unwrap_or("")),
+                xml_escape(f.title.as_deref().unwrap_or("")),
+                xml_escape(&f.feed_url),
+                xml_escape(f.site_url.as_deref().unwrap_or(""))
+            ));
+        }
+        buf.push_str("</outline>\n");
+    }
+    buf.push_str("</body>\n</opml>\n");
+    let mut headers_out = axum::http::HeaderMap::new();
+    headers_out.insert(axum::http::header::CONTENT_TYPE, axum::http::HeaderValue::from_static("application/xml; charset=utf-8"));
+    Ok((headers_out, buf))
+}
+
+async fn mf_import(
+    State(st): State<AppState>,
+    headers: axum::http::HeaderMap,
+    body: String,
+) -> ApiResult<&'static str> {
+    let auth = mf_auth(&st, &headers).await?;
+    let outlines = parse_opml_quickxml(&body).unwrap_or_else(|_| extract_outlines(&body));
+    let now = Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
+    let mut cat_map: std::collections::HashMap<String, i64> = Category::find()
+        .filter(category::Column::UserId.eq(auth.user_id))
+        .all(&st.db)
+        .await
+        .map_err(internal)?
+        .into_iter()
+        .map(|c| (c.name.clone(), c.id))
+        .collect();
+    for node in outlines {
+        match node {
+            OutlineNode::Feed { title, xml_url, html_url, category } => {
+                let category_id = if let Some(cat) = category {
+                    if let Some(id) = cat_map.get(&cat).copied() { Some(id) } else {
+                        let am = category::ActiveModel { user_id: Set(auth.user_id), name: Set(cat.clone()), created_at: Set(now), ..Default::default() };
+                        let c = am.insert(&st.db).await.map_err(internal)?;
+                        cat_map.insert(cat, c.id);
+                        Some(c.id)
+                    }
+                } else { None };
+                let dup = Feed::find().filter(feed::Column::UserId.eq(auth.user_id)).filter(feed::Column::FeedUrl.eq(&xml_url)).one(&st.db).await.map_err(internal)?;
+                if dup.is_some() { continue; }
+                let am = feed::ActiveModel {
+                    user_id: Set(auth.user_id),
+                    category_id: Set(category_id),
+                    r#type: Set(feed::FeedType::Rss),
+                    title: Set(Some(title.unwrap_or_else(|| xml_url.clone()))),
+                    site_url: Set(html_url),
+                    feed_url: Set(xml_url),
+                    rule_id: Set(None),
+                    user_agent: Set(None),
+                    headers_json: Set(None),
+                    cookies: Set(None),
+                    proxy_url: Set(None),
+                    fetch_via_proxy: Set(false),
+                    disable_http2: Set(false),
+                    allow_invalid_certs: Set(false),
+                    request_timeout_ms: Set(None),
+                    checked_at: Set(None),
+                    next_run_at: Set(None),
+                    etag: Set(None),
+                    last_modified: Set(None),
+                    last_status: Set(None),
+                    error_count: Set(0),
+                    disabled: Set(false),
+                    scraper_rules: Set(None),
+                    rewrite_rules: Set(None),
+                    blocklist_rules: Set(None),
+                    keeplist_rules: Set(None),
+                    url_rewrite_rules: Set(None),
+                    block_filter_entry_rules: Set(None),
+                    keep_filter_entry_rules: Set(None),
+                    created_at: Set(now),
+                    updated_at: Set(now),
+                    favicon_id: Set(None),
+                    ..Default::default()
+                };
+                let _ = am.insert(&st.db).await.map_err(internal)?;
+            }
+            OutlineNode::Category { .. } => {}
+        }
+    }
+    Ok("OK")
 }
 
 #[derive(Deserialize)]
@@ -354,8 +1110,9 @@ async fn auth_login(
         .verify_password(body.password.as_bytes(), &parsed)
         .map_err(|_| unauthorized("invalid credentials"))?;
     // 颁发简单随机 token（生产应更强）：hash(username+time)
-    let raw = format!("{}:{}", u.username, Utc::now());
-    let token_str = format!("{:x}", Sha256::digest(raw.as_bytes()));
+    let mut rand_bytes = [0u8; 32];
+    rand_core::OsRng.fill_bytes(&mut rand_bytes);
+    let token_str = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(rand_bytes);
     let token_hash = format!("{:x}", Sha256::digest(token_str.as_bytes()));
     let now = Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
     let am = token::ActiveModel {
@@ -363,7 +1120,11 @@ async fn auth_login(
         name: Set(body.name),
         token_hash: Set(token_hash),
         created_at: Set(now),
-        last_used_at: Set(None),
+        last_used_at: Set(Some(now)),
+        expires_at: Set(Some(now + chrono::Duration::seconds({
+            let v: i64 = std::env::var("CAPTURA_TOKEN_TTL_SECS").ok().and_then(|s| s.parse().ok()).unwrap_or(30 * 24 * 3600);
+            v.max(3600)
+        }))),
         ..Default::default()
     };
     let _ = am.insert(&st.db).await.map_err(internal)?;
@@ -386,6 +1147,16 @@ impl AuthUser {
         let Some(tok) = tok else {
             return Err(unauthorized("invalid token"));
         };
+        let now = Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
+        if let Some(exp) = tok.expires_at {
+            if exp <= now {
+                return Err(unauthorized("token expired"));
+            }
+        }
+        // Update last_used_at best-effort
+        let mut am: token::ActiveModel = tok.clone().into();
+        am.last_used_at = Set(Some(now));
+        let _ = am.update(db).await;
         Ok(Self {
             user_id: tok.user_id,
         })
@@ -1433,6 +2204,12 @@ struct FeverQuery {
     limit: Option<u64>,
     unread_item_ids: Option<i32>,
     saved_item_ids: Option<i32>,
+    // write actions
+    mark: Option<String>, // item|feed|group|all
+    #[serde(rename = "as")]
+    r#as: Option<String>, // read|unread|saved|unsaved
+    id: Option<String>,   // item ids (csv) or feed/group id
+    before: Option<i64>,  // timestamp
 }
 
 #[derive(Serialize)]
@@ -1470,6 +2247,11 @@ async fn fever_endpoint(State(st): State<AppState>, Query(q): Query<FeverQuery>)
         && q.saved_item_ids.is_none()
     {
         return Json(base).into_response();
+    }
+
+    // First, handle write actions if present (best-effort)
+    if let Some(ref mark) = q.mark {
+        let _ = fever_apply_write(&st.db, user.id, mark, q.r#as.as_deref(), q.id.as_deref(), q.before).await;
     }
 
     // Accumulate response map
@@ -1625,6 +2407,129 @@ async fn fever_endpoint(State(st): State<AppState>, Query(q): Query<FeverQuery>)
     }
 
     Json(resp).into_response()
+}
+
+async fn fever_apply_write(
+    db: &DatabaseConnection,
+    user_id: i64,
+    mark: &str,
+    asv: Option<&str>,
+    id: Option<&str>,
+    before: Option<i64>,
+) -> Result<(), DbErr> {
+    use sea_orm::{ActiveValue::Set, Condition, QueryOrder};
+    let now = Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
+    let asv = asv.unwrap_or("");
+    match mark {
+        "item" => {
+            let ids: Vec<i64> = id
+                .unwrap_or("")
+                .split(',')
+                .filter_map(|s| s.trim().parse::<i64>().ok())
+                .collect();
+            if ids.is_empty() { return Ok(()); }
+            // filter to only entries belonging to user
+            let feed_ids: Vec<i64> = Feed::find()
+                .filter(feed::Column::UserId.eq(user_id))
+                .select_only()
+                .column(feed::Column::Id)
+                .into_tuple()
+                .all(db)
+                .await?;
+            match asv {
+                "read" | "unread" => {
+                    let val = asv == "read";
+                    let _ = Entry::update_many()
+                        .col_expr(entry::Column::IsRead, Expr::value(val))
+                        .col_expr(entry::Column::UpdatedAt, Expr::value(now))
+                        .filter(entry::Column::Id.is_in(ids))
+                        .filter(entry::Column::FeedId.is_in(feed_ids))
+                        .exec(db)
+                        .await?;
+                }
+                "saved" | "unsaved" => {
+                    let val = asv == "saved";
+                    let _ = Entry::update_many()
+                        .col_expr(entry::Column::IsStarred, Expr::value(val))
+                        .col_expr(entry::Column::UpdatedAt, Expr::value(now))
+                        .filter(entry::Column::Id.is_in(ids))
+                        .filter(entry::Column::FeedId.is_in(feed_ids))
+                        .exec(db)
+                        .await?;
+                }
+                _ => {}
+            }
+        }
+        "feed" => {
+            let fid: i64 = id.and_then(|s| s.parse().ok()).unwrap_or_default();
+            if fid == 0 { return Ok(()); }
+            if asv == "read" {
+                let cond = Condition::all()
+                    .add(entry::Column::FeedId.eq(fid))
+                    .add(entry::Column::IsRead.eq(false));
+                let cond = if let Some(ts) = before { cond.add(entry::Column::CreatedAt.lte(chrono::DateTime::from_timestamp(ts,0).unwrap().with_timezone(&FixedOffset::east_opt(0).unwrap()))) } else { cond };
+                // ensure the feed belongs to user
+                if Feed::find_by_id(fid).filter(feed::Column::UserId.eq(user_id)).one(db).await?.is_some() {
+                    let _ = Entry::update_many()
+                        .col_expr(entry::Column::IsRead, Expr::value(true))
+                        .col_expr(entry::Column::UpdatedAt, Expr::value(now))
+                        .filter(cond)
+                        .exec(db)
+                        .await?;
+                }
+            }
+        }
+        "group" => {
+            let gid: i64 = id.and_then(|s| s.parse().ok()).unwrap_or_default();
+            if gid == 0 { return Ok(()); }
+            if asv == "read" {
+                // all feeds in this user's category
+                let feeds: Vec<i64> = Feed::find()
+                    .filter(feed::Column::UserId.eq(user_id))
+                    .filter(feed::Column::CategoryId.eq(gid))
+                    .select_only()
+                    .column(feed::Column::Id)
+                    .into_tuple()
+                    .all(db)
+                    .await?;
+                if !feeds.is_empty() {
+                    let mut cond = Condition::all()
+                        .add(entry::Column::FeedId.is_in(feeds))
+                        .add(entry::Column::IsRead.eq(false));
+                    if let Some(ts) = before {
+                        if let Some(dt) = chrono::DateTime::from_timestamp(ts,0) {
+                            cond = cond.add(entry::Column::CreatedAt.lte(dt.with_timezone(&FixedOffset::east_opt(0).unwrap())));
+                        }
+                    }
+                    let _ = Entry::update_many()
+                        .col_expr(entry::Column::IsRead, Expr::value(true))
+                        .col_expr(entry::Column::UpdatedAt, Expr::value(now))
+                        .filter(cond)
+                        .exec(db)
+                        .await?;
+                }
+            }
+        }
+        "all" => {
+            if asv == "read" {
+                let mut cond = Condition::all()
+                    .add(entry::Column::IsRead.eq(false));
+                if let Some(ts) = before {
+                    if let Some(dt) = chrono::DateTime::from_timestamp(ts,0) {
+                        cond = cond.add(entry::Column::CreatedAt.lte(dt.with_timezone(&FixedOffset::east_opt(0).unwrap())));
+                    }
+                }
+                let _ = Entry::update_many()
+                    .col_expr(entry::Column::IsRead, Expr::value(true))
+                    .col_expr(entry::Column::UpdatedAt, Expr::value(now))
+                    .filter(cond)
+                    .exec(db)
+                    .await?;
+            }
+        }
+        _ => {}
+    }
+    Ok(())
 }
 
 #[derive(Deserialize)]
@@ -2637,7 +3542,7 @@ async fn refresh_feed(
     else {
         return Err(not_found("feed not found"));
     };
-    let entries = if matches!(f.r#type, feed::FeedType::Rule) {
+    let (entries, meta) = if matches!(f.r#type, feed::FeedType::Rule) {
         let rule_yaml = match f.rule_id {
             Some(rid) => {
                 let r = Rule::find_by_id(rid)
@@ -2649,27 +3554,43 @@ async fn refresh_feed(
             }
             None => return Err(bad_request("rule_id required for rule-type feed")),
         };
-        refresh_rule_with_yaml(&f, &rule_yaml)
-            .await
-            .map_err(internal)?
+        (
+            refresh_rule_with_yaml(&f, &rule_yaml)
+                .await
+                .map_err(internal)?,
+            None,
+        )
     } else {
-        pipeline_refresh_feed(&f).await.map_err(internal)?
+        refresh_feed_with_meta(&f).await.map_err(internal)?
     };
 
     // insert entries
     let now = Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
     let mut inserted = 0;
+    let guids: Vec<String> = entries
+        .iter()
+        .filter_map(|n| n.guid.clone())
+        .collect();
+    let existing: std::collections::HashSet<String> = if guids.is_empty() {
+        Default::default()
+    } else {
+        Entry::find()
+            .filter(entry::Column::FeedId.eq(f.id))
+            .filter(entry::Column::Guid.is_in(guids.clone()))
+            .select_only()
+            .column(entry::Column::Guid)
+            .into_tuple::<Option<String>>()
+            .all(&st.db)
+            .await
+            .map_err(internal)?
+            .into_iter()
+            .flatten()
+            .collect()
+    };
+    let mut models: Vec<entry::ActiveModel> = Vec::new();
     for n in entries {
         if let Some(guid) = n.guid.clone() {
-            let exists = Entry::find()
-                .filter(entry::Column::FeedId.eq(f.id))
-                .filter(entry::Column::Guid.eq(guid.clone()))
-                .one(&st.db)
-                .await
-                .map_err(internal)?;
-            if exists.is_some() {
-                continue;
-            }
+            if existing.contains(&guid) { continue; }
             let mut am: entry::ActiveModel = Default::default();
             am.feed_id = Set(f.id);
             am.guid = Set(Some(guid));
@@ -2687,9 +3608,41 @@ async fn refresh_feed(
             am.is_read = Set(false);
             am.is_starred = Set(false);
             am.extras_json = Set(Some(n.extras));
-            let _ = am.insert(&st.db).await.map_err(internal)?;
-            inserted += 1;
+            models.push(am);
         }
+    }
+    if !models.is_empty() {
+        let _ = Entry::insert_many(models)
+            .on_conflict(
+                OnConflict::columns([entry::Column::FeedId, entry::Column::Guid])
+                    .do_nothing()
+                    .to_owned(),
+            )
+            .exec(&st.db)
+            .await
+            .map_err(internal)?;
+        inserted = guids.len() - existing.len();
+    }
+
+    // Update feed meta if standard fetch provided metadata
+    if let Some(m) = meta {
+        let mut fm: feed::ActiveModel = Feed::find_by_id(f.id)
+            .one(&st.db)
+            .await
+            .map_err(internal)?
+            .unwrap()
+            .into();
+        fm.checked_at = Set(Some(now));
+        fm.error_count = Set(0);
+        fm.last_status = Set(m.last_status.map(|s| s as i32));
+        fm.etag = Set(m.etag);
+        fm.last_modified = Set(m.last_modified);
+        let ok_secs: i64 = std::env::var("SCHEDULER_SUCCESS_INTERVAL_SECS")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(900);
+        fm.next_run_at = Set(Some(now + chrono::Duration::seconds(ok_secs.max(60))));
+        let _ = fm.update(&st.db).await.map_err(internal)?;
     }
 
     Ok(Json(serde_json::json!({"inserted": inserted})))
@@ -3270,4 +4223,942 @@ async fn assert_category_ownership(
         return Err(forbidden("category not owned by user"));
     }
     Ok(())
+}
+#[derive(Deserialize)]
+struct ReaderQuery {
+    output: Option<String>,
+    n: Option<u64>,
+    s: Option<String>,
+    c: Option<String>,
+    q: Option<String>,
+}
+
+#[derive(Serialize)]
+struct ReaderSubscriptionCategory {
+    id: String,
+    label: String,
+}
+
+#[derive(Serialize)]
+struct ReaderSubscriptionItem {
+    id: String,
+    title: String,
+    categories: Vec<ReaderSubscriptionCategory>,
+    url: String,
+    #[serde(rename = "htmlUrl")]
+    html_url: Option<String>,
+    #[serde(rename = "iconUrl")]
+    icon_url: Option<String>,
+}
+
+#[derive(Serialize)]
+struct ReaderSubscriptionListResp {
+    subscriptions: Vec<ReaderSubscriptionItem>,
+}
+
+async fn reader_subscription_list(
+    State(st): State<AppState>,
+    TypedHeader(Authorization(bearer)): TypedHeader<Authorization<Bearer>>,
+    _q: Query<ReaderQuery>,
+) -> ApiResult<Json<ReaderSubscriptionListResp>> {
+    let user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
+    let feeds = Feed::find()
+        .filter(feed::Column::UserId.eq(user.user_id))
+        .all(&st.db)
+        .await
+        .map_err(internal)?;
+    let cats = Category::find()
+        .filter(category::Column::UserId.eq(user.user_id))
+        .all(&st.db)
+        .await
+        .map_err(internal)?;
+    let cat_map: std::collections::HashMap<i64, String> =
+        cats.into_iter().map(|c| (c.id, c.name)).collect();
+    let items: Vec<ReaderSubscriptionItem> = feeds
+        .into_iter()
+        .map(|f| ReaderSubscriptionItem {
+            id: format!("feed/{}", f.feed_url),
+            title: f.title.unwrap_or_else(|| f.feed_url.clone()),
+            categories: f
+                .category_id
+                .and_then(|id| cat_map.get(&id).cloned())
+                .map(|name| vec![ReaderSubscriptionCategory {
+                    id: format!("user/-/label/{}", name),
+                    label: name,
+                }])
+                .unwrap_or_default(),
+            url: f.feed_url.clone(),
+            html_url: f.site_url.clone(),
+            icon_url: f
+                .favicon_id
+                .map(|i| format!("/api/v1/favicons/{}", i)),
+        })
+        .collect();
+    Ok(Json(ReaderSubscriptionListResp { subscriptions: items }))
+}
+
+#[derive(Serialize)]
+struct ReaderOrigin {
+    #[serde(rename = "streamId")]
+    stream_id: String,
+    title: Option<String>,
+    #[serde(rename = "htmlUrl")]
+    html_url: Option<String>,
+}
+
+#[derive(Serialize)]
+struct ReaderLink { href: String, r#type: &'static str }
+
+#[derive(Serialize)]
+struct ReaderContent { content: String }
+
+#[derive(Serialize)]
+struct ReaderItem {
+    id: String,
+    title: Option<String>,
+    published: i64,
+    updated: i64,
+    #[serde(rename = "crawlTimeMsec")]
+    crawl_time_msec: String,
+    categories: Vec<String>,
+    alternate: Vec<ReaderLink>,
+    origin: ReaderOrigin,
+    author: Option<String>,
+    summary: Option<ReaderContent>,
+    content: Option<ReaderContent>,
+}
+
+#[derive(Serialize)]
+struct ReaderStreamResp {
+    items: Vec<ReaderItem>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    continuation: Option<String>,
+}
+
+async fn reader_stream_contents(
+    State(st): State<AppState>,
+    TypedHeader(Authorization(bearer)): TypedHeader<Authorization<Bearer>>,
+    q: Query<ReaderQuery>,
+) -> ApiResult<Json<ReaderStreamResp>> {
+    let user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
+    let limit = q.n.unwrap_or(50).min(200);
+    let cats = Category::find()
+        .filter(category::Column::UserId.eq(user.user_id))
+        .all(&st.db)
+        .await
+        .map_err(internal)?;
+    let cat_map: std::collections::HashMap<i64, String> =
+        cats.into_iter().map(|c| (c.id, c.name)).collect();
+
+    let mut sel = Entry::find()
+        .join(sea_orm::JoinType::InnerJoin, entry::Relation::Feed.def())
+        .filter(feed::Column::UserId.eq(user.user_id));
+
+    // filter by stream id
+    if let Some(ref s) = q.s {
+        if s.starts_with("feed/") {
+            let feed_url = s.trim_start_matches("feed/");
+            sel = sel.filter(feed::Column::FeedUrl.eq(feed_url));
+        } else if s.starts_with("user/-/label/") {
+            let label = s.trim_start_matches("user/-/label/");
+            // map label to category
+            let cat = Category::find()
+                .filter(category::Column::UserId.eq(user.user_id))
+                .filter(category::Column::Name.eq(label))
+                .one(&st.db)
+                .await
+                .map_err(internal)?;
+            if let Some(cat) = cat {
+                sel = sel.filter(feed::Column::CategoryId.eq(cat.id));
+            } else {
+                sel = sel.filter(entry::Column::Id.eq(-1));
+            }
+        } else if s.ends_with("/starred") {
+            sel = sel.filter(entry::Column::IsStarred.eq(true));
+        } else if s.ends_with("/read") {
+            sel = sel.filter(entry::Column::IsRead.eq(true));
+        } else if s.ends_with("/reading-list") {
+            // default list = all items
+        }
+    }
+
+    // simple search over title/summary/content_html
+    if let Some(ref qq) = q.q {
+        if !qq.trim().is_empty() {
+            let like = format!("%{}%", qq);
+            let cond = Condition::any()
+                .add(entry::Column::Title.like(like.as_str()))
+                .add(entry::Column::Summary.like(like.as_str()))
+                .add(entry::Column::ContentHtml.like(like.as_str()));
+            sel = sel.filter(cond);
+        }
+    }
+
+    // continuation based on entry id
+    if let Some(ref c) = q.c {
+        let id_cut = c.chars().rev().take_while(|ch| ch.is_ascii_digit()).collect::<String>().chars().rev().collect::<String>();
+        if let Ok(cut) = id_cut.parse::<i64>() {
+            sel = sel.filter(entry::Column::Id.lt(cut));
+        }
+    }
+
+    sel = sel
+        .order_by_desc(entry::Column::PublishedAt)
+        .order_by_desc(entry::Column::CreatedAt)
+        .limit(limit);
+
+    let rows = sel.find_also_related(Feed).all(&st.db).await.map_err(internal)?;
+
+    let items: Vec<ReaderItem> = rows
+        .into_iter()
+        .filter_map(|(e, f)| f.map(|feed| (e, feed)))
+        .map(|(e, f)| {
+            let published = e
+                .published_at
+                .map(|d| d.timestamp())
+                .unwrap_or_else(|| e.created_at.timestamp());
+            let updated = e.updated_at.timestamp();
+            let mut categories = Vec::new();
+            // states
+            if e.is_read {
+                categories.push("user/-/state/com.google/read".to_string());
+            }
+            if e.is_starred {
+                categories.push("user/-/state/com.google/starred".to_string());
+            }
+            categories.push("user/-/state/com.google/reading-list".to_string());
+            if let Some(cid) = f.category_id {
+                if let Some(name) = cat_map.get(&cid) {
+                    categories.push(format!("user/-/label/{}", name));
+                }
+            }
+            ReaderItem {
+                id: format!("tag:captura,item:{}", e.id),
+                title: e.title.clone(),
+                published,
+                updated,
+                crawl_time_msec: (e.created_at.timestamp_millis()).to_string(),
+                categories,
+                alternate: e
+                    .url
+                    .clone()
+                    .map(|u| vec![ReaderLink { href: u, r#type: "text/html" }])
+                    .unwrap_or_default(),
+                origin: ReaderOrigin {
+                    stream_id: format!("feed/{}", f.feed_url),
+                    title: f.title.clone(),
+                    html_url: f.site_url.clone(),
+                },
+                author: e.author.clone(),
+                summary: e.summary.clone().map(|s| ReaderContent { content: s }),
+                content: e.content_html.clone().map(|s| ReaderContent { content: s }),
+            }
+        })
+        .collect();
+
+    let cont = items
+        .last()
+        .and_then(|it| it.id.split(':').last().and_then(|s| s.parse::<i64>().ok()))
+        .map(|id| format!("tag:captura,item:{}", id));
+    Ok(Json(ReaderStreamResp { items, continuation: cont }))
+}
+
+#[derive(Deserialize)]
+struct ReaderItemsIdsQuery {
+    n: Option<u64>,
+    s: Option<String>,
+    c: Option<String>,
+    xt: Option<String>,
+    q: Option<String>,
+}
+
+#[derive(Serialize)]
+struct ReaderItemRef {
+    id: String,
+    #[serde(rename = "directStreamIds")]
+    direct_stream_ids: Vec<String>,
+    #[serde(rename = "timestampUsec")]
+    timestamp_usec: String,
+}
+
+#[derive(Serialize)]
+struct ReaderItemsIdsResp {
+    #[serde(rename = "itemRefs")]
+    item_refs: Vec<ReaderItemRef>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    continuation: Option<String>,
+}
+
+async fn reader_items_ids(
+    State(st): State<AppState>,
+    TypedHeader(Authorization(bearer)): TypedHeader<Authorization<Bearer>>,
+    q: Query<ReaderItemsIdsQuery>,
+) -> ApiResult<Json<ReaderItemsIdsResp>> {
+    let user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
+    let limit = q.n.unwrap_or(50).min(500);
+    let cats = Category::find()
+        .filter(category::Column::UserId.eq(user.user_id))
+        .all(&st.db)
+        .await
+        .map_err(internal)?;
+    let cat_map: std::collections::HashMap<i64, String> =
+        cats.into_iter().map(|c| (c.id, c.name)).collect();
+
+    let mut sel = Entry::find()
+        .join(sea_orm::JoinType::InnerJoin, entry::Relation::Feed.def())
+        .filter(feed::Column::UserId.eq(user.user_id));
+    if let Some(ref s) = q.s {
+        if s.starts_with("feed/") {
+            let feed_url = s.trim_start_matches("feed/");
+            sel = sel.filter(feed::Column::FeedUrl.eq(feed_url));
+        } else if s.starts_with("user/-/label/") {
+            let label = s.trim_start_matches("user/-/label/");
+            let cat = Category::find()
+                .filter(category::Column::UserId.eq(user.user_id))
+                .filter(category::Column::Name.eq(label))
+                .one(&st.db)
+                .await
+                .map_err(internal)?;
+            if let Some(cat) = cat {
+                sel = sel.filter(feed::Column::CategoryId.eq(cat.id));
+            } else {
+                sel = sel.filter(entry::Column::Id.eq(-1));
+            }
+        } else if s.ends_with("/starred") {
+            sel = sel.filter(entry::Column::IsStarred.eq(true));
+        } else if s.ends_with("/read") {
+            sel = sel.filter(entry::Column::IsRead.eq(true));
+        } else if s.ends_with("/reading-list") {
+            // default list
+        }
+    }
+    // xt exclude tag (e.g., read)
+    if let Some(ref xt) = q.xt {
+        if xt.ends_with("/read") {
+            sel = sel.filter(entry::Column::IsRead.eq(false));
+        } else if xt.ends_with("/starred") {
+            sel = sel.filter(entry::Column::IsStarred.eq(false));
+        }
+    }
+    if let Some(ref c) = q.c {
+        let id_cut = c.chars().rev().take_while(|ch| ch.is_ascii_digit()).collect::<String>().chars().rev().collect::<String>();
+        if let Ok(cut) = id_cut.parse::<i64>() {
+            sel = sel.filter(entry::Column::Id.lt(cut));
+        }
+    }
+    if let Some(ref qq) = q.q {
+        if !qq.trim().is_empty() {
+            let like = format!("%{}%", qq);
+            let cond = Condition::any()
+                .add(entry::Column::Title.like(like.as_str()))
+                .add(entry::Column::Summary.like(like.as_str()))
+                .add(entry::Column::ContentHtml.like(like.as_str()));
+            sel = sel.filter(cond);
+        }
+    }
+    let rows = sel
+        .order_by_desc(entry::Column::PublishedAt)
+        .order_by_desc(entry::Column::CreatedAt)
+        .limit(limit)
+        .find_also_related(Feed)
+        .all(&st.db)
+        .await
+        .map_err(internal)?;
+
+    let mut item_refs = Vec::new();
+    for (e, f) in rows.iter().filter_map(|(e, f)| f.as_ref().map(|ff| (e, ff))) {
+        let ts = e
+            .published_at
+            .unwrap_or(e.created_at)
+            .timestamp_micros()
+            .to_string();
+        let mut streams = vec![
+            "user/-/state/com.google/reading-list".to_string(),
+            format!("feed/{}", f.feed_url),
+        ];
+        if let Some(cid) = f.category_id {
+            if let Some(name) = cat_map.get(&cid) {
+                streams.push(format!("user/-/label/{}", name));
+            }
+        }
+        let id = format!("tag:captura,item:{}", e.id);
+        item_refs.push(ReaderItemRef {
+            id,
+            direct_stream_ids: streams,
+            timestamp_usec: ts,
+        });
+    }
+    let cont = item_refs
+        .last()
+        .and_then(|it| it.id.split(':').last().and_then(|s| s.parse::<i64>().ok()))
+        .map(|id| format!("tag:captura,item:{}", id));
+    Ok(Json(ReaderItemsIdsResp {
+        item_refs,
+        continuation: cont,
+    }))
+}
+
+#[derive(Deserialize)]
+struct ReaderItemsContentsQuery {
+    i: Vec<String>,
+}
+
+#[derive(Serialize)]
+struct ReaderItemsContentsResp {
+    items: Vec<ReaderItem>,
+}
+
+async fn reader_items_contents(
+    State(st): State<AppState>,
+    TypedHeader(Authorization(bearer)): TypedHeader<Authorization<Bearer>>,
+    q: Query<ReaderItemsContentsQuery>,
+) -> ApiResult<Json<ReaderItemsContentsResp>> {
+    let user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
+    let mut ids: Vec<i64> = Vec::new();
+    for raw in &q.i {
+        for part in raw.split(',') {
+            let last = part.trim().split(':').last().unwrap_or("");
+            if let Ok(id) = last.parse::<i64>() {
+                ids.push(id);
+            }
+        }
+    }
+    if ids.is_empty() {
+        return Ok(Json(ReaderItemsContentsResp { items: vec![] }));
+    }
+    let rows = Entry::find()
+        .join(sea_orm::JoinType::InnerJoin, entry::Relation::Feed.def())
+        .filter(feed::Column::UserId.eq(user.user_id))
+        .filter(entry::Column::Id.is_in(ids))
+        .find_also_related(Feed)
+        .all(&st.db)
+        .await
+        .map_err(internal)?;
+    let cats = Category::find()
+        .filter(category::Column::UserId.eq(user.user_id))
+        .all(&st.db)
+        .await
+        .map_err(internal)?;
+    let cat_map: std::collections::HashMap<i64, String> =
+        cats.into_iter().map(|c| (c.id, c.name)).collect();
+    let items: Vec<ReaderItem> = rows
+        .into_iter()
+        .filter_map(|(e, f)| f.map(|feed| (e, feed)))
+        .map(|(e, f)| {
+            let published = e
+                .published_at
+                .map(|d| d.timestamp())
+                .unwrap_or_else(|| e.created_at.timestamp());
+            let updated = e.updated_at.timestamp();
+            let mut categories = Vec::new();
+            if e.is_read {
+                categories.push("user/-/state/com.google/read".to_string());
+            }
+            if e.is_starred {
+                categories.push("user/-/state/com.google/starred".to_string());
+            }
+            categories.push("user/-/state/com.google/reading-list".to_string());
+            if let Some(cid) = f.category_id {
+                if let Some(name) = cat_map.get(&cid) {
+                    categories.push(format!("user/-/label/{}", name));
+                }
+            }
+            ReaderItem {
+                id: format!("tag:captura,item:{}", e.id),
+                title: e.title.clone(),
+                published,
+                updated,
+                crawl_time_msec: (e.created_at.timestamp_millis()).to_string(),
+                categories,
+                alternate: e
+                    .url
+                    .clone()
+                    .map(|u| vec![ReaderLink { href: u, r#type: "text/html" }])
+                    .unwrap_or_default(),
+                origin: ReaderOrigin {
+                    stream_id: format!("feed/{}", f.feed_url),
+                    title: f.title.clone(),
+                    html_url: f.site_url.clone(),
+                },
+                author: e.author.clone(),
+                summary: e.summary.clone().map(|s| ReaderContent { content: s }),
+                content: e.content_html.clone().map(|s| ReaderContent { content: s }),
+            }
+        })
+        .collect();
+    Ok(Json(ReaderItemsContentsResp { items }))
+}
+
+#[derive(Deserialize)]
+struct ReaderEditTagForm {
+    // add/remove tag
+    a: Option<String>,
+    r: Option<String>,
+    // item ids (comma separated)
+    i: Option<String>,
+}
+
+async fn reader_edit_tag(
+    State(st): State<AppState>,
+    TypedHeader(Authorization(bearer)): TypedHeader<Authorization<Bearer>>,
+    Form(f): Form<ReaderEditTagForm>,
+) -> ApiResult<&'static str> {
+    let user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
+    let ids: Vec<i64> = f
+        .i
+        .as_deref()
+        .unwrap_or("")
+        .split(',')
+        .filter_map(|s| s.trim().parse::<i64>().ok())
+        .collect();
+    if ids.is_empty() { return Ok("OK"); }
+
+    // ensure items belong to user
+    let feed_ids: Vec<i64> = Feed::find()
+        .filter(feed::Column::UserId.eq(user.user_id))
+        .select_only()
+        .column(feed::Column::Id)
+        .into_tuple()
+        .all(&st.db)
+        .await
+        .map_err(internal)?;
+
+    let now = Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
+    if let Some(a) = f.a.as_deref() {
+        if a.ends_with("/read") {
+            let _ = Entry::update_many()
+                .col_expr(entry::Column::IsRead, Expr::value(true))
+                .col_expr(entry::Column::UpdatedAt, Expr::value(now))
+                .filter(entry::Column::Id.is_in(ids.clone()))
+                .filter(entry::Column::FeedId.is_in(feed_ids.clone()))
+                .exec(&st.db)
+                .await
+                .map_err(internal)?;
+        } else if a.ends_with("/starred") {
+            let _ = Entry::update_many()
+                .col_expr(entry::Column::IsStarred, Expr::value(true))
+                .col_expr(entry::Column::UpdatedAt, Expr::value(now))
+                .filter(entry::Column::Id.is_in(ids.clone()))
+                .filter(entry::Column::FeedId.is_in(feed_ids.clone()))
+                .exec(&st.db)
+                .await
+                .map_err(internal)?;
+        }
+    }
+    if let Some(rm) = f.r.as_deref() {
+        if rm.ends_with("/read") {
+            let _ = Entry::update_many()
+                .col_expr(entry::Column::IsRead, Expr::value(false))
+                .col_expr(entry::Column::UpdatedAt, Expr::value(now))
+                .filter(entry::Column::Id.is_in(ids.clone()))
+                .filter(entry::Column::FeedId.is_in(feed_ids.clone()))
+                .exec(&st.db)
+                .await
+                .map_err(internal)?;
+        } else if rm.ends_with("/starred") {
+            let _ = Entry::update_many()
+                .col_expr(entry::Column::IsStarred, Expr::value(false))
+                .col_expr(entry::Column::UpdatedAt, Expr::value(now))
+                .filter(entry::Column::Id.is_in(ids.clone()))
+                .filter(entry::Column::FeedId.is_in(feed_ids.clone()))
+                .exec(&st.db)
+                .await
+                .map_err(internal)?;
+        }
+    }
+    Ok("OK")
+}
+
+#[derive(Deserialize)]
+struct ReaderMarkAllForm {
+    s: Option<String>, // stream id (feed/..., user/-/label/..., reading-list)
+    ts: Option<i64>,   // timestamp
+}
+
+async fn reader_mark_all_read(
+    State(st): State<AppState>,
+    TypedHeader(Authorization(bearer)): TypedHeader<Authorization<Bearer>>,
+    Form(f): Form<ReaderMarkAllForm>,
+) -> ApiResult<&'static str> {
+    let user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
+    let mut cond = Condition::all();
+    // scope to user
+    cond = cond.add(entry::Column::FeedId.in_subquery({
+        use sea_orm::sea_query::{Alias, Expr as QExpr, Query as QQuery, SelectStatement};
+        let mut q: SelectStatement = QQuery::select();
+        q.column((Alias::new("feed"), Alias::new("id")));
+        q.from(Alias::new("feed"));
+        q.and_where(QExpr::col((Alias::new("feed"), Alias::new("user_id"))).eq(user.user_id));
+        q
+    }));
+    cond = cond.add(entry::Column::IsRead.eq(false));
+    if let Some(ts) = f.ts {
+        if let Some(dt) = chrono::DateTime::from_timestamp(ts, 0) {
+            cond = cond.add(entry::Column::CreatedAt.lte(dt.with_timezone(&FixedOffset::east_opt(0).unwrap())));
+        }
+    }
+    if let Some(ref s) = f.s {
+        if s.starts_with("feed/") {
+            let feed_url = s.trim_start_matches("feed/");
+            cond = cond.add(entry::Column::FeedId.in_subquery({
+                use sea_orm::sea_query::{Alias, Expr as QExpr, Query as QQuery, SelectStatement};
+                let mut q: SelectStatement = QQuery::select();
+                q.column((Alias::new("feed"), Alias::new("id")));
+                q.from(Alias::new("feed"));
+                q.and_where(QExpr::col((Alias::new("feed"), Alias::new("user_id"))).eq(user.user_id));
+                q.and_where(QExpr::col((Alias::new("feed"), Alias::new("feed_url"))).eq(feed_url));
+                q
+            }));
+        } else if s.starts_with("user/-/label/") {
+            let label = s.trim_start_matches("user/-/label/");
+            cond = cond.add(entry::Column::FeedId.in_subquery({
+                use sea_orm::sea_query::{Alias, Expr as QExpr, Query as QQuery, SelectStatement};
+                let mut sub: SelectStatement = QQuery::select();
+                sub.column((Alias::new("category"), Alias::new("id")));
+                sub.from(Alias::new("category"));
+                sub.and_where(QExpr::col((Alias::new("category"), Alias::new("name"))).eq(label));
+
+                let mut q: SelectStatement = QQuery::select();
+                q.column((Alias::new("feed"), Alias::new("id")));
+                q.from(Alias::new("feed"));
+                q.and_where(QExpr::col((Alias::new("feed"), Alias::new("user_id"))).eq(user.user_id));
+                q.and_where(QExpr::col((Alias::new("feed"), Alias::new("category_id"))).in_subquery(sub));
+                q
+            }));
+        }
+    }
+    let now = Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
+    let _ = Entry::update_many()
+        .col_expr(entry::Column::IsRead, Expr::value(true))
+        .col_expr(entry::Column::UpdatedAt, Expr::value(now))
+        .filter(cond)
+        .exec(&st.db)
+        .await
+        .map_err(internal)?;
+    Ok("OK")
+}
+
+#[derive(Serialize)]
+struct ReaderUnreadCountItem {
+    id: String,
+    count: i64,
+    #[serde(rename = "newestItemTimestampUsec")]
+    newest_item_ts_usec: String,
+}
+
+#[derive(Serialize)]
+struct ReaderUnreadCountResp {
+    unreadcounts: Vec<ReaderUnreadCountItem>,
+}
+
+async fn reader_unread_count(
+    State(st): State<AppState>,
+    TypedHeader(Authorization(bearer)): TypedHeader<Authorization<Bearer>>,
+) -> ApiResult<Json<ReaderUnreadCountResp>> {
+    let user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
+    // feeds map
+    let feeds = Feed::find()
+        .filter(feed::Column::UserId.eq(user.user_id))
+        .all(&st.db)
+        .await
+        .map_err(internal)?;
+    let mut feed_map = std::collections::HashMap::new();
+    for f in &feeds {
+        feed_map.insert(f.id, f.clone());
+    }
+    // unread counts per feed (simple per-feed queries for clarity)
+    let mut per_feed: Vec<(i64, i64)> = Vec::new();
+    for f in &feeds {
+        let cnt = Entry::find()
+            .filter(entry::Column::FeedId.eq(f.id))
+            .filter(entry::Column::IsRead.eq(false))
+            .count(&st.db)
+            .await
+            .map_err(internal)? as i64;
+        if cnt > 0 { per_feed.push((f.id, cnt)); }
+    }
+    // newest unread per scope (total + feed + label)
+    let newest_total = Entry::find()
+        .join(sea_orm::JoinType::InnerJoin, entry::Relation::Feed.def())
+        .filter(feed::Column::UserId.eq(user.user_id))
+        .filter(entry::Column::IsRead.eq(false))
+        .order_by_desc(entry::Column::PublishedAt)
+        .order_by_desc(entry::Column::CreatedAt)
+        .one(&st.db)
+        .await
+        .map_err(internal)?
+        .map(|e| e.published_at.unwrap_or(e.created_at).timestamp_micros())
+        .unwrap_or(0);
+
+    let mut items: Vec<ReaderUnreadCountItem> = Vec::new();
+    // total reading list
+    let total_unread = Entry::find()
+        .join(sea_orm::JoinType::InnerJoin, entry::Relation::Feed.def())
+        .filter(feed::Column::UserId.eq(user.user_id))
+        .filter(entry::Column::IsRead.eq(false))
+        .count(&st.db)
+        .await
+        .map_err(internal)?;
+    items.push(ReaderUnreadCountItem {
+        id: "user/-/state/com.google/reading-list".to_string(),
+        count: total_unread as i64,
+        newest_item_ts_usec: newest_total.to_string(),
+    });
+    // per feed
+    for (fid, cnt) in per_feed {
+        if let Some(f) = feed_map.get(&fid) {
+            // newest for this feed
+            let newest = Entry::find()
+                .filter(entry::Column::FeedId.eq(fid))
+                .filter(entry::Column::IsRead.eq(false))
+                .order_by_desc(entry::Column::PublishedAt)
+                .order_by_desc(entry::Column::CreatedAt)
+                .one(&st.db)
+                .await
+                .map_err(internal)?
+                .map(|e| e.published_at.unwrap_or(e.created_at).timestamp_micros())
+                .unwrap_or(0);
+            items.push(ReaderUnreadCountItem {
+                id: format!("feed/{}", f.feed_url),
+                count: cnt,
+                newest_item_ts_usec: newest.to_string(),
+            });
+        }
+    }
+    // per label (category)
+    let cats = Category::find()
+        .filter(category::Column::UserId.eq(user.user_id))
+        .all(&st.db)
+        .await
+        .map_err(internal)?;
+    for c in cats {
+        // count unread where feed.category_id = c.id
+        let cnt = Entry::find()
+            .join(sea_orm::JoinType::InnerJoin, entry::Relation::Feed.def())
+            .filter(feed::Column::UserId.eq(user.user_id))
+            .filter(feed::Column::CategoryId.eq(c.id))
+            .filter(entry::Column::IsRead.eq(false))
+            .count(&st.db)
+            .await
+            .map_err(internal)? as i64;
+        if cnt > 0 {
+            let newest = Entry::find()
+                .join(sea_orm::JoinType::InnerJoin, entry::Relation::Feed.def())
+                .filter(feed::Column::UserId.eq(user.user_id))
+                .filter(feed::Column::CategoryId.eq(c.id))
+                .filter(entry::Column::IsRead.eq(false))
+                .order_by_desc(entry::Column::PublishedAt)
+                .order_by_desc(entry::Column::CreatedAt)
+                .one(&st.db)
+                .await
+                .map_err(internal)?
+                .map(|e| e.published_at.unwrap_or(e.created_at).timestamp_micros())
+                .unwrap_or(0);
+            items.push(ReaderUnreadCountItem {
+                id: format!("user/-/label/{}", c.name),
+                count: cnt,
+                newest_item_ts_usec: newest.to_string(),
+            });
+        }
+    }
+    Ok(Json(ReaderUnreadCountResp { unreadcounts: items }))
+}
+
+#[derive(Deserialize)]
+struct ReaderQuickAddForm { quickadd: String }
+
+#[derive(Serialize)]
+struct ReaderQuickAddResp {
+    numResults: i32,
+    streamId: String,
+    query: String,
+}
+
+async fn reader_subscription_quickadd(
+    State(st): State<AppState>,
+    TypedHeader(Authorization(bearer)): TypedHeader<Authorization<Bearer>>,
+    Form(f): Form<ReaderQuickAddForm>,
+) -> ApiResult<Json<ReaderQuickAddResp>> {
+    let user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
+    let url = f.quickadd.trim();
+    // exists?
+    let dup = Feed::find()
+        .filter(feed::Column::UserId.eq(user.user_id))
+        .filter(feed::Column::FeedUrl.eq(url))
+        .one(&st.db)
+        .await
+        .map_err(internal)?;
+    if dup.is_none() {
+        let now = Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
+        let am = feed::ActiveModel {
+            user_id: Set(user.user_id),
+            category_id: Set(None),
+            r#type: Set(feed::FeedType::Rss),
+            title: Set(None),
+            site_url: Set(None),
+            feed_url: Set(url.to_string()),
+            rule_id: Set(None),
+            user_agent: Set(None),
+            headers_json: Set(None),
+            cookies: Set(None),
+            proxy_url: Set(None),
+            fetch_via_proxy: Set(false),
+            disable_http2: Set(false),
+            allow_invalid_certs: Set(false),
+            request_timeout_ms: Set(None),
+            checked_at: Set(None),
+            next_run_at: Set(None),
+            etag: Set(None),
+            last_modified: Set(None),
+            last_status: Set(None),
+            error_count: Set(0),
+            disabled: Set(false),
+            scraper_rules: Set(None),
+            rewrite_rules: Set(None),
+            blocklist_rules: Set(None),
+            keeplist_rules: Set(None),
+            url_rewrite_rules: Set(None),
+            block_filter_entry_rules: Set(None),
+            keep_filter_entry_rules: Set(None),
+            created_at: Set(now),
+            updated_at: Set(now),
+            favicon_id: Set(None),
+            ..Default::default()
+        };
+        let _ = am.insert(&st.db).await.map_err(internal)?;
+    }
+    Ok(Json(ReaderQuickAddResp { numResults: 1, streamId: format!("feed/{}", url), query: url.to_string() }))
+}
+
+#[derive(Deserialize)]
+struct ReaderSubEditForm {
+    ac: String, // subscribe | unsubscribe | edit
+    s: String,  // stream id: feed/<url>
+    t: Option<String>, // title
+    a: Option<String>, // add label id
+    r: Option<String>, // remove label id
+}
+
+async fn reader_subscription_edit(
+    State(st): State<AppState>,
+    TypedHeader(Authorization(bearer)): TypedHeader<Authorization<Bearer>>,
+    Form(f): Form<ReaderSubEditForm>,
+) -> ApiResult<&'static str> {
+    let user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
+    let feed_url = f.s.trim_start_matches("feed/");
+    match f.ac.as_str() {
+        "subscribe" => {
+            let exists = Feed::find()
+                .filter(feed::Column::UserId.eq(user.user_id))
+                .filter(feed::Column::FeedUrl.eq(feed_url))
+                .one(&st.db)
+                .await
+                .map_err(internal)?;
+            if exists.is_none() {
+                let now = Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
+                // optional category from a label
+                let category_id = if let Some(a) = f.a.as_deref() {
+                    if a.starts_with("user/-/label/") {
+                        let name = a.trim_start_matches("user/-/label/").to_string();
+                        ensure_category(&st.db, user.user_id, &name, now).await.map_err(internal)?
+                    } else { None }
+                } else { None };
+                let am = feed::ActiveModel {
+                    user_id: Set(user.user_id),
+                    category_id: Set(category_id),
+                    r#type: Set(feed::FeedType::Rss),
+                    title: Set(f.t.clone()),
+                    site_url: Set(None),
+                    feed_url: Set(feed_url.to_string()),
+                    rule_id: Set(None),
+                    user_agent: Set(None),
+                    headers_json: Set(None),
+                    cookies: Set(None),
+                    proxy_url: Set(None),
+                    fetch_via_proxy: Set(false),
+                    disable_http2: Set(false),
+                    allow_invalid_certs: Set(false),
+                    request_timeout_ms: Set(None),
+                    checked_at: Set(None),
+                    next_run_at: Set(None),
+                    etag: Set(None),
+                    last_modified: Set(None),
+                    last_status: Set(None),
+                    error_count: Set(0),
+                    disabled: Set(false),
+                    scraper_rules: Set(None),
+                    rewrite_rules: Set(None),
+                    blocklist_rules: Set(None),
+                    keeplist_rules: Set(None),
+                    url_rewrite_rules: Set(None),
+                    block_filter_entry_rules: Set(None),
+                    keep_filter_entry_rules: Set(None),
+                    created_at: Set(now),
+                    updated_at: Set(now),
+                    favicon_id: Set(None),
+                    ..Default::default()
+                };
+                let _ = am.insert(&st.db).await.map_err(internal)?;
+            }
+        }
+        "unsubscribe" => {
+            if let Some(fm) = Feed::find()
+                .filter(feed::Column::UserId.eq(user.user_id))
+                .filter(feed::Column::FeedUrl.eq(feed_url))
+                .one(&st.db)
+                .await
+                .map_err(internal)?
+            {
+                let am: feed::ActiveModel = fm.into();
+                am.delete(&st.db).await.map_err(internal)?;
+            }
+        }
+        "edit" => {
+            if let Some(mut fm) = Feed::find()
+                .filter(feed::Column::UserId.eq(user.user_id))
+                .filter(feed::Column::FeedUrl.eq(feed_url))
+                .one(&st.db)
+                .await
+                .map_err(internal)?
+            {
+                let mut am: feed::ActiveModel = fm.into();
+                if let Some(t) = f.t.clone() { am.title = Set(Some(t)); }
+                if let Some(a) = f.a.as_deref() {
+                    if a.starts_with("user/-/label/") {
+                        let now = Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
+                        let name = a.trim_start_matches("user/-/label/");
+                        am.category_id = Set(ensure_category(&st.db, user.user_id, name, now).await.map_err(internal)?);
+                    }
+                }
+                if let Some(rm) = f.r.as_deref() {
+                    if rm.starts_with("user/-/label/") {
+                        // 单分类模型：移除等同于置空
+                        am.category_id = Set(None);
+                    }
+                }
+                let _ = am.update(&st.db).await.map_err(internal)?;
+            }
+        }
+        _ => {}
+    }
+    Ok("OK")
+}
+
+async fn ensure_category(
+    db: &DatabaseConnection,
+    user_id: i64,
+    name: &str,
+    now: chrono::DateTime<FixedOffset>,
+) -> Result<Option<i64>, DbErr> {
+    if let Some(c) = Category::find()
+        .filter(category::Column::UserId.eq(user_id))
+        .filter(category::Column::Name.eq(name))
+        .one(db)
+        .await? {
+        Ok(Some(c.id))
+    } else {
+        let am = category::ActiveModel { user_id: Set(user_id), name: Set(name.to_string()), created_at: Set(now), ..Default::default() };
+        let c = am.insert(db).await?;
+        Ok(Some(c.id))
+    }
 }

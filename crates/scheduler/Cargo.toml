@@ -14,3 +14,4 @@ captura-pipeline = { path = "../pipeline" }
 captura-rules = { path = "../rules" }
 sea-orm.workspace = true
 reqwest.workspace = true
+futures = "0.3"

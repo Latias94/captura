@@ -10,49 +10,235 @@ use reqwest::header::HeaderMap;
 use reqwest::Client;
 use scraper::{Html, Selector};
 use tracing::instrument;
+use url::Url;
+use regex::Regex;
+
+#[derive(Debug, Clone)]
+pub struct RefreshMeta {
+    pub last_status: Option<u16>,
+    pub etag: Option<String>,
+    pub last_modified: Option<String>,
+}
 
 #[instrument(skip(feed))]
 pub async fn refresh_feed(feed: &feed::Model) -> Result<Vec<NormalizedEntry>> {
+    let (entries, _meta) = refresh_feed_with_meta(feed).await?;
+    Ok(entries)
+}
+
+#[instrument(skip(feed))]
+pub async fn refresh_feed_with_meta(
+    feed: &feed::Model,
+) -> Result<(Vec<NormalizedEntry>, Option<RefreshMeta>)> {
     match feed.r#type {
         feed::FeedType::Rss | feed::FeedType::Atom | feed::FeedType::Json => {
-            refresh_standard_feed(feed).await
+            refresh_standard_feed_with_meta(feed).await
         }
-        feed::FeedType::Rule => Ok(vec![]),
+        feed::FeedType::Rule => Ok((vec![], None)),
     }
 }
 
 #[instrument(skip(feed))]
-async fn refresh_standard_feed(feed: &feed::Model) -> Result<Vec<NormalizedEntry>> {
+async fn refresh_standard_feed_with_meta(
+    feed: &feed::Model,
+) -> Result<(Vec<NormalizedEntry>, Option<RefreshMeta>)> {
+    let mut headers = HeaderMap::new();
+    // Merge custom headers from DB
+    if let Some(ref json) = feed.headers_json {
+        if let Some(map) = json.as_object() {
+            for (k, v) in map {
+                if let Some(s) = v.as_str() {
+                    if let Ok(name) = reqwest::header::HeaderName::from_bytes(k.as_bytes()) {
+                        if let Ok(val) = reqwest::header::HeaderValue::from_str(s) {
+                            headers.insert(name, val);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    // Cookies
+    if let Some(ref c) = feed.cookies {
+        if let Ok(val) = reqwest::header::HeaderValue::from_str(c) {
+            headers.insert(reqwest::header::COOKIE, val);
+        }
+    }
+
     let opts = FetchOptions {
         user_agent: feed.user_agent.clone(),
         etag: feed.etag.clone(),
         last_modified: feed.last_modified.clone(),
-        headers: HeaderMap::new(),
+        headers,
         timeout: feed
             .request_timeout_ms
             .map(|ms| std::time::Duration::from_millis(ms as u64)),
+        allow_invalid_certs: feed.allow_invalid_certs,
+        disable_http2: feed.disable_http2,
+        proxy_url: if feed.fetch_via_proxy {
+            feed.proxy_url.clone()
+        } else {
+            None
+        },
     };
     let client = HttpFetcher::new(opts)?;
-    let parsed = client.fetch_feed(&feed.feed_url).await?;
-    let entries = parsed
-        .entries
-        .into_iter()
-        .map(|e| {
-            let summary_text = e.summary.as_ref().map(|s| s.content.clone());
-            NormalizedEntry {
-                guid: Some(e.id),
-                url: e.links.get(0).map(|l| l.href.clone()),
-                title: e.title.map(|t| t.content),
-                summary: summary_text.clone(),
-                content_html: e.content.and_then(|c| c.body).or(summary_text),
-                author: e.authors.get(0).map(|a| a.name.clone()),
-                published_at: e.published.or(e.updated).map(|d| d.into()),
-                enclosures: vec![],
-                extras: serde_json::json!({}),
+    let out = client.fetch_feed_with_meta(&feed.feed_url).await?;
+    let meta = Some(RefreshMeta {
+        last_status: Some(out.meta.status.as_u16()),
+        etag: out.meta.etag.clone(),
+        last_modified: out.meta.last_modified.clone(),
+    });
+    if let Some(parsed) = out.feed {
+        let mut entries: Vec<NormalizedEntry> = parsed
+            .entries
+            .into_iter()
+            .map(|e| {
+                let summary_text = e.summary.as_ref().map(|s| s.content.clone());
+                let mut url = e.links.get(0).map(|l| clean_url(&l.href));
+                // URL rewrite rules
+                if let Some(ref rules) = feed.url_rewrite_rules {
+                    if let Some(u) = &url {
+                        url = Some(apply_rewrite_rules(u, rules));
+                    }
+                }
+                let mut content_html = e
+                    .content
+                    .and_then(|c| c.body)
+                    .or(summary_text.clone())
+                    .map(|html| sanitize_html(&html));
+                // Content rewrite rules
+                if let Some(ref rules) = feed.rewrite_rules {
+                    if let Some(c) = &content_html {
+                        content_html = Some(apply_rewrite_rules(c, rules));
+                    }
+                }
+                NormalizedEntry {
+                    guid: Some(e.id),
+                    url,
+                    title: e.title.map(|t| t.content),
+                    summary: summary_text.clone(),
+                    content_html,
+                    author: e.authors.get(0).map(|a| a.name.clone()),
+                    published_at: e.published.or(e.updated).map(|d| d.into()),
+                    enclosures: vec![],
+                    extras: serde_json::json!({}),
+                }
+            })
+            .collect();
+        apply_entry_filters(feed, &mut entries);
+        Ok((entries, meta))
+    } else {
+        Ok((vec![], meta))
+    }
+}
+
+fn sanitize_html(input: &str) -> String {
+    let mut builder = ammonia::Builder::default();
+    // 允许常用媒体/链接标签
+    builder.add_tags([
+        "a", "p", "div", "span", "img", "strong", "em", "ul", "ol", "li", "code", "pre",
+        "blockquote", "h1", "h2", "h3", "h4", "h5", "h6", "br", "hr", "table", "thead",
+        "tbody", "th", "tr", "td",
+    ]);
+    builder.clean(input).to_string()
+}
+
+fn clean_url(u: &str) -> String {
+    if let Ok(mut url) = Url::parse(u) {
+        // 过滤常见跟踪参数
+        let mut pairs: Vec<(String, String)> = url
+            .query_pairs()
+            .map(|(k, v)| (k.into_owned(), v.into_owned()))
+            .collect();
+        let trackers = [
+            "utm_source",
+            "utm_medium",
+            "utm_campaign",
+            "utm_term",
+            "utm_content",
+            "gclid",
+            "fbclid",
+            "mc_cid",
+            "mc_eid",
+            "ref",
+            "ref_src",
+        ];
+        pairs.retain(|(k, _)| !trackers.contains(&k.as_str()));
+        if pairs.is_empty() {
+            url.set_query(None);
+        } else {
+            let new_query = pairs
+                .into_iter()
+                .map(|(k, v)| format!("{}={}", k, urlencoding::encode(&v)))
+                .collect::<Vec<_>>()
+                .join("&");
+            url.set_query(Some(&new_query));
+        }
+        url.to_string()
+    } else {
+        u.to_string()
+    }
+}
+
+fn apply_entry_filters(feed: &feed::Model, entries: &mut Vec<NormalizedEntry>) {
+    let mut keep_regexes: Vec<Regex> = Vec::new();
+    let mut block_regexes: Vec<Regex> = Vec::new();
+    if let Some(ref s) = feed.keep_filter_entry_rules {
+        for line in s.lines() {
+            if let Ok(rx) = Regex::new(line.trim()) { keep_regexes.push(rx); }
+        }
+    }
+    if let Some(ref s) = feed.block_filter_entry_rules {
+        for line in s.lines() {
+            if let Ok(rx) = Regex::new(line.trim()) { block_regexes.push(rx); }
+        }
+    }
+    if keep_regexes.is_empty() && block_regexes.is_empty() { return; }
+
+    entries.retain(|e| {
+        let mut hay = String::new();
+        if let Some(t) = &e.title { hay.push_str(t); hay.push('\n'); }
+        if let Some(s) = &e.summary { hay.push_str(s); hay.push('\n'); }
+        if let Some(c) = &e.content_html { hay.push_str(c); }
+        // apply keep first: if any keep rules and none match, drop
+        if !keep_regexes.is_empty() {
+            if !keep_regexes.iter().any(|rx| rx.is_match(&hay)) {
+                return false;
             }
-        })
-        .collect();
-    Ok(entries)
+        }
+        // apply block: if any block matches, drop
+        if block_regexes.iter().any(|rx| rx.is_match(&hay)) {
+            return false;
+        }
+        true
+    });
+}
+
+fn apply_rewrite_rules(input: &str, rules: &str) -> String {
+    let mut out = input.to_string();
+    for line in rules.lines() {
+        let s = line.trim();
+        if s.is_empty() || s.starts_with('#') { continue; }
+        // support sed-like: s/pattern/repl/
+        if s.starts_with('s') && s.len() > 2 {
+            let delim = s.chars().nth(1).unwrap();
+            let parts: Vec<&str> = s[2..].split(delim).collect();
+            if parts.len() >= 2 {
+                let pat = parts.get(0).copied().unwrap_or("");
+                let rep = parts.get(1).copied().unwrap_or("");
+                if let Ok(rx) = Regex::new(pat) {
+                    out = rx.replace_all(&out, rep).to_string();
+                    continue;
+                }
+            }
+        }
+        // fallback: regex => replacement (=> delimiter)
+        if let Some((pat, rep)) = s.split_once("=>") {
+            if let Ok(rx) = Regex::new(pat.trim()) {
+                out = rx.replace_all(&out, rep.trim()).to_string();
+            }
+        }
+    }
+    out
 }
 
 #[instrument(skip(feed, yaml))]

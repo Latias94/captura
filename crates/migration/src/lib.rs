@@ -7,6 +7,7 @@ use sea_orm_migration::sea_orm::DatabaseConnection;
 mod m20251101_000001_init;
 mod m20251101_000002_user_fever;
 mod m20251111_000003_favicon;
+mod m20251111_000004_token_expiry;
 
 pub struct Migrator;
 
@@ -17,6 +18,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20251101_000001_init::Migration),
             Box::new(m20251101_000002_user_fever::Migration),
             Box::new(m20251111_000003_favicon::Migration),
+            Box::new(m20251111_000004_token_expiry::Migration),
         ]
     }
 }
