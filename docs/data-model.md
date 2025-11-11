@@ -1,0 +1,60 @@
+# Data Model (Initial)
+
+This document summarizes the initial schema intended to avoid frequent breaking changes while keeping room for growth. It is influenced by Miniflux, FreshRSS and RSSHub use-cases.
+
+## Entities
+
+- user
+  - id (PK), username (unique), password_hash, fever_key_md5 (nullable), created_at
+- category
+  - id (PK), user_id (FK user), name, created_at
+- rule
+  - id (PK), rule_id (unique), version, namespace, description, yaml (DSL), examples_json, verified_at, maintainer, created_at, updated_at
+- feed
+  - id (PK), user_id (FK user), category_id (FK category, nullable)
+  - type: rss | atom | json | rule
+  - title, site_url, feed_url (for rule-type: source URL)
+  - favicon_id (FK favicon, nullable), rule_id (FK rule, nullable)
+  - fetch options: user_agent, headers_json, cookies, proxy_url, fetch_via_proxy, disable_http2, allow_invalid_certs, request_timeout_ms
+  - scheduling & state: checked_at, next_run_at, etag, last_modified, last_status, error_count, disabled
+  - rewriting & filtering: scraper_rules, rewrite_rules, blocklist_rules, keeplist_rules, url_rewrite_rules, block_filter_entry_rules, keep_filter_entry_rules
+  - created_at, updated_at
+  - index: unique(user_id, feed_url)
+- entry
+  - id (PK), feed_id (FK feed)
+  - guid (unique per feed), url, title, summary, content_html, author, published_at, hash
+  - flags: is_read, is_starred
+  - extras_json
+  - created_at, updated_at
+  - index: unique(feed_id, guid), index(feed_id, published_at)
+- enclosure
+  - id (PK), entry_id (FK entry), url, mime, length, kind
+- label
+  - id (PK), user_id (FK user), name, color, created_at
+  - index: unique(user_id, name)
+- entry_label
+  - id (PK), entry_id (FK entry), label_id (FK label)
+  - index: unique(entry_id, label_id)
+- job
+  - id (PK), user_id (FK user), feed_id (FK), rule_id (FK)
+  - job_type: feed_refresh | rule_refresh | favicon | prune
+  - status: pending | running | done | failed
+  - priority, run_at, attempts, last_error, created_at, updated_at
+  - index: (status, run_at)
+
+## Notes
+
+- Feed owns user_id to keep implementation simple (Miniflux approach). Shared feeds can be considered later with a separate mapping.
+- headers_json and extras_json are JSON-typed in Postgres, TEXT-backed JSON in SQLite; the API normalizes I/O.
+- Filtering/rewriting fields are TEXT for portability; future versions can encode them with a richer format if needed.
+- request_timeout_ms is per-feed, while global client defaults will be configured in service settings.
+- Rule keeps YAML + examples to support validation toolchain and snapshot tests.
+
+## Future-proofing
+
+- Add optional tables for integration/webhook, favicon cache, read-states history, and error logs without breaking existing schema.
+- Introduce a `host_policy` table if per-host quotas are required; current design can compute quotas in scheduler using aggregated queries.
+- Consider a `setting` KV store per user for UI preferences; it is orthogonal to content storage.
+- favicon
+  - id (PK), feed_id (FK feed), url, mime, data (binary), created_at, updated_at
+  - index: (feed_id)

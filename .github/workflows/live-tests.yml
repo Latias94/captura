@@ -1,0 +1,31 @@
+name: Live Tests (Manual)
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CAPTURA_TEST_LIVE: "1"
+      RUST_BACKTRACE: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+      - name: Build workspace
+        run: cargo build --workspace
+      - name: Run pipeline live tests
+        run: cargo test -p captura-pipeline -- --ignored --test-threads=1
+      - name: Run API live tests
+        run: cargo test -p captura-api -- --ignored --test-threads=1
+      - name: Run Scheduler live tests
+        run: cargo test -p captura-scheduler -- --ignored --test-threads=1
+

@@ -1,0 +1,39 @@
+[package]
+name = "captura-api"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow.workspace = true
+axum.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+sea-orm.workspace = true
+chrono.workspace = true
+captura-common = { path = "../common" }
+captura-storage = { path = "../storage" }
+captura-migration = { path = "../migration" }
+captura-rules = { path = "../rules" }
+captura-fetcher = { path = "../fetcher" }
+captura-crawler = { path = "../crawler" }
+captura-scheduler = { path = "../scheduler" }
+captura-pipeline = { path = "../pipeline" }
+sha2.workspace = true
+argon2.workspace = true
+rand_core.workspace = true
+axum-extra = { version = "0.9", features = ["typed-header"] }
+headers = "0.4"
+quick-xml.workspace = true
+url.workspace = true
+md-5.workspace = true
+base64.workspace = true
+reqwest.workspace = true
+scraper.workspace = true
+once_cell.workspace = true
+
+[dev-dependencies]
+http-body-util = "0.1"
+futures = "0.3"

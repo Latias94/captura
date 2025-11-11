@@ -1,0 +1,16 @@
+[package]
+name = "captura-scheduler"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow.workspace = true
+chrono.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+captura-common = { path = "../common" }
+captura-storage = { path = "../storage" }
+captura-pipeline = { path = "../pipeline" }
+captura-rules = { path = "../rules" }
+sea-orm.workspace = true
+reqwest.workspace = true

@@ -1,0 +1,504 @@
+//! Pipeline orchestrates fetcher / crawler / rules execution
+//! into normalized entries ready for persistence.
+
+use captura_common::{Error, NormalizedEntry, Result};
+use captura_crawler::{self as crawler, CrawlOptions};
+use captura_fetcher::{FetchOptions, HttpFetcher};
+use captura_rules::{parse_rule, FetchSpec, RuleSpec};
+use captura_storage::entity::feed;
+use reqwest::header::HeaderMap;
+use reqwest::Client;
+use scraper::{Html, Selector};
+use tracing::instrument;
+
+#[instrument(skip(feed))]
+pub async fn refresh_feed(feed: &feed::Model) -> Result<Vec<NormalizedEntry>> {
+    match feed.r#type {
+        feed::FeedType::Rss | feed::FeedType::Atom | feed::FeedType::Json => {
+            refresh_standard_feed(feed).await
+        }
+        feed::FeedType::Rule => Ok(vec![]),
+    }
+}
+
+#[instrument(skip(feed))]
+async fn refresh_standard_feed(feed: &feed::Model) -> Result<Vec<NormalizedEntry>> {
+    let opts = FetchOptions {
+        user_agent: feed.user_agent.clone(),
+        etag: feed.etag.clone(),
+        last_modified: feed.last_modified.clone(),
+        headers: HeaderMap::new(),
+        timeout: feed
+            .request_timeout_ms
+            .map(|ms| std::time::Duration::from_millis(ms as u64)),
+    };
+    let client = HttpFetcher::new(opts)?;
+    let parsed = client.fetch_feed(&feed.feed_url).await?;
+    let entries = parsed
+        .entries
+        .into_iter()
+        .map(|e| {
+            let summary_text = e.summary.as_ref().map(|s| s.content.clone());
+            NormalizedEntry {
+                guid: Some(e.id),
+                url: e.links.get(0).map(|l| l.href.clone()),
+                title: e.title.map(|t| t.content),
+                summary: summary_text.clone(),
+                content_html: e.content.and_then(|c| c.body).or(summary_text),
+                author: e.authors.get(0).map(|a| a.name.clone()),
+                published_at: e.published.or(e.updated).map(|d| d.into()),
+                enclosures: vec![],
+                extras: serde_json::json!({}),
+            }
+        })
+        .collect();
+    Ok(entries)
+}
+
+#[instrument(skip(feed, yaml))]
+pub async fn refresh_rule_with_yaml(
+    feed: &feed::Model,
+    yaml: &str,
+) -> Result<Vec<NormalizedEntry>> {
+    let spec: RuleSpec = parse_rule(yaml)?;
+    refresh_rule_feed(feed, &spec).await
+}
+
+#[instrument(skip(feed, spec))]
+pub async fn refresh_rule_feed(
+    feed: &feed::Model,
+    spec: &RuleSpec,
+) -> Result<Vec<NormalizedEntry>> {
+    let client = Client::builder()
+        .user_agent(spec.fetch.user_agent.clone().unwrap_or_else(|| {
+            feed.user_agent
+                .clone()
+                .unwrap_or_else(|| "captura/0.1".into())
+        }))
+        .build()
+        .map_err(|e| Error::Network(e.to_string()))?;
+
+    let list = match &spec.list {
+        Some(l) => l,
+        None => return Ok(vec![]),
+    };
+
+    let html = fetch_html_strategy(&client, &list.url, &spec.fetch, Some(feed)).await?;
+    // 1) 先采集链接与标题，避免在持有 DOM 借用时跨 await。
+    let mut items: Vec<(Option<String>, Option<String>)> = Vec::new();
+    {
+        let doc = Html::parse_document(&html);
+        let item_sel = Selector::parse(&list.item)
+            .map_err(|e| anyhow::anyhow!("invalid item selector: {e}"))?;
+        for el in doc.select(&item_sel) {
+            let link = list
+                .link
+                .as_ref()
+                .and_then(|s| extract_attr(&el, s))
+                .or_else(|| el.value().attr("href").map(|s| s.to_string()));
+            let title = list.title.as_ref().and_then(|s| extract_text(&el, s));
+            items.push((link, title));
+        }
+    }
+
+    // 2) 再按 items 顺序请求正文。
+    let mut entries = Vec::new();
+    for (link, title) in items {
+        let url = link.clone();
+        let content_html = match &spec.content.r#use[..] {
+            "css" => {
+                if let Some(sel) = &spec.content.selector {
+                    if let Some(u) = &url {
+                        Some(
+                            fetch_and_select_strategy(&client, u, sel, &spec.fetch, Some(feed))
+                                .await?,
+                        )
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+        .or_else(|| {
+            async_readability_like_strategy(&client, url.as_deref(), &spec.fetch, Some(feed))
+        });
+
+        entries.push(NormalizedEntry {
+            guid: link.clone(),
+            url: link,
+            title,
+            summary: None,
+            content_html,
+            author: None,
+            published_at: None,
+            enclosures: vec![],
+            extras: serde_json::json!({}),
+        });
+    }
+    Ok(entries)
+}
+
+fn extract_attr(parent: &scraper::ElementRef, expr: &str) -> Option<String> {
+    if let Some((sel, attr)) = expr.split_once('@') {
+        if let Ok(s) = Selector::parse(sel) {
+            if let Some(el) = parent.select(&s).next() {
+                return el.value().attr(attr).map(|v| v.to_string());
+            }
+        }
+    }
+    None
+}
+
+fn extract_text(parent: &scraper::ElementRef, sel: &str) -> Option<String> {
+    if let Ok(s) = Selector::parse(sel) {
+        if let Some(el) = parent.select(&s).next() {
+            return Some(el.text().collect::<Vec<_>>().join("").trim().to_string());
+        }
+    }
+    None
+}
+
+async fn fetch_and_select_strategy(
+    client: &Client,
+    url: &str,
+    sel: &str,
+    fetch: &FetchSpec,
+    feed: Option<&feed::Model>,
+) -> Result<String> {
+    let html = fetch_html_strategy(client, url, fetch, feed).await?;
+    let doc = Html::parse_document(&html);
+    let s = Selector::parse(sel).map_err(|e| anyhow::anyhow!("invalid selector: {e}"))?;
+    let mut out = String::new();
+    for el in doc.select(&s) {
+        out.push_str(&el.html());
+    }
+    Ok(out)
+}
+
+fn async_readability_like_strategy(
+    client: &Client,
+    url: Option<&str>,
+    fetch: &FetchSpec,
+    feed: Option<&feed::Model>,
+) -> Option<String> {
+    let url = url?;
+    let rt = tokio::runtime::Handle::try_current().ok()?;
+    let fut = async move {
+        let html = fetch_html_strategy(client, url, fetch, feed).await.ok()?;
+        let doc = Html::parse_document(&html);
+        let candidates = [
+            "article",
+            "main",
+            "#content",
+            ".post",
+            ".article",
+            ".entry-content",
+        ];
+        for c in candidates.iter() {
+            if let Ok(s) = Selector::parse(c) {
+                if let Some(el) = doc.select(&s).next() {
+                    return Some(el.html());
+                }
+            }
+        }
+        Some(html)
+    };
+    rt.block_on(fut)
+}
+
+async fn fetch_html_strategy(
+    _client: &Client,
+    url: &str,
+    fetch: &FetchSpec,
+    feed: Option<&feed::Model>,
+) -> Result<String> {
+    let smart_allowed = fetch.smart.unwrap_or(false)
+        && fetch.proxy_url.is_none()
+        && feed
+            .and_then(|f| {
+                if f.fetch_via_proxy {
+                    f.proxy_url.clone()
+                } else {
+                    None
+                }
+            })
+            .is_none();
+    if smart_allowed {
+        let opts = CrawlOptions {
+            user_agent: fetch.user_agent.clone(),
+            respect_robots: fetch.respect_robots.unwrap_or(true),
+            smart: true,
+            delay_ms: fetch.delay_ms.unwrap_or(250),
+            limit: fetch.limit,
+            proxy_url: None,
+        };
+        if let Ok(html) = crawler::fetch_html(url, &opts).await {
+            return Ok(html);
+        }
+        // fall back to HTTP path below
+    }
+    // Build client with proxy/invalid cert if needed
+    let mut builder = reqwest::Client::builder();
+    if let Some(ref ua) = fetch.user_agent {
+        builder = builder.user_agent(ua.clone());
+    }
+    if let Some(ms) = fetch.timeout_ms {
+        builder = builder.timeout(std::time::Duration::from_millis(ms));
+    }
+    if let Some(f) = feed {
+        if f.allow_invalid_certs {
+            builder = builder.danger_accept_invalid_certs(true);
+        }
+        if f.fetch_via_proxy {
+            if let Some(ref p) = f.proxy_url {
+                if !p.is_empty() {
+                    if let Ok(proxy) = reqwest::Proxy::all(p) {
+                        builder = builder.proxy(proxy);
+                    }
+                }
+            }
+        }
+    }
+    if let Some(ref p) = fetch.proxy_url {
+        if !p.is_empty() {
+            if let Ok(proxy) = reqwest::Proxy::all(p) {
+                builder = builder.proxy(proxy);
+            }
+        }
+    }
+    let http = builder.build().map_err(|e| Error::Network(e.to_string()))?;
+    let mut req = http.get(url);
+    // headers
+    if let Some(ref hdrs) = fetch.headers {
+        let mut hm = reqwest::header::HeaderMap::new();
+        for (k, v) in hdrs.iter() {
+            if let Some(s) = v.as_str() {
+                if let Ok(name) = reqwest::header::HeaderName::from_bytes(k.as_bytes()) {
+                    if let Ok(val) = reqwest::header::HeaderValue::from_str(s) {
+                        hm.insert(name, val);
+                    }
+                }
+            }
+        }
+        req = req.headers(hm);
+    }
+    let html = req
+        .send()
+        .await
+        .map_err(|e| Error::Network(e.to_string()))?
+        .text()
+        .await
+        .map_err(|e| Error::Network(e.to_string()))?;
+    Ok(html)
+}
+
+#[cfg(test)]
+mod live_tests {
+    use super::*;
+    use captura_storage::entity::feed;
+    use chrono::{FixedOffset, Utc};
+
+    fn should_run_live() -> bool {
+        std::env::var("CAPTURA_TEST_LIVE")
+            .ok()
+            .map(|v| v == "1" || v.to_lowercase() == "true")
+            .unwrap_or(false)
+    }
+
+    fn make_feed(feed_url: &str, ftype: feed::FeedType) -> feed::Model {
+        let now = Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
+        feed::Model {
+            id: 0,
+            user_id: 1,
+            category_id: None,
+            r#type: ftype,
+            title: Some("live".into()),
+            site_url: None,
+            feed_url: feed_url.into(),
+            favicon_id: None,
+            rule_id: None,
+            user_agent: Some("captura-tests/0.1".into()),
+            headers_json: None,
+            cookies: None,
+            proxy_url: None,
+            fetch_via_proxy: false,
+            disable_http2: false,
+            allow_invalid_certs: false,
+            request_timeout_ms: Some(15000),
+            checked_at: None,
+            next_run_at: None,
+            etag: None,
+            last_modified: None,
+            last_status: None,
+            error_count: 0,
+            disabled: false,
+            scraper_rules: None,
+            rewrite_rules: None,
+            blocklist_rules: None,
+            keeplist_rules: None,
+            url_rewrite_rules: None,
+            block_filter_entry_rules: None,
+            keep_filter_entry_rules: None,
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn refresh_rust_blog_live() {
+        if !should_run_live() {
+            eprintln!("skip live test");
+            return;
+        }
+        let f = make_feed("https://blog.rust-lang.org/feed.xml", feed::FeedType::Atom);
+        let entries = refresh_feed(&f).await.expect("fetch rust blog feed");
+        assert!(!entries.is_empty(), "should fetch at least one entry");
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn refresh_xkcd_live() {
+        if !should_run_live() {
+            eprintln!("skip live test");
+            return;
+        }
+        let f = make_feed("https://xkcd.com/atom.xml", feed::FeedType::Atom);
+        let entries = refresh_feed(&f).await.expect("fetch xkcd feed");
+        assert!(!entries.is_empty(), "should fetch at least one entry");
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn refresh_jsonfeed_org_live() {
+        if !should_run_live() {
+            eprintln!("skip live test");
+            return;
+        }
+        let f = make_feed("https://jsonfeed.org/feed.json", feed::FeedType::Json);
+        let entries = refresh_feed(&f).await.expect("fetch jsonfeed.org feed");
+        assert!(!entries.is_empty(), "json feed should return entries");
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn refresh_daring_fireball_json_live() {
+        if !should_run_live() {
+            eprintln!("skip live test");
+            return;
+        }
+        let f = make_feed(
+            "https://daringfireball.net/feeds/json",
+            feed::FeedType::Json,
+        );
+        let entries = refresh_feed(&f)
+            .await
+            .expect("fetch daring fireball json feed");
+        assert!(!entries.is_empty(), "daring fireball should return entries");
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn refresh_bbc_news_live() {
+        if !should_run_live() {
+            eprintln!("skip live test");
+            return;
+        }
+        let f = make_feed("http://feeds.bbci.co.uk/news/rss.xml", feed::FeedType::Rss);
+        let entries = refresh_feed(&f).await.expect("fetch bbc news feed");
+        assert!(!entries.is_empty(), "bbc should return entries");
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn refresh_nhk_japanese_live() {
+        if !should_run_live() {
+            eprintln!("skip live test");
+            return;
+        }
+        let f = make_feed(
+            "https://www3.nhk.or.jp/rss/news/cat0.xml",
+            feed::FeedType::Rss,
+        );
+        let entries = refresh_feed(&f).await.expect("fetch nhk feed");
+        assert!(!entries.is_empty(), "nhk should return entries");
+        let has_non_ascii = entries.iter().any(|e| {
+            e.title
+                .as_deref()
+                .map(|t| t.chars().any(|c| c as u32 > 127))
+                .unwrap_or(false)
+        });
+        assert!(
+            has_non_ascii,
+            "NHK titles often include non-ascii characters"
+        );
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn refresh_solidot_cn_live() {
+        if !should_run_live() {
+            eprintln!("skip live test");
+            return;
+        }
+        let f = make_feed("https://www.solidot.org/index.rss", feed::FeedType::Rss);
+        let entries = refresh_feed(&f).await.expect("fetch solidot feed");
+        assert!(!entries.is_empty(), "solidot should return entries");
+        // 非 ASCII 标题/摘要覆盖（不强制断言具体值，仅断言存在）
+        let has_non_ascii = entries.iter().any(|e| {
+            e.title
+                .as_deref()
+                .map(|t| t.chars().any(|c| c as u32 > 127))
+                .unwrap_or(false)
+        });
+        assert!(has_non_ascii, "should contain non-ascii titles");
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn refresh_nasa_multimedia_live() {
+        if !should_run_live() {
+            eprintln!("skip live test");
+            return;
+        }
+        let f = make_feed(
+            "https://www.nasa.gov/rss/dyn/breaking_news.rss",
+            feed::FeedType::Rss,
+        );
+        let entries = refresh_feed(&f).await.expect("fetch nasa feed");
+        assert!(!entries.is_empty(), "nasa should return entries");
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn refresh_arstechnica_live() {
+        if !should_run_live() {
+            eprintln!("skip live test");
+            return;
+        }
+        let f = make_feed(
+            "https://feeds.arstechnica.com/arstechnica/index",
+            feed::FeedType::Rss,
+        );
+        let entries = refresh_feed(&f).await.expect("fetch arstechnica feed");
+        assert!(!entries.is_empty(), "arstechnica should return entries");
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn refresh_theverge_live() {
+        if !should_run_live() {
+            eprintln!("skip live test");
+            return;
+        }
+        let f = make_feed(
+            "https://www.theverge.com/rss/index.xml",
+            feed::FeedType::Rss,
+        );
+        let entries = refresh_feed(&f).await.expect("fetch theverge feed");
+        assert!(!entries.is_empty(), "theverge should return entries");
+    }
+}

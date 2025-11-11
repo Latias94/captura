@@ -1,0 +1,13 @@
+[package]
+name = "captura-storage"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow.workspace = true
+sea-orm.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+serde.workspace = true
+captura-common = { path = "../common" }
+

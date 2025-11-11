@@ -1,0 +1,13 @@
+[package]
+name = "captura-migration"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+sea-orm-migration.workspace = true
+tracing.workspace = true
+
+[lib]
+name = "migration"
+path = "src/lib.rs"
+
