@@ -50,6 +50,72 @@ POST /api/v1/integrations
 
 - Triggered on `new_entries`. Sends title + link to the specified chat.
 
+### Ntfy (example)
+
+- Create integration:
+
+```http
+POST /api/v1/integrations
+{"kind":"ntfy","enabled":true,"config_json":{"base_url":"https://ntfy.sh","topic":"mytopic","token":"OPTIONAL"}}
+```
+
+- Events: `new_entries` and `save_entry`. Publishes notifications to the topic.
+
+### Slack (Incoming Webhook)
+
+- Create integration (use a Slack Incoming Webhook URL):
+
+```http
+POST /api/v1/integrations
+{"kind":"slack","enabled":true,"config_json":{"incoming_webhook_url":"https://hooks.slack.com/services/XXX/YYY/ZZZ"}}
+```
+
+- Events: `new_entries` and `save_entry`. Sends a simple text message.
+
+### Pocket
+
+- Simple config with existing credentials (you can obtain `access_token` via Pocket's own flow):
+
+```http
+POST /api/v1/integrations
+{"kind":"pocket","enabled":true,"config_json":{"consumer_key":"CK","access_token":"AT"}}
+```
+
+- Event: `save_entry` adds the link to Pocket.
+
+### Instapaper
+
+- Simple config using account credentials:
+
+```http
+POST /api/v1/integrations
+{"kind":"instapaper","enabled":true,"config_json":{"username":"you@example.com","password":"***"}}
+```
+
+- Event: `save_entry` submits the link via Instapaper Simple API.
+
+### Pushover
+
+- Send push messages to your devices:
+
+```http
+POST /api/v1/integrations
+{"kind":"pushover","enabled":true,"config_json":{"token":"APP_TOKEN","user":"USER_KEY"}}
+```
+
+- Event: `new_entries` sends compact notifications (title + url).
+
+### Matrix
+
+- Post messages to a Matrix room:
+
+```http
+POST /api/v1/integrations
+{"kind":"matrix","enabled":true,"config_json":{"homeserver":"https://matrix.example","access_token":"AT","room_id":"!room:example.org"}}
+```
+
+- Event: `new_entries` posts text messages to the room.
+
 ## Job Statistics
 
 - Inspect integration jobs:
@@ -59,4 +125,3 @@ GET /api/v1/integrations/jobs?status=pending&limit=50
 ```
 
 - Aggregated stats (near-term): `GET /api/v1/integrations/jobs/stats?window_hours=24`.
-

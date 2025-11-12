@@ -57,3 +57,10 @@ pub fn unauthorized(msg: &str) -> ApiError {
 pub fn forbidden(msg: &str) -> ApiError {
     ApiError::new(StatusCode::FORBIDDEN, "forbidden", msg)
 }
+pub fn too_many_requests<S: Into<String>>(msg: S) -> ApiError {
+    ApiError::new(
+        StatusCode::TOO_MANY_REQUESTS,
+        "too_many_requests",
+        msg.into(),
+    )
+}

@@ -19,3 +19,4 @@ async-trait.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 hex.workspace = true
+urlencoding.workspace = true

@@ -45,8 +45,10 @@ use tracing_subscriber::EnvFilter;
 // use axum::Form; // reader handlers moved to compat
 mod error;
 use crate::error::{bad_request, forbidden, internal, unauthorized, ApiResult};
+use axum::middleware;
+use axum::middleware::Next;
 mod auth;
-use crate::auth::AuthUser;
+use crate::auth::{create_user_with_random_password, find_user_id_by_username, AuthUser};
 mod categories;
 mod entries;
 mod feeds;
@@ -54,11 +56,12 @@ mod rules;
 // compat no longer needed; remove legacy compatible routes
 mod compat;
 mod state;
-pub use state::AppState;
+pub use state::{AppConfig, AppState};
 mod favicon;
 mod hub;
 mod integrations;
 mod media;
+mod oidc;
 mod opml;
 mod search;
 mod webhooks;
@@ -83,6 +86,7 @@ async fn main() -> anyhow::Result<()> {
         .unwrap_or_else(|_| "sqlite://captura.db?mode=rwc".to_string());
     let db = db_connect(&db_url).await?;
     migrate(&db).await?;
+    let app_state = AppState::new(db.clone());
 
     // Background scheduler (optional)
     if std::env::var("SCHEDULER_ENABLED")
@@ -134,6 +138,15 @@ async fn main() -> anyhow::Result<()> {
         .route("/users", post(create_user))
         .route("/users/:id/fever-key", post(set_fever_key))
         .route("/auth/login", post(auth_login))
+        .route("/auth/proxy/token", get(auth_proxy_token))
+        .route("/auth/oidc/start", get(crate::oidc::start))
+        .route("/auth/oidc/callback", get(crate::oidc::callback))
+        .route("/auth/oidc/providers", get(oidc_providers))
+        .route("/auth/oidc/:name/start", get(crate::oidc::start_named))
+        .route(
+            "/auth/oidc/:name/callback",
+            get(crate::oidc::callback_named),
+        )
         // feeds & entries
         .route(
             "/feeds",
@@ -316,14 +329,44 @@ async fn main() -> anyhow::Result<()> {
         "OK"
     }
 
-    let app = Router::new()
+    // Build router
+    let mut app = Router::new()
         .route("/healthz", get(liveness))
         .route("/readyz", get(readiness))
         .route("/readiness", get(readiness))
         .merge(compat_root)
         .nest("/api/v1", api_v1)
         .nest("/v1", crate::compat::miniflux::router())
-        .with_state(AppState { db });
+        .with_state(app_state.clone());
+
+    // Global security headers (optional)
+    if app_state.cfg.security_headers_enabled {
+        use tower_http::set_header::SetResponseHeaderLayer;
+        let rp = axum::http::HeaderValue::from_str(&app_state.cfg.referrer_policy)
+            .unwrap_or(axum::http::HeaderValue::from_static("no-referrer"));
+        app = app.layer(SetResponseHeaderLayer::overriding(
+            axum::http::header::HeaderName::from_static("referrer-policy"),
+            rp,
+        ));
+        app = app.layer(SetResponseHeaderLayer::overriding(
+            axum::http::header::HeaderName::from_static("x-content-type-options"),
+            axum::http::HeaderValue::from_static("nosniff"),
+        ));
+        app = app.layer(SetResponseHeaderLayer::overriding(
+            axum::http::header::HeaderName::from_static("x-frame-options"),
+            axum::http::HeaderValue::from_static("DENY"),
+        ));
+        if let Some(ref csp) = app_state.cfg.content_security_policy {
+            if !csp.is_empty() {
+                let v = axum::http::HeaderValue::from_str(csp)
+                    .unwrap_or(axum::http::HeaderValue::from_static("default-src 'none'"));
+                app = app.layer(SetResponseHeaderLayer::overriding(
+                    axum::http::header::HeaderName::from_static("content-security-policy"),
+                    v,
+                ));
+            }
+        }
+    }
 
     let addr: SocketAddr = "0.0.0.0:8080".parse()?;
     info!(%addr, "listening");
@@ -402,8 +445,21 @@ async fn auth_login(
     State(st): State<AppState>,
     Json(body): Json<AuthLoginReq>,
 ) -> ApiResult<Json<AuthLoginResp>> {
+    if st.cfg.disable_local_auth {
+        return Err(forbidden("local auth disabled"));
+    }
     if body.username.trim().is_empty() || body.password.is_empty() {
         return Err(bad_request("username/password required"));
+    }
+    // rate limit per username window
+    let key = body.username.to_lowercase();
+    if let Err(_) = login_check_and_mark(
+        &key,
+        st.cfg.login_max_attempts,
+        st.cfg.login_window_secs,
+        false,
+    ) {
+        return Err(crate::error::too_many_requests("too many attempts"));
     }
     let u = User::find()
         .filter(user::Column::Username.eq(&body.username))
@@ -426,6 +482,64 @@ async fn auth_login(
     let am = token::ActiveModel {
         user_id: Set(u.id),
         name: Set(body.name),
+        token_hash: Set(token_hash),
+        token_plain: Set(Some(token_str.clone())),
+        created_at: Set(now),
+        last_used_at: Set(Some(now)),
+        expires_at: Set(Some(
+            now + chrono::Duration::seconds({
+                let v: i64 = std::env::var("CAPTURA_TOKEN_TTL_SECS")
+                    .ok()
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(30 * 24 * 3600);
+                v.max(3600)
+            }),
+        )),
+        ..Default::default()
+    };
+    let _ = am.insert(&st.db).await.map_err(internal)?;
+    // success resets limiter window for this user
+    let _ = login_check_and_mark(
+        &key,
+        st.cfg.login_max_attempts,
+        st.cfg.login_window_secs,
+        true,
+    );
+    Ok(Json(AuthLoginResp { token: token_str }))
+}
+
+// 基于反代头的一键换取 API Token（需设置 CAPTURA_AUTH_PROXY_HEADER）
+async fn auth_proxy_token(
+    State(st): State<AppState>,
+    headers: axum::http::HeaderMap,
+) -> ApiResult<Json<AuthLoginResp>> {
+    let Some(hname) = st.cfg.auth_proxy_header.as_ref() else {
+        return Err(bad_request("proxy auth not configured"));
+    };
+    let name = axum::http::header::HeaderName::from_bytes(hname.as_bytes())
+        .map_err(|_| bad_request("bad proxy header name"))?;
+    let username = headers
+        .get(name)
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| unauthorized("missing proxy header"))?;
+    let uid = if let Some(id) = find_user_id_by_username(&st.db, &username).await? {
+        id
+    } else if st.cfg.auth_proxy_user_creation {
+        create_user_with_random_password(&st.db, &username).await?
+    } else {
+        return Err(unauthorized("user not found"));
+    };
+    // issue token
+    let mut rand_bytes = [0u8; 32];
+    rand_core::OsRng.fill_bytes(&mut rand_bytes);
+    let token_str = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(rand_bytes);
+    let token_hash = format!("{:x}", Sha256::digest(token_str.as_bytes()));
+    let now = Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
+    let am = token::ActiveModel {
+        user_id: Set(uid),
+        name: Set(Some("proxy".into())),
         token_hash: Set(token_hash),
         token_plain: Set(Some(token_str.clone())),
         created_at: Set(now),
@@ -539,6 +653,95 @@ mod tests {
 
     async fn setup_db() -> DatabaseConnection {
         captura_testkit::setup_db().await
+    }
+
+    #[tokio::test]
+    async fn auth_login_disabled() {
+        let db = setup_db().await;
+        let mut st = AppState::new(db);
+        st.cfg.disable_local_auth = true;
+        let err = super::auth_login(
+            State(st.clone()),
+            Json(super::AuthLoginReq {
+                username: "u".into(),
+                password: "p".into(),
+                name: None,
+            }),
+        )
+        .await
+        .err()
+        .unwrap();
+        let (status, code) = resp_to_status_and_code(err.into_response());
+        assert_eq!(status, 403);
+        assert_eq!(code, "forbidden");
+    }
+
+    #[tokio::test]
+    async fn proxy_token_mint_and_auth() {
+        let db = setup_db().await;
+        let mut st = AppState::new(db.clone());
+        st.cfg.auth_proxy_header = Some("X-Forwarded-User".into());
+        st.cfg.auth_proxy_user_creation = true;
+        // prepare headers
+        let mut headers = axum::http::HeaderMap::new();
+        headers.insert(
+            axum::http::HeaderName::from_static("x-forwarded-user"),
+            axum::http::HeaderValue::from_static("bob"),
+        );
+        let resp = super::auth_proxy_token(State(st.clone()), headers)
+            .await
+            .unwrap();
+        let token = resp.0.token;
+        // token should authenticate
+        let auth = super::AuthUser::from_bearer(&db, &token).await.unwrap();
+        assert!(auth.user_id > 0);
+    }
+
+    #[tokio::test]
+    async fn login_rate_limit_blocks_after_threshold() {
+        let db = setup_db().await;
+        let mut st = AppState::new(db.clone());
+        st.cfg.login_max_attempts = 1; // allow one failure within window
+        st.cfg.login_window_secs = 60;
+        // Ensure user exists with known password
+        let _ = super::create_user(
+            State(st.clone()),
+            Json(super::CreateUserReq {
+                username: "rl".into(),
+                password: "good".into(),
+            }),
+        )
+        .await
+        .unwrap();
+        // 1st attempt wrong password -> 401
+        let e1 = super::auth_login(
+            State(st.clone()),
+            Json(super::AuthLoginReq {
+                username: "rl".into(),
+                password: "bad".into(),
+                name: None,
+            }),
+        )
+        .await
+        .err()
+        .unwrap();
+        let (s1, _) = resp_to_status_and_code(e1.into_response());
+        assert_eq!(s1, 401);
+        // 2nd attempt wrong password -> 429 too_many_requests
+        let e2 = super::auth_login(
+            State(st.clone()),
+            Json(super::AuthLoginReq {
+                username: "rl".into(),
+                password: "stillbad".into(),
+                name: None,
+            }),
+        )
+        .await
+        .err()
+        .unwrap();
+        let (s2, code2) = resp_to_status_and_code(e2.into_response());
+        assert_eq!(s2, 429);
+        assert_eq!(code2, "too_many_requests");
     }
 
     #[tokio::test]
@@ -1755,3 +1958,45 @@ pub(crate) async fn assert_category_ownership(
 // ...
 
 // ensure_category moved to compat::reader
+async fn oidc_providers(State(st): State<AppState>) -> ApiResult<Json<Vec<String>>> {
+    let names: Vec<String> = st
+        .cfg
+        .oidc_providers
+        .iter()
+        .map(|p| p.name.clone())
+        .collect();
+    Ok(Json(names))
+}
+// -------- Simple login rate limiter (per-username window counter) --------
+use once_cell::sync::Lazy;
+use std::collections::HashMap;
+use std::sync::Mutex;
+
+static LOGIN_LIMITER: Lazy<Mutex<HashMap<String, (u32, std::time::Instant)>>> =
+    Lazy::new(|| Mutex::new(HashMap::new()));
+
+fn login_check_and_mark(
+    key: &str,
+    max: u32,
+    window_secs: u64,
+    success: bool,
+) -> Result<(), &'static str> {
+    let mut guard = LOGIN_LIMITER.lock().unwrap();
+    let now = std::time::Instant::now();
+    let ent = guard.entry(key.to_string()).or_insert((0, now));
+    // reset window
+    if now.duration_since(ent.1).as_secs() >= window_secs {
+        ent.0 = 0;
+        ent.1 = now;
+    }
+    if success {
+        ent.0 = 0;
+        ent.1 = now;
+        return Ok(());
+    }
+    if ent.0 >= max {
+        return Err("too_many_attempts");
+    }
+    ent.0 += 1;
+    Ok(())
+}
