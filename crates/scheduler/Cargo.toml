@@ -11,7 +11,12 @@ tracing.workspace = true
 captura-common = { path = "../common" }
 captura-storage = { path = "../storage" }
 captura-pipeline = { path = "../pipeline" }
+captura-service = { path = "../service" }
 captura-rules = { path = "../rules" }
 sea-orm.workspace = true
 reqwest.workspace = true
 futures = "0.3"
+
+[dev-dependencies]
+captura-migration = { path = "../migration" }
+captura-testkit = { path = "../testkit" }

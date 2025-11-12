@@ -9,6 +9,8 @@ members = [
   "crates/rules",
   "crates/scheduler",
   "crates/pipeline",
+  "crates/service",
+  "crates/testkit",
 ]
 resolver = "2"
 

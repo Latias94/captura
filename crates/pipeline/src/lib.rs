@@ -6,12 +6,12 @@ use captura_crawler::{self as crawler, CrawlOptions};
 use captura_fetcher::{FetchOptions, HttpFetcher};
 use captura_rules::{parse_rule, FetchSpec, RuleSpec};
 use captura_storage::entity::feed;
+use regex::Regex;
 use reqwest::header::HeaderMap;
 use reqwest::Client;
 use scraper::{Html, Selector};
 use tracing::instrument;
 use url::Url;
-use regex::Regex;
 
 #[derive(Debug, Clone)]
 pub struct RefreshMeta {
@@ -135,9 +135,33 @@ fn sanitize_html(input: &str) -> String {
     let mut builder = ammonia::Builder::default();
     // 允许常用媒体/链接标签
     builder.add_tags([
-        "a", "p", "div", "span", "img", "strong", "em", "ul", "ol", "li", "code", "pre",
-        "blockquote", "h1", "h2", "h3", "h4", "h5", "h6", "br", "hr", "table", "thead",
-        "tbody", "th", "tr", "td",
+        "a",
+        "p",
+        "div",
+        "span",
+        "img",
+        "strong",
+        "em",
+        "ul",
+        "ol",
+        "li",
+        "code",
+        "pre",
+        "blockquote",
+        "h1",
+        "h2",
+        "h3",
+        "h4",
+        "h5",
+        "h6",
+        "br",
+        "hr",
+        "table",
+        "thead",
+        "tbody",
+        "th",
+        "tr",
+        "td",
     ]);
     builder.clean(input).to_string()
 }
@@ -184,21 +208,35 @@ fn apply_entry_filters(feed: &feed::Model, entries: &mut Vec<NormalizedEntry>) {
     let mut block_regexes: Vec<Regex> = Vec::new();
     if let Some(ref s) = feed.keep_filter_entry_rules {
         for line in s.lines() {
-            if let Ok(rx) = Regex::new(line.trim()) { keep_regexes.push(rx); }
+            if let Ok(rx) = Regex::new(line.trim()) {
+                keep_regexes.push(rx);
+            }
         }
     }
     if let Some(ref s) = feed.block_filter_entry_rules {
         for line in s.lines() {
-            if let Ok(rx) = Regex::new(line.trim()) { block_regexes.push(rx); }
+            if let Ok(rx) = Regex::new(line.trim()) {
+                block_regexes.push(rx);
+            }
         }
     }
-    if keep_regexes.is_empty() && block_regexes.is_empty() { return; }
+    if keep_regexes.is_empty() && block_regexes.is_empty() {
+        return;
+    }
 
     entries.retain(|e| {
         let mut hay = String::new();
-        if let Some(t) = &e.title { hay.push_str(t); hay.push('\n'); }
-        if let Some(s) = &e.summary { hay.push_str(s); hay.push('\n'); }
-        if let Some(c) = &e.content_html { hay.push_str(c); }
+        if let Some(t) = &e.title {
+            hay.push_str(t);
+            hay.push('\n');
+        }
+        if let Some(s) = &e.summary {
+            hay.push_str(s);
+            hay.push('\n');
+        }
+        if let Some(c) = &e.content_html {
+            hay.push_str(c);
+        }
         // apply keep first: if any keep rules and none match, drop
         if !keep_regexes.is_empty() {
             if !keep_regexes.iter().any(|rx| rx.is_match(&hay)) {
@@ -217,7 +255,9 @@ fn apply_rewrite_rules(input: &str, rules: &str) -> String {
     let mut out = input.to_string();
     for line in rules.lines() {
         let s = line.trim();
-        if s.is_empty() || s.starts_with('#') { continue; }
+        if s.is_empty() || s.starts_with('#') {
+            continue;
+        }
         // support sed-like: s/pattern/repl/
         if s.starts_with('s') && s.len() > 2 {
             let delim = s.chars().nth(1).unwrap();
@@ -291,7 +331,7 @@ pub async fn refresh_rule_feed(
     let mut entries = Vec::new();
     for (link, title) in items {
         let url = link.clone();
-        let content_html = match &spec.content.r#use[..] {
+        let mut content_html: Option<String> = match &spec.content.r#use[..] {
             "css" => {
                 if let Some(sel) = &spec.content.selector {
                     if let Some(u) = &url {
@@ -307,10 +347,12 @@ pub async fn refresh_rule_feed(
                 }
             }
             _ => None,
+        };
+        if content_html.is_none() {
+            content_html =
+                readability_like_strategy_async(&client, url.as_deref(), &spec.fetch, Some(feed))
+                    .await;
         }
-        .or_else(|| {
-            async_readability_like_strategy(&client, url.as_deref(), &spec.fetch, Some(feed))
-        });
 
         entries.push(NormalizedEntry {
             guid: link.clone(),
@@ -364,35 +406,37 @@ async fn fetch_and_select_strategy(
     Ok(out)
 }
 
-fn async_readability_like_strategy(
+async fn readability_like_strategy_async(
     client: &Client,
     url: Option<&str>,
     fetch: &FetchSpec,
     feed: Option<&feed::Model>,
 ) -> Option<String> {
-    let url = url?;
-    let rt = tokio::runtime::Handle::try_current().ok()?;
-    let fut = async move {
-        let html = fetch_html_strategy(client, url, fetch, feed).await.ok()?;
-        let doc = Html::parse_document(&html);
-        let candidates = [
-            "article",
-            "main",
-            "#content",
-            ".post",
-            ".article",
-            ".entry-content",
-        ];
-        for c in candidates.iter() {
-            if let Ok(s) = Selector::parse(c) {
-                if let Some(el) = doc.select(&s).next() {
-                    return Some(el.html());
-                }
+    let url = match url {
+        Some(u) => u,
+        None => return None,
+    };
+    let html = match fetch_html_strategy(client, url, fetch, feed).await {
+        Ok(h) => h,
+        Err(_) => return None,
+    };
+    let doc = Html::parse_document(&html);
+    let candidates = [
+        "article",
+        "main",
+        "#content",
+        ".post",
+        ".article",
+        ".entry-content",
+    ];
+    for c in candidates.iter() {
+        if let Ok(s) = Selector::parse(c) {
+            if let Some(el) = doc.select(&s).next() {
+                return Some(el.html());
             }
         }
-        Some(html)
-    };
-    rt.block_on(fut)
+    }
+    Some(html)
 }
 
 async fn fetch_html_strategy(

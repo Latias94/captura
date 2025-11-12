@@ -21,6 +21,7 @@ captura-fetcher = { path = "../fetcher" }
 captura-crawler = { path = "../crawler" }
 captura-scheduler = { path = "../scheduler" }
 captura-pipeline = { path = "../pipeline" }
+captura-service = { path = "../service" }
 sha2.workspace = true
 argon2.workspace = true
 rand_core.workspace = true
@@ -38,3 +39,5 @@ regex.workspace = true
 [dev-dependencies]
 http-body-util = "0.1"
 futures = "0.3"
+tower = { version = "0.5", features = ["util"] }
+captura-testkit = { path = "../testkit" }

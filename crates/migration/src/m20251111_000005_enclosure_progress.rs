@@ -9,8 +9,8 @@ impl MigrationTrait for Migration {
         manager
             .alter_table(
                 Table::alter()
-                    .table(User::Table)
-                    .add_column(ColumnDef::new(User::FeverKeyMd5).string())
+                    .table(Enclosure::Table)
+                    .add_column(ColumnDef::new(Enclosure::MediaProgression).big_integer())
                     .to_owned(),
             )
             .await
@@ -20,21 +20,16 @@ impl MigrationTrait for Migration {
         manager
             .alter_table(
                 Table::alter()
-                    .table(User::Table)
-                    .drop_column(User::FeverKeyMd5)
+                    .table(Enclosure::Table)
+                    .drop_column(Enclosure::MediaProgression)
                     .to_owned(),
             )
             .await
     }
 }
 
-#[allow(dead_code)]
 #[derive(DeriveIden)]
-enum User {
+enum Enclosure {
     Table,
-    Id,
-    Username,
-    PasswordHash,
-    FeverKeyMd5,
-    CreatedAt,
+    MediaProgression,
 }

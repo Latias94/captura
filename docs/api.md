@@ -1,6 +1,11 @@
 # Captura API v1
 
-Base path: `/api/v1`
+Base paths
+
+- 原生 REST：`/api/v1/*`
+- Miniflux 兼容：`/v1/*`（错误返回 `{ "error_message": "..." }`）
+- Fever 兼容：`/fever`（单端点 GET/POST）
+- Google Reader 兼容：`/reader/api/0/*`
 
 ## Auth
 
@@ -76,7 +81,7 @@ Base path: `/api/v1`
   - Auth required
   - Run up to 10 due jobs immediately (useful for development/testing)
 
-## Fever (read-only)
+## Fever 兼容（读多写少）
 
 - Endpoint: `GET/POST /fever`
   - Query/body parameters (Fever spec compatible):
@@ -100,9 +105,23 @@ Base path: `/api/v1`
 - `POST /entries/:id/star` Body: `{ "value": true }`
 - `POST /entries/mark-all-read` Body: `{ "feed_id?": 1, "category_id?": 2 }`
 
+## Miniflux 兼容（概要）
+
+- 路径：`/v1/*`
+- 主要端点（子集）：
+  - 用户/版本：`GET /v1/me`、`GET /v1/version`、`GET /v1/integrations/status`
+  - 分类：`GET/POST /v1/categories`、`PUT/DELETE /v1/categories/:id`、`GET /v1/categories/counters`、`PUT /v1/categories/:id/mark-all-as-read`
+  - 订阅源：`GET/POST /v1/feeds`、`GET/PUT/DELETE /v1/feeds/:id`、`POST /v1/feeds/:id/refresh`、`PUT /v1/feeds/refresh`、`GET /v1/feeds/counters`、`GET /v1/feeds/:id/icon`
+  - 条目：`GET /v1/entries`、`PUT /v1/entries/:id`、`PUT /v1/entries/:id/star`、`POST /v1/entries/:id/save`、`GET /v1/entries/:id/fetch-content`、`POST/DELETE /v1/entries/:id/tags`
+  - 标签：`GET/POST /v1/tags`、`GET/PUT/DELETE /v1/tags/:name`
+  - OPML：`GET /v1/export`、`POST /v1/import`
+  - 发现：`POST /v1/discover[?verify=true]`
+  - API Keys：`GET/POST /v1/api-keys`、`DELETE /v1/api-keys/:id`
+- 错误：400/500 返回 `{ "error_message": "..." }`，其余按状态码处理。
+
 ## Notes
 - All timestamps are RFC3339.
-- Errors: JSON body with fields `{ code, message }`, with appropriate HTTP status codes.
+- 原生 REST Errors: JSON body `{ code, message }`，包含 HTTP 状态码。
   - Codes (initial set):
     - `bad_request` (400): invalid parameters or missing fields
     - `unauthorized` (401): invalid or missing token

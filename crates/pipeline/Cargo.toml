@@ -20,3 +20,6 @@ captura-fetcher = { path = "../fetcher" }
 captura-crawler = { path = "../crawler" }
 captura-rules = { path = "../rules" }
 captura-storage = { path = "../storage" }
+
+[dev-dependencies]
+chrono.workspace = true

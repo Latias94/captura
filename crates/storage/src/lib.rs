@@ -2,6 +2,7 @@
 //! This crate owns database connection management and entities.
 
 use captura_common::{Error, Result};
+use sea_orm::ConnectionTrait;
 use sea_orm::{ConnectOptions, Database, DatabaseConnection};
 use std::time::Duration;
 use tracing::info;
@@ -16,9 +17,16 @@ pub async fn connect(db_url: &str) -> Result<DatabaseConnection> {
         .sqlx_logging(false);
 
     info!("connecting database: {}", redact(db_url));
-    Database::connect(opt)
+    let db = Database::connect(opt)
         .await
-        .map_err(|e| Error::Storage(e.to_string()))
+        .map_err(|e| Error::Storage(e.to_string()))?;
+    // SQLite 优化：WAL/foreign_keys/synchronous
+    if db_url.starts_with("sqlite") {
+        let _ = db.execute_unprepared("PRAGMA journal_mode=WAL;").await;
+        let _ = db.execute_unprepared("PRAGMA foreign_keys=ON;").await;
+        let _ = db.execute_unprepared("PRAGMA synchronous=NORMAL;").await;
+    }
+    Ok(db)
 }
 
 fn redact(url: &str) -> String {

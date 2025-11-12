@@ -542,6 +542,8 @@ impl MigrationTrait for Migration {
             )
             .await?;
 
+        // Feed/Entry unique indexes were created earlier; avoid duplicate definitions here.
+
         // Job index
         manager
             .create_index(
@@ -561,6 +563,18 @@ impl MigrationTrait for Migration {
                     .name("idx_api_token_user")
                     .table(ApiToken::Table)
                     .col(ApiToken::UserId)
+                    .to_owned(),
+            )
+            .await?;
+
+        // ApiToken unique by token hash
+        manager
+            .create_index(
+                Index::create()
+                    .name("idx_api_token_hash_unique")
+                    .table(ApiToken::Table)
+                    .col(ApiToken::TokenHash)
+                    .unique()
                     .to_owned(),
             )
             .await?;

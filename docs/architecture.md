@@ -21,7 +21,12 @@ This document describes the initial architecture and workspace layout for Captur
 - `crates/common`: shared error/result, small utilities.
 - `crates/storage`: SeaORM integration, DB connectors, entities (to be added).
 - `crates/migration`: SeaORM migration crate for schema evolution.
-- `crates/api`: Axum-based HTTP service (REST, compatibility APIs in future). All endpoints are versioned under `/api/v1`.
+- `crates/api`: Axum-based HTTP service。
+  - 原生 REST：挂载在 `/api/v1/*`
+  - 兼容层：默认开箱即用，根路径挂载
+    - Miniflux：`/v1/*`
+    - Fever：`/fever`
+    - Google Reader：`/reader/api/0/*`
 - `crates/fetcher`: standard feed fetching (HTTP + ETag/IMS) and parsing.
 - `crates/crawler`: spider-based adapter for dynamic pages and anti-bot bypass.
 - `crates/rules`: DSL schema, validator/linter; rule executor to be added.
@@ -92,9 +97,12 @@ Validator ensures required fields and regexes are valid. A linter/test runner (t
 
 ## API
 
-- REST for feeds, entries, rules, OPML.
-- Compatibility: Fever first, Google Reader next (read-only then extended).
-- Health, metrics, and webhooks (later).
+- 原生 REST：feeds、entries、rules、OPML、favicons、jobs 等，路径前缀 `/api/v1/*`
+- 兼容层（默认启用）：
+  - Miniflux：阅读流、分类、订阅源、OPML、Discover、API Keys 等（`/v1/*`）
+  - Fever：单端点读写子集（`/fever`）
+  - Google Reader：读写子集（`/reader/api/0/*`）
+- 健康检查与后续：health、metrics、webhooks（规划）
 
 ## Scheduling & Workers
 

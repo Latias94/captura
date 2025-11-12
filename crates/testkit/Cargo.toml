@@ -1,0 +1,18 @@
+[package]
+name = "captura-testkit"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+captura-storage = { path = "../storage" }
+captura-migration = { path = "../migration" }
+sea-orm.workspace = true
+chrono.workspace = true
+rand_core.workspace = true
+sha2.workspace = true
+base64.workspace = true
+
+[lib]
+name = "captura_testkit"
+path = "src/lib.rs"
+

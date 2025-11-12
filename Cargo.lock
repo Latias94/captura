@@ -513,7 +513,9 @@ dependencies = [
  "captura-pipeline",
  "captura-rules",
  "captura-scheduler",
+ "captura-service",
  "captura-storage",
+ "captura-testkit",
  "chrono",
  "futures",
  "headers",
@@ -530,6 +532,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "tokio",
+ "tower",
  "tracing",
  "tracing-subscriber",
  "url",
@@ -555,7 +558,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "captura-common",
- "spider 2.37.177",
+ "spider 2.37.178",
  "spider_utils",
  "tokio",
  "tracing",
@@ -594,6 +597,7 @@ dependencies = [
  "captura-fetcher",
  "captura-rules",
  "captura-storage",
+ "chrono",
  "regex",
  "reqwest",
  "scraper",
@@ -626,14 +630,30 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "captura-common",
+ "captura-migration",
  "captura-pipeline",
  "captura-rules",
+ "captura-service",
  "captura-storage",
+ "captura-testkit",
  "chrono",
  "futures",
  "reqwest",
  "sea-orm",
  "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "captura-service"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "captura-common",
+ "captura-pipeline",
+ "captura-storage",
+ "chrono",
+ "sea-orm",
  "tracing",
 ]
 
@@ -647,6 +667,19 @@ dependencies = [
  "serde",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "captura-testkit"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "captura-migration",
+ "captura-storage",
+ "chrono",
+ "rand_core 0.6.4",
+ "sea-orm",
+ "sha2",
 ]
 
 [[package]]
@@ -3650,9 +3683,9 @@ dependencies = [
 
 [[package]]
 name = "spider"
-version = "2.37.177"
+version = "2.37.178"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "467161c8861d94a8d95920712cf2f3159c4ceb8bdaa61143d8bf104b1a57afc9"
+checksum = "0db5a023d813b2a289639c62273236edfbe888990b41245e528aa858c0e45e46"
 dependencies = [
  "ahash 0.8.12",
  "aho-corasick",

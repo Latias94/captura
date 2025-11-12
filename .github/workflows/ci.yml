@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      RUST_BACKTRACE: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+      - name: Build workspace
+        run: cargo build --workspace --all-features
+      - name: Run API crate tests (sqlite)
+        run: cargo test -p captura-api --all-features -- --test-threads=1
+
+  # Optional DB backends (disabled by default). To enable, set repository
+  # variables/secrets CAPTURA_TEST_PG_URL / CAPTURA_TEST_MY_URL.
+  # These jobs are skipped if the URL is not provided.
+  pg:
+    if: ${{ env.CAPTURA_TEST_PG_URL != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      RUST_BACKTRACE: "1"
+      CAPTURA_TEST_PG_URL: ${{ env.CAPTURA_TEST_PG_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+      - uses: Swatinem/rust-cache@v2
+      - name: Test Postgres backend (ignored tests)
+        run: cargo test -p captura-api --test db_backends -- --ignored --nocapture
+
+  mysql:
+    if: ${{ env.CAPTURA_TEST_MY_URL != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      RUST_BACKTRACE: "1"
+      CAPTURA_TEST_MY_URL: ${{ env.CAPTURA_TEST_MY_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+      - uses: Swatinem/rust-cache@v2
+      - name: Test MySQL backend (ignored tests)
+        run: cargo test -p captura-api --test db_backends -- --ignored --nocapture

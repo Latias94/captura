@@ -1,0 +1,14 @@
+[package]
+name = "captura-service"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow.workspace = true
+chrono.workspace = true
+sea-orm.workspace = true
+captura-common = { path = "../common" }
+captura-storage = { path = "../storage" }
+captura-pipeline = { path = "../pipeline" }
+tracing.workspace = true
+

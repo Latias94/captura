@@ -10,6 +10,7 @@ pub struct Model {
     pub mime: Option<String>,
     pub length: Option<i64>,
     pub kind: Option<String>,
+    pub media_progression: Option<i64>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

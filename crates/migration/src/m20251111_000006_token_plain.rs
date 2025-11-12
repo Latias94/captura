@@ -9,8 +9,8 @@ impl MigrationTrait for Migration {
         manager
             .alter_table(
                 Table::alter()
-                    .table(User::Table)
-                    .add_column(ColumnDef::new(User::FeverKeyMd5).string())
+                    .table(ApiToken::Table)
+                    .add_column(ColumnDef::new(ApiToken::TokenPlain).string())
                     .to_owned(),
             )
             .await
@@ -20,8 +20,8 @@ impl MigrationTrait for Migration {
         manager
             .alter_table(
                 Table::alter()
-                    .table(User::Table)
-                    .drop_column(User::FeverKeyMd5)
+                    .table(ApiToken::Table)
+                    .drop_column(ApiToken::TokenPlain)
                     .to_owned(),
             )
             .await
@@ -30,11 +30,14 @@ impl MigrationTrait for Migration {
 
 #[allow(dead_code)]
 #[derive(DeriveIden)]
-enum User {
+enum ApiToken {
     Table,
     Id,
-    Username,
-    PasswordHash,
-    FeverKeyMd5,
+    UserId,
+    Name,
+    TokenHash,
+    TokenPlain,
     CreatedAt,
+    LastUsedAt,
+    ExpiresAt,
 }

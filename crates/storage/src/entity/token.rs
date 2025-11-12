@@ -8,6 +8,7 @@ pub struct Model {
     pub user_id: i64,
     pub name: Option<String>,
     pub token_hash: String,
+    pub token_plain: Option<String>,
     pub created_at: DateTimeWithTimeZone,
     pub last_used_at: Option<DateTimeWithTimeZone>,
     pub expires_at: Option<DateTimeWithTimeZone>,

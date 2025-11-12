@@ -1,8 +1,9 @@
 //! Job scheduling and background workers.
 
 use captura_common::Result;
-use captura_pipeline::{refresh_feed_with_meta, refresh_rule_with_yaml};
-use captura_storage::entity::{entry, favicon as fv, feed, job, prelude::*, rule};
+// use captura_pipeline::{refresh_feed_with_meta, refresh_rule_with_yaml};
+use captura_service as service;
+use captura_storage::entity::{favicon as fv, feed, job, prelude::*};
 use chrono::{FixedOffset, Utc};
 use reqwest::{Client, Url};
 use sea_orm::PaginatorTrait;
@@ -10,9 +11,9 @@ use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder,
     QuerySelect, Set,
 };
-use sea_orm::sea_query::OnConflict;
+// use sea_orm::sea_query::OnConflict; // no longer needed after service extraction
 use std::env;
-use tracing::{error, info, instrument};
+use tracing::{info, instrument};
 
 #[derive(Clone, Debug)]
 pub struct SchedulerConfig {
@@ -81,7 +82,9 @@ pub async fn run_once(db: &DatabaseConnection, max: u64) -> Result<usize> {
             }
         }
         scheduled.push(j);
-        if scheduled.len() >= concurrency { break; }
+        if scheduled.len() >= concurrency {
+            break;
+        }
     }
 
     use futures::stream::{FuturesUnordered, StreamExt};
@@ -117,7 +120,8 @@ pub async fn run_once(db: &DatabaseConnection, max: u64) -> Result<usize> {
                         am.status = Set(job::JobStatus::Failed);
                         am.last_error = Set(Some(err.to_string()));
                         if let Some(fid) = j.feed_id {
-                            let _ = update_feed_on_failure(&db, fid, j.attempts).await;
+                            // attempts 在运行前已 +1，这里应传入最新的 attempts 值
+                            let _ = update_feed_on_failure(&db, fid, j.attempts + 1).await;
                         }
                     }
                 }
@@ -135,108 +139,11 @@ pub async fn run_once(db: &DatabaseConnection, max: u64) -> Result<usize> {
 }
 
 async fn refresh_feed_job(db: &DatabaseConnection, j: &job::Model) -> Result<()> {
-    let Some(f) = Feed::find_by_id(j.feed_id.unwrap_or_default())
-        .one(db)
-        .await
-        .map_err(|e| captura_common::Error::Storage(e.to_string()))?
-    else {
-        return Err(captura_common::Error::NotFound("feed missing".into()));
-    };
-    let (entries, meta) = if matches!(f.r#type, feed::FeedType::Rule) {
-        let rule_yaml = match f.rule_id {
-            Some(rid) => {
-                let r = Rule::find_by_id(rid)
-                    .one(db)
-                    .await
-                    .map_err(|e| captura_common::Error::Storage(e.to_string()))?
-                    .ok_or_else(|| captura_common::Error::NotFound("rule missing".into()))?;
-                r.yaml
-            }
-            None => {
-                return Err(captura_common::Error::Config(
-                    "rule_id required for rule-type feed".into(),
-                ))
-            }
-        };
-        (refresh_rule_with_yaml(&f, &rule_yaml).await?, None)
-    } else {
-        refresh_feed_with_meta(&f).await?
-    };
-    // insert entries
-    let now = Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
-    let guids: Vec<String> = entries
-        .iter()
-        .filter_map(|n| n.guid.clone())
-        .collect();
-    let existing: std::collections::HashSet<String> = if guids.is_empty() {
-        Default::default()
-    } else {
-        Entry::find()
-            .filter(entry::Column::FeedId.eq(f.id))
-            .filter(entry::Column::Guid.is_in(guids.clone()))
-            .select_only()
-            .column(entry::Column::Guid)
-            .into_tuple::<Option<String>>()
-            .all(db)
-            .await
-            .map_err(|e| captura_common::Error::Storage(e.to_string()))?
-            .into_iter()
-            .flatten()
-            .collect()
-    };
-    let mut models: Vec<entry::ActiveModel> = Vec::new();
-    for n in entries {
-        if let Some(guid) = n.guid.clone() {
-            if existing.contains(&guid) { continue; }
-            let mut am: entry::ActiveModel = Default::default();
-            am.feed_id = Set(f.id);
-            am.guid = Set(Some(guid));
-            am.url = Set(n.url);
-            am.title = Set(n.title);
-            am.summary = Set(n.summary);
-            am.content_html = Set(n.content_html);
-            am.author = Set(n.author);
-            am.published_at = Set(n
-                .published_at
-                .map(|d| d.with_timezone(&FixedOffset::east_opt(0).unwrap())));
-            am.created_at = Set(now);
-            am.updated_at = Set(now);
-            am.hash = Set(None);
-            am.is_read = Set(false);
-            am.is_starred = Set(false);
-            am.extras_json = Set(Some(n.extras));
-            models.push(am);
-        }
+    let fid = j.feed_id.unwrap_or_default();
+    if fid == 0 {
+        return Err(captura_common::Error::Config("job missing feed_id".into()));
     }
-    if !models.is_empty() {
-        let _ = Entry::insert_many(models)
-            .on_conflict(
-                OnConflict::columns([entry::Column::FeedId, entry::Column::Guid])
-                    .do_nothing()
-                    .to_owned(),
-            )
-            .exec(db)
-            .await
-            .map_err(|e| captura_common::Error::Storage(e.to_string()))?;
-    }
-    // update feed schedule on success
-    let mut fm: feed::ActiveModel = f.into();
-    fm.checked_at = Set(Some(now));
-    fm.error_count = Set(0);
-    if let Some(m) = meta {
-        fm.last_status = Set(m.last_status.map(|s| s as i32));
-        fm.etag = Set(m.etag);
-        fm.last_modified = Set(m.last_modified);
-    }
-    let ok_secs: i64 = env::var("SCHEDULER_SUCCESS_INTERVAL_SECS")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(900);
-    fm.next_run_at = Set(Some(now + chrono::Duration::seconds(ok_secs.max(60))));
-    let _ = fm
-        .update(db)
-        .await
-        .map_err(|e| captura_common::Error::Storage(e.to_string()))?;
+    let _ = service::refresh_and_persist_by_id(db, fid).await?;
     Ok(())
 }
 
@@ -397,8 +304,92 @@ async fn update_feed_on_failure(
 
 // TODO: 添加 scheduler 集成测试（需可注入 fetcher/crawler mock）。
 #[cfg(test)]
+mod it {
+    use super::*;
+    use captura_storage::entity::{feed, prelude::*, user};
+
+    #[tokio::test]
+    async fn backoff_on_failed_feed_refresh() {
+        let db = captura_testkit::setup_db().await;
+        let now = Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
+        // user
+        let u = user::ActiveModel {
+            username: Set("u".into()),
+            password_hash: Set("h".into()),
+            created_at: Set(now),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+        // feed: rule 类型但无 rule_id，触发 service 层快速失败（无需网络）
+        let f = feed::ActiveModel {
+            user_id: Set(u.id),
+            category_id: Set(None),
+            r#type: Set(feed::FeedType::Rule),
+            title: Set(Some("bad rule".into())),
+            site_url: Set(None),
+            feed_url: Set("https://example.com/rule".into()),
+            rule_id: Set(None),
+            user_agent: Set(None),
+            headers_json: Set(None),
+            cookies: Set(None),
+            proxy_url: Set(None),
+            fetch_via_proxy: Set(false),
+            disable_http2: Set(false),
+            allow_invalid_certs: Set(false),
+            request_timeout_ms: Set(None),
+            checked_at: Set(None),
+            next_run_at: Set(Some(now - chrono::Duration::minutes(1))),
+            etag: Set(None),
+            last_modified: Set(None),
+            last_status: Set(None),
+            error_count: Set(0),
+            disabled: Set(false),
+            scraper_rules: Set(None),
+            rewrite_rules: Set(None),
+            blocklist_rules: Set(None),
+            keeplist_rules: Set(None),
+            url_rewrite_rules: Set(None),
+            block_filter_entry_rules: Set(None),
+            keep_filter_entry_rules: Set(None),
+            created_at: Set(now),
+            updated_at: Set(now),
+            favicon_id: Set(None),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+
+        let enq = enqueue_due_feeds(&db, 100).await.unwrap();
+        assert_eq!(enq, 1);
+
+        let processed = run_once(&db, 10).await.unwrap();
+        assert_eq!(processed, 1);
+
+        // 校验 Job 状态为 Failed 且 attempts=1
+        let j = Job::find()
+            .order_by_desc(job::Column::Id)
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(matches!(j.status, job::JobStatus::Failed));
+        assert_eq!(j.attempts, 1);
+        assert!(j.last_error.unwrap_or_default().contains("rule"));
+
+        // feed 应设置回退后的 next_run_at，并记录 error_count=1
+        let f2 = Feed::find_by_id(f.id).one(&db).await.unwrap().unwrap();
+        assert!(f2.next_run_at.unwrap() > now);
+        assert_eq!(f2.error_count, 1);
+    }
+}
+
+#[cfg(test)]
 mod live_tests {
     use super::*;
+    use captura_storage::entity::entry;
     use migration::migrate;
     use sea_orm::PaginatorTrait;
 
@@ -410,9 +401,7 @@ mod live_tests {
     }
 
     async fn setup_db() -> DatabaseConnection {
-        let db = captura_storage::connect("sqlite::memory:").await.unwrap();
-        migrate(&db).await.unwrap();
-        db
+        captura_testkit::setup_db().await
     }
 
     #[tokio::test]

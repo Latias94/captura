@@ -8,6 +8,8 @@ mod m20251101_000001_init;
 mod m20251101_000002_user_fever;
 mod m20251111_000003_favicon;
 mod m20251111_000004_token_expiry;
+mod m20251111_000005_enclosure_progress;
+mod m20251111_000006_token_plain;
 
 pub struct Migrator;
 
@@ -19,6 +21,8 @@ impl MigratorTrait for Migrator {
             Box::new(m20251101_000002_user_fever::Migration),
             Box::new(m20251111_000003_favicon::Migration),
             Box::new(m20251111_000004_token_expiry::Migration),
+            Box::new(m20251111_000006_token_plain::Migration),
+            Box::new(m20251111_000005_enclosure_progress::Migration),
         ]
     }
 }
