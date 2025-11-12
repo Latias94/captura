@@ -3,6 +3,8 @@ use chrono::{FixedOffset, Utc};
 use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
 use sha2::{Digest, Sha256};
 
+use argon2::PasswordVerifier;
+use base64::Engine;
 use captura_storage::entity::{prelude::*, token};
 
 use crate::error::{internal, unauthorized, ApiResult};
@@ -52,6 +54,35 @@ pub async fn mf_auth(st: &AppState, headers: &HeaderMap) -> ApiResult<AuthUser> 
         if let Ok(s) = v.to_str() {
             if let Some(t) = s.strip_prefix("Bearer ") {
                 return AuthUser::from_bearer(&st.db, t).await;
+            }
+            // 兼容 Basic 鉴权（Miniflux 支持 Basic 与 Token）：Authorization: Basic base64(username:password)
+            if let Some(b64) = s.strip_prefix("Basic ") {
+                if let Ok(raw) = base64::engine::general_purpose::STANDARD.decode(b64) {
+                    if let Ok(pair) = std::str::from_utf8(&raw) {
+                        if let Some((username, password)) = pair.split_once(':') {
+                            // 校验用户口令
+                            let u = User::find()
+                                .filter(
+                                    captura_storage::entity::user::Column::Username.eq(username),
+                                )
+                                .one(&st.db)
+                                .await
+                                .map_err(internal)?;
+                            if let Some(u) = u {
+                                if let Ok(parsed) = argon2::PasswordHash::new(&u.password_hash) {
+                                    if argon2::Argon2::default()
+                                        .verify_password(password.as_bytes(), &parsed)
+                                        .is_ok()
+                                    {
+                                        return Ok(AuthUser { user_id: u.id });
+                                    }
+                                }
+                            }
+                            return Err(unauthorized("invalid credentials"));
+                        }
+                    }
+                }
+                return Err(unauthorized("invalid basic header"));
             }
         }
     }

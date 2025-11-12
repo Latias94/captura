@@ -273,7 +273,7 @@ dependencies = [
  "serde_urlencoded",
  "sync_wrapper",
  "tokio",
- "tower",
+ "tower 0.5.2",
  "tower-layer",
  "tower-service",
  "tracing",
@@ -319,7 +319,7 @@ dependencies = [
  "multer",
  "pin-project-lite",
  "serde",
- "tower",
+ "tower 0.5.2",
  "tower-layer",
  "tower-service",
 ]
@@ -519,6 +519,7 @@ dependencies = [
  "chrono",
  "futures",
  "headers",
+ "hex",
  "http-body-util",
  "md-5",
  "once_cell",
@@ -532,10 +533,11 @@ dependencies = [
  "serde_json",
  "sha2",
  "tokio",
- "tower",
+ "tower 0.4.13",
  "tracing",
  "tracing-subscriber",
  "url",
+ "urlencoding",
 ]
 
 [[package]]
@@ -640,6 +642,7 @@ dependencies = [
  "futures",
  "reqwest",
  "sea-orm",
+ "serde_json",
  "tokio",
  "tracing",
 ]
@@ -648,12 +651,20 @@ dependencies = [
 name = "captura-service"
 version = "0.1.0"
 dependencies = [
+ "ammonia",
  "anyhow",
+ "async-trait",
  "captura-common",
  "captura-pipeline",
  "captura-storage",
  "chrono",
+ "hex",
+ "hmac",
+ "reqwest",
  "sea-orm",
+ "serde",
+ "serde_json",
+ "sha2",
  "tracing",
 ]
 
@@ -2608,6 +2619,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "pin-project"
+version = "1.1.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "677f1add503faace112b9f1373e43e9e054bfdd22ff1a63c1bc485eaec6a6a8a"
+dependencies = [
+ "pin-project-internal",
+]
+
+[[package]]
+name = "pin-project-internal"
+version = "1.1.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6e918e4ff8c4549eb882f14b3a4bc8c8bc93de829416eacf579f1207a8fbf861"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.110",
+]
+
+[[package]]
 name = "pin-project-lite"
 version = "0.2.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3019,7 +3050,7 @@ dependencies = [
  "tokio-native-tls",
  "tokio-rustls",
  "tokio-util",
- "tower",
+ "tower 0.5.2",
  "tower-http",
  "tower-service",
  "url",
@@ -3711,7 +3742,7 @@ dependencies = [
  "strum 0.26.3",
  "tokio",
  "tokio-stream",
- "tower",
+ "tower 0.5.2",
  "url",
 ]
 
@@ -4413,6 +4444,21 @@ checksum = "df8b2b54733674ad286d16267dcfc7a71ed5c776e4ac7aa3c3e2561f7c637bf2"
 
 [[package]]
 name = "tower"
+version = "0.4.13"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b8fa9be0de6cf49e536ce1851f987bd21a43b771b09473c3549a6c853db37c1c"
+dependencies = [
+ "futures-core",
+ "futures-util",
+ "pin-project",
+ "pin-project-lite",
+ "tower-layer",
+ "tower-service",
+ "tracing",
+]
+
+[[package]]
+name = "tower"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d039ad9159c98b70ecfd540b2573b97f7f52c3e8d9f8ad57a24b916a536975f9"
@@ -4441,7 +4487,7 @@ dependencies = [
  "http-body",
  "iri-string",
  "pin-project-lite",
- "tower",
+ "tower 0.5.2",
  "tower-layer",
  "tower-service",
 ]

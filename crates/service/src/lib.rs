@@ -8,6 +8,8 @@ use sea_orm::sea_query::OnConflict;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QuerySelect, Set,
 };
+pub mod integration;
+pub mod webhook;
 
 /// Refresh a feed by id and persist new entries, update feed metadata.
 /// Returns number of inserted entries.
@@ -66,6 +68,8 @@ pub async fn refresh_and_persist(db: &DatabaseConnection, f: &feed::Model) -> Re
     };
 
     let mut models: Vec<entry::ActiveModel> = Vec::new();
+    // 记录新插入条目的 guid -> enclosures，用于落表
+    let mut new_enclosures: Vec<(String, Vec<captura_common::Enclosure>)> = Vec::new();
     for n in entries {
         if let Some(guid) = n.guid.clone() {
             if existing.contains(&guid) {
@@ -73,7 +77,7 @@ pub async fn refresh_and_persist(db: &DatabaseConnection, f: &feed::Model) -> Re
             }
             let mut am: entry::ActiveModel = Default::default();
             am.feed_id = Set(f.id);
-            am.guid = Set(Some(guid));
+            am.guid = Set(Some(guid.clone()));
             am.url = Set(n.url);
             am.title = Set(n.title);
             am.summary = Set(n.summary);
@@ -89,6 +93,9 @@ pub async fn refresh_and_persist(db: &DatabaseConnection, f: &feed::Model) -> Re
             am.is_starred = Set(false);
             am.extras_json = Set(Some(n.extras));
             models.push(am);
+            if !n.enclosures.is_empty() {
+                new_enclosures.push((guid, n.enclosures));
+            }
         }
     }
     let mut inserted = 0usize;
@@ -103,6 +110,96 @@ pub async fn refresh_and_persist(db: &DatabaseConnection, f: &feed::Model) -> Re
             .await
             .map_err(|e| captura_common::Error::Storage(e.to_string()))?;
         inserted = guids.len().saturating_sub(existing.len());
+
+        // 插入 enclosures（仅对新插入的 guid）
+        if !new_enclosures.is_empty() {
+            // 映射 guid -> entry_id
+            let new_guids: Vec<String> = new_enclosures.iter().map(|(g, _)| g.clone()).collect();
+            let id_pairs: Vec<(Option<String>, i64)> = Entry::find()
+                .filter(entry::Column::FeedId.eq(f.id))
+                .filter(entry::Column::Guid.is_in(new_guids.clone()))
+                .select_only()
+                .column(entry::Column::Guid)
+                .column(entry::Column::Id)
+                .into_tuple()
+                .all(db)
+                .await
+                .map_err(|e| captura_common::Error::Storage(e.to_string()))?;
+            use std::collections::HashMap;
+            let mut gid_to_id: HashMap<String, i64> = HashMap::new();
+            for (g, id) in id_pairs {
+                if let Some(g) = g {
+                    gid_to_id.insert(g, id);
+                }
+            }
+            // 构建插入模型
+            let mut emodels: Vec<captura_storage::entity::enclosure::ActiveModel> = Vec::new();
+            for (g, list) in new_enclosures.into_iter() {
+                if let Some(&eid) = gid_to_id.get(&g) {
+                    for e in list {
+                        use captura_storage::entity::enclosure as enc;
+                        let mut am: enc::ActiveModel = Default::default();
+                        am.entry_id = Set(eid);
+                        am.url = Set(e.url);
+                        am.mime = Set(e.r#type);
+                        am.length = Set(e.length);
+                        am.kind = Set(e.kind.map(|k| format!("{:?}", k)));
+                        emodels.push(am);
+                    }
+                }
+            }
+            if !emodels.is_empty() {
+                let _ = captura_storage::entity::enclosure::Entity::insert_many(emodels)
+                    .exec(db)
+                    .await
+                    .map_err(|e| captura_common::Error::Storage(e.to_string()))?;
+            }
+        }
+    }
+
+    // 触发 webhook: new_entries（仅当有新增）
+    if inserted > 0 {
+        // 查询新插入的 entry ids（根据 guids 差集）
+        let new_guids: Vec<String> = guids
+            .into_iter()
+            .filter(|g| !existing.contains(g))
+            .collect();
+        if !new_guids.is_empty() {
+            let ids: Vec<i64> = Entry::find()
+                .filter(entry::Column::FeedId.eq(f.id))
+                .filter(entry::Column::Guid.is_in(new_guids))
+                .select_only()
+                .column(entry::Column::Id)
+                .into_tuple()
+                .all(db)
+                .await
+                .map_err(|e| captura_common::Error::Storage(e.to_string()))?;
+            let _ = crate::webhook::emit_new_entries(db, f.user_id, f, &ids).await;
+            // 集成任务入队（避免跨 crate 依赖导致循环，引入直接落表实现）
+            let payload = serde_json::json!({
+                "event_type": "new_entries",
+                "feed_id": f.id,
+                "entry_ids": ids,
+            });
+            use captura_storage::entity::job::{self, JobStatus, JobType};
+            let now2 = Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
+            let jam = job::ActiveModel {
+                user_id: Set(f.user_id),
+                feed_id: Set(Some(f.id)),
+                rule_id: Set(None),
+                job_type: Set(JobType::Integration),
+                status: Set(JobStatus::Pending),
+                priority: Set(10),
+                run_at: Set(now2),
+                attempts: Set(0),
+                last_error: Set(None),
+                payload_json: Set(Some(payload)),
+                created_at: Set(now2),
+                updated_at: Set(now2),
+                ..Default::default()
+            };
+            let _ = job::Entity::insert(jam).exec(db).await;
+        }
     }
 
     // Update feed meta on success if meta provided

@@ -3,6 +3,10 @@ name = "captura-api"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+name = "captura_api"
+path = "src/lib.rs"
+
 [dependencies]
 anyhow.workspace = true
 axum.workspace = true
@@ -35,9 +39,11 @@ reqwest.workspace = true
 scraper.workspace = true
 once_cell.workspace = true
 regex.workspace = true
+urlencoding = "2"
+hex = "0.4"
 
 [dev-dependencies]
 http-body-util = "0.1"
 futures = "0.3"
-tower = { version = "0.5", features = ["util"] }
+tower = { version = "0.4", features = ["util"] }
 captura-testkit = { path = "../testkit" }

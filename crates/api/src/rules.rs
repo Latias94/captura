@@ -21,6 +21,7 @@ use crate::auth::AuthUser;
 use crate::error::{bad_request, forbidden, internal, not_found, ApiResult};
 use crate::validate_limit_offset;
 use crate::AppState;
+use regex::Regex;
 
 #[derive(Serialize)]
 pub(crate) struct RuleDto {
@@ -183,6 +184,216 @@ pub(crate) async fn delete_rule(
     Ok("ok")
 }
 
+// ---------------- Templates (rule presets) ----------------
+
+#[derive(Serialize)]
+pub(crate) struct RuleTemplateDto {
+    pub id: i64,
+    pub rule_id: String,
+    pub namespace: Option<String>,
+    pub description: Option<String>,
+    pub version: Option<String>,
+    pub params: Vec<String>,
+}
+
+fn extract_params_from_yaml(yaml: &str) -> Vec<String> {
+    if let Ok(spec) = parse_rule(yaml) {
+        if let Some(list) = spec.list {
+            return extract_params_from_url(&list.url);
+        }
+    }
+    Vec::new()
+}
+
+fn extract_params_from_url(url: &str) -> Vec<String> {
+    let mut names: Vec<String> = Vec::new();
+    let re1 = Regex::new(r":([a-zA-Z0-9_]+)").unwrap();
+    let re2 = Regex::new(r"\{([a-zA-Z0-9_]+)\}").unwrap();
+    for caps in re1.captures_iter(url) {
+        if let Some(m) = caps.get(1) {
+            names.push(m.as_str().to_string());
+        }
+    }
+    for caps in re2.captures_iter(url) {
+        if let Some(m) = caps.get(1) {
+            names.push(m.as_str().to_string());
+        }
+    }
+    names.sort();
+    names.dedup();
+    names
+}
+
+#[derive(Deserialize)]
+pub(crate) struct TemplatesQuery {
+    pub ns: Option<String>,
+    pub q: Option<String>,
+    pub limit: Option<u64>,
+    pub offset: Option<u64>,
+}
+
+pub(crate) async fn list_templates(
+    State(st): State<AppState>,
+    TypedHeader(Authorization(bearer)): TypedHeader<Authorization<Bearer>>,
+    Query(q): Query<TemplatesQuery>,
+) -> ApiResult<Json<Vec<RuleTemplateDto>>> {
+    let _user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
+    validate_limit_offset(q.limit, q.offset)?;
+    // 简单策略：按 namespace 过滤或按 rule_id/description 模糊匹配
+    let mut sel = Rule::find();
+    if let Some(ref ns) = q.ns {
+        sel = sel.filter(rule::Column::Namespace.eq(ns.to_string()));
+    }
+    if let Some(ref s) = q.q {
+        let like = format!("%{}%", s);
+        sel = sel.filter(
+            Condition::any()
+                .add(rule::Column::RuleId.like(like.as_str()))
+                .add(rule::Column::Description.like(like.as_str())),
+        );
+    }
+    let sel = if let Some(l) = q.limit {
+        sel.limit(l)
+    } else {
+        sel
+    };
+    let sel = if let Some(o) = q.offset {
+        sel.offset(o)
+    } else {
+        sel
+    };
+    let rows = sel
+        .order_by_desc(rule::Column::UpdatedAt)
+        .all(&st.db)
+        .await
+        .map_err(internal)?;
+    let list = rows
+        .into_iter()
+        .map(|r| {
+            let params = extract_params_from_yaml(&r.yaml);
+            RuleTemplateDto {
+                id: r.id,
+                rule_id: r.rule_id,
+                namespace: r.namespace,
+                description: r.description,
+                version: r.version,
+                params,
+            }
+        })
+        .collect();
+    Ok(Json(list))
+}
+
+pub(crate) async fn get_template(
+    State(st): State<AppState>,
+    TypedHeader(Authorization(bearer)): TypedHeader<Authorization<Bearer>>,
+    Path(id): Path<i64>,
+) -> ApiResult<Json<RuleTemplateDto>> {
+    let _user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
+    let Some(r) = Rule::find_by_id(id).one(&st.db).await.map_err(internal)? else {
+        return Err(not_found("rule template"));
+    };
+    let params = extract_params_from_yaml(&r.yaml);
+    Ok(Json(RuleTemplateDto {
+        id: r.id,
+        rule_id: r.rule_id,
+        namespace: r.namespace,
+        description: r.description,
+        version: r.version,
+        params,
+    }))
+}
+
+#[derive(Deserialize)]
+pub(crate) struct CreateFeedFromTemplateReq {
+    pub template_id: i64,
+    pub params: serde_json::Value,
+    pub title: Option<String>,
+    pub category_id: Option<i64>,
+}
+
+pub(crate) async fn create_feed_from_template(
+    State(st): State<AppState>,
+    TypedHeader(Authorization(bearer)): TypedHeader<Authorization<Bearer>>,
+    Json(req): Json<CreateFeedFromTemplateReq>,
+) -> ApiResult<Json<crate::IdResp>> {
+    let user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
+    if !req.params.is_object() {
+        return Err(bad_request("params must be object"));
+    }
+    if let Some(cid) = req.category_id {
+        crate::assert_category_ownership(&st.db, user.user_id, cid).await?;
+    }
+    let Some(r) = Rule::find_by_id(req.template_id)
+        .one(&st.db)
+        .await
+        .map_err(internal)?
+    else {
+        return Err(not_found("rule template"));
+    };
+    let spec: RuleSpec = parse_rule(&r.yaml).map_err(internal)?;
+    // 渲染 feed_url 方便调试（即使 rule 模式不依赖 feed_url）
+    let feed_url_rendered = spec
+        .list
+        .as_ref()
+        .map(|l| {
+            let mut s = l.url.clone();
+            if let Some(map) = req.params.as_object() {
+                for (k, v) in map.iter() {
+                    let needle1 = format!(":{}", k);
+                    let needle2 = format!("{{{}}}", k);
+                    let repl_owned = v
+                        .as_str()
+                        .map(|s| s.to_string())
+                        .unwrap_or_else(|| v.to_string());
+                    s = s.replace(&needle1, &repl_owned);
+                    s = s.replace(&needle2, &repl_owned);
+                }
+            }
+            s
+        })
+        .unwrap_or_else(|| r.rule_id.clone());
+    let now = Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
+    let am = feed::ActiveModel {
+        user_id: Set(user.user_id),
+        category_id: Set(req.category_id),
+        r#type: Set(feed::FeedType::Rule),
+        title: Set(req.title.clone()),
+        site_url: Set(None),
+        feed_url: Set(feed_url_rendered),
+        rule_id: Set(Some(r.id)),
+        rule_params_json: Set(Some(req.params.clone())),
+        user_agent: Set(None),
+        headers_json: Set(None),
+        cookies: Set(None),
+        proxy_url: Set(None),
+        fetch_via_proxy: Set(false),
+        disable_http2: Set(false),
+        allow_invalid_certs: Set(false),
+        request_timeout_ms: Set(None),
+        checked_at: Set(None),
+        next_run_at: Set(None),
+        etag: Set(None),
+        last_modified: Set(None),
+        last_status: Set(None),
+        error_count: Set(0),
+        disabled: Set(false),
+        scraper_rules: Set(None),
+        rewrite_rules: Set(None),
+        blocklist_rules: Set(None),
+        keeplist_rules: Set(None),
+        url_rewrite_rules: Set(None),
+        block_filter_entry_rules: Set(None),
+        keep_filter_entry_rules: Set(None),
+        integrations_json: Set(None),
+        created_at: Set(now),
+        updated_at: Set(now),
+        ..Default::default()
+    };
+    let res = am.insert(&st.db).await.map_err(internal)?;
+    Ok(Json(crate::IdResp { id: res.id }))
+}
+
 #[derive(Deserialize)]
 pub(crate) struct TryRuleReq {
     pub url: String,
@@ -262,6 +473,7 @@ pub(crate) async fn try_rule(
         feed_url: req.url.clone(),
         favicon_id: None,
         rule_id: None,
+        rule_params_json: None,
         user_agent: spec.fetch.user_agent.clone(),
         headers_json: None,
         cookies: None,
@@ -284,6 +496,7 @@ pub(crate) async fn try_rule(
         url_rewrite_rules: None,
         block_filter_entry_rules: None,
         keep_filter_entry_rules: None,
+        integrations_json: None,
         created_at: now,
         updated_at: now,
     };

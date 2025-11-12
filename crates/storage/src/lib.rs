@@ -52,10 +52,13 @@ pub mod entity {
     pub mod entry_label;
     pub mod favicon;
     pub mod feed;
+    pub mod integration;
     pub mod job;
     pub mod label;
     pub mod prelude;
     pub mod rule;
     pub mod token;
     pub mod user;
+    pub mod user_pref;
+    pub mod webhook;
 }

@@ -1,3 +1,4 @@
+use axum::response::Response;
 use axum::{
     extract::{Path, State},
     Json,
@@ -6,12 +7,15 @@ use axum_extra::typed_header::TypedHeader;
 use chrono::{FixedOffset, Utc};
 use headers::authorization::Bearer;
 use headers::Authorization;
-use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, QueryOrder, Set};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect, Set,
+};
 use serde::{Deserialize, Serialize};
 use url::Url;
 
 use captura_service as service;
-use captura_storage::entity::{feed, job, prelude::*};
+use captura_storage::entity::{enclosure, entry};
+use captura_storage::entity::{feed, job, prelude::*, rule};
 
 use crate::auth::AuthUser;
 use crate::error::{bad_request, internal, not_found, ApiResult};
@@ -26,6 +30,7 @@ pub(crate) struct CreateFeedReq {
     pub site_url: Option<String>,
     pub feed_url: String,
     pub rule_id: Option<i64>,
+    pub rule_params_json: Option<serde_json::Value>,
     pub user_agent: Option<String>,
     pub headers_json: Option<serde_json::Value>,
     pub cookies: Option<String>,
@@ -179,6 +184,8 @@ pub(crate) struct UpdateFeedReq {
     pub disable_http2: Option<bool>,
     pub allow_invalid_certs: Option<bool>,
     pub request_timeout_ms: Option<i32>,
+    pub integrations_json: Option<serde_json::Value>,
+    pub rule_params_json: Option<serde_json::Value>,
 }
 
 pub(crate) async fn update_feed(
@@ -234,6 +241,18 @@ pub(crate) async fn update_feed(
     if let Some(v) = body.request_timeout_ms {
         am.request_timeout_ms = Set(Some(v));
     }
+    if let Some(v) = body.integrations_json {
+        if !v.is_object() {
+            return Err(bad_request("integrations_json must be an object"));
+        }
+        am.integrations_json = Set(Some(v));
+    }
+    if let Some(v) = body.rule_params_json {
+        if !v.is_object() {
+            return Err(bad_request("rule_params_json must be an object"));
+        }
+        am.rule_params_json = Set(Some(v));
+    }
     am.update(&st.db).await.map_err(internal)?;
     Ok("ok")
 }
@@ -272,7 +291,50 @@ pub(crate) async fn create_feed(
         "rule" => feed::FeedType::Rule,
         _ => return Err(bad_request("invalid feed type")),
     };
-    if body.feed_url.trim().is_empty() || Url::parse(&body.feed_url).is_err() {
+    if body.feed_url.trim().is_empty() {
+        return Err(bad_request("invalid feed_url"));
+    }
+    // captura_hub:// 路由 → 本地规则模板映射
+    let normalized_feed_url = body.feed_url.clone();
+    let mut hub_mapped_rule: Option<(String, serde_json::Value)> = None;
+    if let Some(rest) = normalized_feed_url.strip_prefix("captura_hub://") {
+        let (path, params) = rest
+            .split_once('?')
+            .map(|(p, q)| (p.to_string(), q.to_string()))
+            .unwrap_or((rest.to_string(), String::new()));
+        let rid = match path.as_str() {
+            "github/trending" => Some("captura.route.github.trending".to_string()),
+            "hn/front" => Some("captura.route.hn.front".to_string()),
+            "lobsters/front" => Some("captura.route.lobsters.front".to_string()),
+            "zhihu/hotlist" => Some("captura.route.zhihu.hotlist".to_string()),
+            "reuters/top" => Some("captura.route.reuters.top".to_string()),
+            "medium/tag" => Some("captura.route.medium.tag".to_string()),
+            _ => None,
+        };
+        let mut map = serde_json::Map::new();
+        if !params.is_empty() {
+            for pair in params.split('&') {
+                if let Some((k, v)) = pair.split_once('=') {
+                    map.insert(
+                        k.to_string(),
+                        serde_json::Value::String(
+                            urlencoding::decode(v)
+                                .unwrap_or_else(|_| v.into())
+                                .into_owned(),
+                        ),
+                    );
+                }
+            }
+        }
+        let params_json = serde_json::Value::Object(map);
+        if let Some(rid) = rid {
+            hub_mapped_rule = Some((rid, params_json));
+        } else {
+            return Err(bad_request("unknown captura_hub route"));
+        }
+    }
+    // 验证 URL（仅当非 captura_hub 路由时）
+    if hub_mapped_rule.is_none() && Url::parse(&normalized_feed_url).is_err() {
         return Err(bad_request("invalid feed_url"));
     }
     if let Some(t) = body.request_timeout_ms {
@@ -290,21 +352,71 @@ pub(crate) async fn create_feed(
     }
     let dup = Feed::find()
         .filter(feed::Column::UserId.eq(user.user_id))
-        .filter(feed::Column::FeedUrl.eq(&body.feed_url))
+        .filter(feed::Column::FeedUrl.eq(&normalized_feed_url))
         .one(&st.db)
         .await
         .map_err(internal)?;
     if dup.is_some() {
         return Err(bad_request("feed already exists"));
     }
+    // 如果是 captura_hub 路由，优先落地为 rule 型订阅（模板 + 参数）
+    if let Some((rid, params)) = hub_mapped_rule {
+        // 找模板
+        let tpl = Rule::find()
+            .filter(rule::Column::RuleId.eq(rid.clone()))
+            .one(&st.db)
+            .await
+            .map_err(internal)?
+            .ok_or_else(|| bad_request("rule template not found for hub route"))?;
+        let am = feed::ActiveModel {
+            user_id: Set(user.user_id),
+            category_id: Set(body.category_id),
+            r#type: Set(feed::FeedType::Rule),
+            title: Set(body.title.clone()),
+            site_url: Set(None),
+            feed_url: Set(body.feed_url.clone()),
+            rule_id: Set(Some(tpl.id)),
+            rule_params_json: Set(Some(params)),
+            user_agent: Set(body.user_agent.clone()),
+            headers_json: Set(body.headers_json),
+            cookies: Set(body.cookies.clone()),
+            proxy_url: Set(body.proxy_url.clone()),
+            fetch_via_proxy: Set(body.fetch_via_proxy.unwrap_or(false)),
+            disable_http2: Set(body.disable_http2.unwrap_or(false)),
+            allow_invalid_certs: Set(body.allow_invalid_certs.unwrap_or(false)),
+            request_timeout_ms: Set(body.request_timeout_ms),
+            checked_at: Set(None),
+            next_run_at: Set(None),
+            etag: Set(None),
+            last_modified: Set(None),
+            last_status: Set(None),
+            error_count: Set(0),
+            disabled: Set(body.disabled.unwrap_or(false)),
+            scraper_rules: Set(None),
+            rewrite_rules: Set(None),
+            blocklist_rules: Set(None),
+            keeplist_rules: Set(None),
+            url_rewrite_rules: Set(None),
+            block_filter_entry_rules: Set(None),
+            keep_filter_entry_rules: Set(None),
+            integrations_json: Set(None),
+            created_at: Set(now),
+            updated_at: Set(now),
+            ..Default::default()
+        };
+        let res = am.insert(&st.db).await.map_err(internal)?;
+        return Ok(Json(CreateFeedResp { id: res.id }));
+    }
+    // 常规订阅路径
     let am = feed::ActiveModel {
         user_id: Set(user.user_id),
         category_id: Set(body.category_id),
         r#type: Set(ftype),
         title: Set(body.title.clone()),
         site_url: Set(body.site_url.clone()),
-        feed_url: Set(body.feed_url.clone()),
+        feed_url: Set(normalized_feed_url.clone()),
         rule_id: Set(body.rule_id),
+        rule_params_json: Set(body.rule_params_json),
         user_agent: Set(body.user_agent.clone()),
         headers_json: Set(body.headers_json),
         cookies: Set(body.cookies.clone()),
@@ -393,4 +505,104 @@ pub(crate) async fn enqueue_feed_refresh(
     };
     let j = am.insert(&st.db).await.map_err(internal)?;
     Ok(Json(EnqueueResp { id: j.id }))
+}
+
+// ----------- RSS export (generate RSS 2.0 from stored entries) -----------
+pub(crate) async fn rss_feed(
+    State(st): State<AppState>,
+    Path(id): Path<i64>,
+) -> ApiResult<Response> {
+    let Some(f) = Feed::find_by_id(id).one(&st.db).await.map_err(internal)? else {
+        return Err(not_found("feed not found"));
+    };
+    // collect latest entries
+    let rows = entry::Entity::find()
+        .filter(entry::Column::FeedId.eq(id))
+        .order_by_desc(entry::Column::PublishedAt)
+        .order_by_desc(entry::Column::CreatedAt)
+        .limit(50)
+        .all(&st.db)
+        .await
+        .map_err(internal)?;
+    let entry_ids: Vec<i64> = rows.iter().map(|e| e.id).collect();
+    // enclosures map
+    use std::collections::HashMap;
+    let mut emap: HashMap<i64, Vec<enclosure::Model>> = HashMap::new();
+    if !entry_ids.is_empty() {
+        let encs = enclosure::Entity::find()
+            .filter(enclosure::Column::EntryId.is_in(entry_ids.clone()))
+            .all(&st.db)
+            .await
+            .map_err(internal)?;
+        for e in encs {
+            emap.entry(e.entry_id).or_default().push(e);
+        }
+    }
+    // build RSS 2.0
+    let mut out = String::new();
+    use std::fmt::Write as _;
+    writeln!(out, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>").ok();
+    writeln!(out, "<rss version=\"2.0\">\n<channel>").ok();
+    let title = f.title.clone().unwrap_or_else(|| f.feed_url.clone());
+    let link = f.site_url.clone().unwrap_or_else(|| f.feed_url.clone());
+    writeln!(out, "<title>{}</title>", xml_escape(&title)).ok();
+    writeln!(out, "<link>{}</link>", xml_escape(&link)).ok();
+    writeln!(out, "<description>Generated by Captura</description>").ok();
+    for e in rows {
+        writeln!(out, "<item>").ok();
+        if let Some(t) = &e.title {
+            writeln!(out, "<title>{}</title>", xml_escape(t)).ok();
+        }
+        if let Some(u) = &e.url {
+            writeln!(out, "<link>{}</link>", xml_escape(u)).ok();
+        }
+        // guid prefer URL else GUID hash/id
+        if let Some(u) = &e.url {
+            writeln!(out, "<guid isPermaLink=\"true\">{}</guid>", xml_escape(u)).ok();
+        } else if let Some(g) = &e.guid {
+            writeln!(out, "<guid>{}</guid>", xml_escape(g)).ok();
+        } else {
+            writeln!(out, "<guid>{}</guid>", e.id).ok();
+        }
+        if let Some(d) = e.published_at {
+            writeln!(out, "<pubDate>{}</pubDate>", d.to_rfc2822()).ok();
+        }
+        let body = e
+            .content_html
+            .clone()
+            .or(e.summary.clone())
+            .unwrap_or_default();
+        writeln!(out, "<description>{}</description>", xml_escape(&body)).ok();
+        if let Some(list) = emap.get(&e.id) {
+            for enc in list {
+                let url = xml_escape(&enc.url);
+                let len = enc.length.unwrap_or(0);
+                let mt = xml_escape(
+                    &enc.mime
+                        .clone()
+                        .unwrap_or_else(|| "application/octet-stream".to_string()),
+                );
+                writeln!(
+                    out,
+                    "<enclosure url=\"{}\" length=\"{}\" type=\"{}\"/>",
+                    url, len, mt
+                )
+                .ok();
+            }
+        }
+        writeln!(out, "</item>").ok();
+    }
+    writeln!(out, "</channel>\n</rss>").ok();
+    let mut resp = Response::new(out.into());
+    resp.headers_mut().insert(
+        axum::http::header::CONTENT_TYPE,
+        axum::http::HeaderValue::from_static("application/rss+xml; charset=utf-8"),
+    );
+    Ok(resp)
+}
+
+fn xml_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
 }

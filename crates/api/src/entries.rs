@@ -5,13 +5,14 @@ use axum::{
 use axum_extra::typed_header::TypedHeader;
 use headers::authorization::Bearer;
 use headers::Authorization;
-use sea_orm::QuerySelect;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, Condition, EntityTrait, QueryFilter, QueryOrder, RelationTrait,
     Set,
 };
+use sea_orm::{Order, QuerySelect};
 use serde::{Deserialize, Serialize};
 
+use crate::search;
 use captura_storage::entity::{entry, feed, prelude::*};
 
 use crate::auth::AuthUser;
@@ -59,7 +60,11 @@ pub(crate) async fn list_entries(
 ) -> ApiResult<Json<Vec<EntryDto>>> {
     let user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
     validate_limit_offset(q.limit, q.offset)?;
-    validate_sort(&q.sort_by, &["published_at", "created_at"], &q.order)?;
+    validate_sort(
+        &q.sort_by,
+        &["published_at", "created_at", "relevance"],
+        &q.order,
+    )?;
     if let Some(ref s) = q.q {
         if s.len() > 256 {
             return Err(bad_request("q too long"));
@@ -86,12 +91,71 @@ pub(crate) async fn list_entries(
         }
     }
     if let Some(ref qstr) = q.q {
-        let like = format!("%{}%", qstr);
-        let cond = Condition::any()
-            .add(entry::Column::Title.like(like.as_str()))
-            .add(entry::Column::Summary.like(like.as_str()))
-            .add(entry::Column::ContentHtml.like(like.as_str()));
-        sel = sel.filter(cond);
+        let backend = st.db.get_database_backend();
+        let pq = crate::search::parse_query(qstr);
+        if search::is_pg(backend) {
+            if let Some(ref g) = pq.general {
+                sel = sel.filter(search::fts_filter_expr_pg(g));
+                // Miniflux 对齐：有搜索时默认按相关性排序；若显式指定 sort_by 则按指定排序
+                let want_rank = q
+                    .sort_by
+                    .as_deref()
+                    .map(|s| s == "relevance")
+                    .unwrap_or(true);
+                if want_rank {
+                    let ord = match q.order.as_deref() {
+                        Some("asc") => Order::Asc,
+                        _ => Order::Desc,
+                    };
+                    sel = sel
+                        .order_by(search::fts_rank_expr_pg(g), ord)
+                        .order_by_desc(entry::Column::PublishedAt)
+                        .order_by_desc(entry::Column::CreatedAt);
+                }
+            }
+            for v in &pq.title {
+                sel = sel.filter(search::fts_field_expr_pg("title", v));
+            }
+            for v in &pq.author {
+                sel = sel.filter(search::fts_field_expr_pg("author", v));
+            }
+            for v in &pq.url {
+                sel = sel.filter(search::fts_field_expr_pg("url", v));
+            }
+            if !pq.tags.is_empty() {
+                let mut tag_cond = Condition::any();
+                for t in &pq.tags {
+                    tag_cond = tag_cond.add(search::tag_exists_expr_pg(t));
+                }
+                sel = sel.filter(tag_cond);
+            }
+        } else {
+            // 非 PG 回退：LIKE 匹配
+            if let Some(ref g) = pq.general {
+                let like = format!("%{}%", g);
+                let cond = Condition::any()
+                    .add(entry::Column::Title.like(like.as_str()))
+                    .add(entry::Column::Summary.like(like.as_str()))
+                    .add(entry::Column::ContentHtml.like(like.as_str()));
+                sel = sel.filter(cond);
+            }
+            for v in &pq.title {
+                sel = sel.filter(entry::Column::Title.like(format!("%{}%", v)));
+            }
+            for v in &pq.author {
+                sel = sel.filter(entry::Column::Author.like(format!("%{}%", v)));
+            }
+            for v in &pq.url {
+                sel = sel.filter(entry::Column::Url.like(format!("%{}%", v)));
+            }
+            if !pq.tags.is_empty() {
+                let mut tag_cond = Condition::any();
+                for t in &pq.tags {
+                    tag_cond = tag_cond.add(search::tag_exists_expr_like(t));
+                }
+                sel = sel.filter(tag_cond);
+            }
+        }
     }
     match q.sort_by.as_deref() {
         Some("created_at") => {

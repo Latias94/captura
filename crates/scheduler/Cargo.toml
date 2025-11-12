@@ -16,6 +16,7 @@ captura-rules = { path = "../rules" }
 sea-orm.workspace = true
 reqwest.workspace = true
 futures = "0.3"
+serde_json.workspace = true
 
 [dev-dependencies]
 captura-migration = { path = "../migration" }

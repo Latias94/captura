@@ -111,6 +111,24 @@ async fn refresh_standard_feed_with_meta(
                         content_html = Some(apply_rewrite_rules(c, rules));
                     }
                 }
+                // 提取 enclosure（依据 link rel="enclosure"）
+                let mut enclosures = Vec::new();
+                for l in e.links.iter() {
+                    // feed-rs: Link { href, rel, media_type, length, .. }
+                    let rel = l.rel.as_deref().unwrap_or("");
+                    if rel.eq_ignore_ascii_case("enclosure") {
+                        let url = clean_url(&l.href);
+                        let typ = l.media_type.as_deref().map(|s| s.to_string());
+                        let len = l.length.map(|n| n as i64);
+                        enclosures.push(captura_common::Enclosure {
+                            url,
+                            r#type: typ,
+                            length: len,
+                            kind: None,
+                        });
+                    }
+                }
+
                 NormalizedEntry {
                     guid: Some(e.id),
                     url,
@@ -119,7 +137,7 @@ async fn refresh_standard_feed_with_meta(
                     content_html,
                     author: e.authors.get(0).map(|a| a.name.clone()),
                     published_at: e.published.or(e.updated).map(|d| d.into()),
-                    enclosures: vec![],
+                    enclosures,
                     extras: serde_json::json!({}),
                 }
             })
@@ -309,7 +327,8 @@ pub async fn refresh_rule_feed(
         None => return Ok(vec![]),
     };
 
-    let html = fetch_html_strategy(&client, &list.url, &spec.fetch, Some(feed)).await?;
+    let final_list_url = render_with_params(&list.url, feed.rule_params_json.as_ref());
+    let html = fetch_html_strategy(&client, &final_list_url, &spec.fetch, Some(feed)).await?;
     // 1) 先采集链接与标题，避免在持有 DOM 借用时跨 await。
     let mut items: Vec<(Option<String>, Option<String>)> = Vec::new();
     {
@@ -330,7 +349,7 @@ pub async fn refresh_rule_feed(
     // 2) 再按 items 顺序请求正文。
     let mut entries = Vec::new();
     for (link, title) in items {
-        let url = link.clone();
+        let url = link.as_deref().map(|u| absolutize(&final_list_url, u));
         let mut content_html: Option<String> = match &spec.content.r#use[..] {
             "css" => {
                 if let Some(sel) = &spec.content.selector {
@@ -355,8 +374,8 @@ pub async fn refresh_rule_feed(
         }
 
         entries.push(NormalizedEntry {
-            guid: link.clone(),
-            url: link,
+            guid: url.clone(),
+            url,
             title,
             summary: None,
             content_html,
@@ -730,5 +749,56 @@ mod live_tests {
         );
         let entries = refresh_feed(&f).await.expect("fetch theverge feed");
         assert!(!entries.is_empty(), "theverge should return entries");
+    }
+}
+fn render_with_params(input: &str, params: Option<&serde_json::Value>) -> String {
+    let mut s = input.to_string();
+    let Some(serde_json::Value::Object(map)) = params else {
+        return s;
+    };
+    for (k, v) in map.iter() {
+        if let Some(val) = v.as_str() {
+            let needle1 = format!(":{}", k);
+            let needle2 = format!("{{{}}}", k);
+            s = s.replace(&needle1, val);
+            s = s.replace(&needle2, val);
+        } else {
+            let needle2 = format!("{{{}}}", k);
+            s = s.replace(&needle2, &v.to_string());
+        }
+    }
+    s
+}
+
+fn absolutize(base: &str, href: &str) -> String {
+    if Url::parse(href).is_ok() {
+        return href.to_string();
+    }
+    if let Ok(b) = Url::parse(base) {
+        if let Ok(j) = b.join(href) {
+            return j.to_string();
+        }
+    }
+    href.to_string()
+}
+
+#[cfg(test)]
+mod unit_tests {
+    use super::*;
+
+    #[test]
+    fn test_render_with_params() {
+        let url = "https://example.com/list/{cat}/:page";
+        let params = serde_json::json!({"cat":"news","page":"2"});
+        let out = render_with_params(url, Some(&params));
+        assert!(out.contains("/news/2"));
+    }
+
+    #[test]
+    fn test_absolutize() {
+        let base = "https://news.ycombinator.com/";
+        let href = "item?id=123";
+        let out = absolutize(base, href);
+        assert_eq!(out, "https://news.ycombinator.com/item?id=123");
     }
 }

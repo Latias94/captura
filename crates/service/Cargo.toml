@@ -11,4 +11,11 @@ captura-common = { path = "../common" }
 captura-storage = { path = "../storage" }
 captura-pipeline = { path = "../pipeline" }
 tracing.workspace = true
-
+reqwest.workspace = true
+ammonia.workspace = true
+hmac.workspace = true
+sha2.workspace = true
+async-trait.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+hex.workspace = true

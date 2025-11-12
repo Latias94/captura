@@ -27,6 +27,7 @@ pub struct Model {
     pub feed_url: String,
     pub favicon_id: Option<i64>,
     pub rule_id: Option<i64>,
+    pub rule_params_json: Option<Json>,
 
     // Fetch options
     pub user_agent: Option<String>,
@@ -55,6 +56,7 @@ pub struct Model {
     pub url_rewrite_rules: Option<String>,
     pub block_filter_entry_rules: Option<String>,
     pub keep_filter_entry_rules: Option<String>,
+    pub integrations_json: Option<Json>,
 
     pub created_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,

@@ -50,3 +50,29 @@ pub struct NormalizedEntry {
     pub enclosures: Vec<Enclosure>,
     pub extras: serde_json::Value,
 }
+
+/// 从 HTML 文本中去除标签，保留纯文本（简单实现）
+pub fn strip_html_simple(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut in_tag = false;
+    for ch in s.chars() {
+        match ch {
+            '<' => in_tag = true,
+            '>' => in_tag = false,
+            _ => {
+                if !in_tag {
+                    out.push(ch);
+                }
+            }
+        }
+    }
+    out
+}
+
+/// 根据 HTML 正文估算阅读时长（分钟）。
+pub fn reading_time_minutes_from_html(html: &str, wpm: usize) -> i32 {
+    let text = strip_html_simple(html);
+    let wpm = wpm.max(50);
+    let words = text.split_whitespace().count();
+    std::cmp::max(1, (words + wpm - 1) / wpm) as i32
+}

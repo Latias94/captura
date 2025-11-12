@@ -10,6 +10,16 @@ mod m20251111_000003_favicon;
 mod m20251111_000004_token_expiry;
 mod m20251111_000005_enclosure_progress;
 mod m20251111_000006_token_plain;
+mod m20251112_000007_entry_tsv;
+mod m20251112_000008_webhook;
+mod m20251112_000009_integration;
+mod m20251112_000010_job_payload_integration;
+mod m20251112_000011_feed_integrations;
+mod m20251112_000012_feed_rule_params;
+mod m20251112_000013_seed_rule_templates;
+mod m20251112_000014_seed_more_rule_templates;
+mod m20251112_000015_user_role;
+mod m20251112_000016_user_prefs;
 
 pub struct Migrator;
 
@@ -23,6 +33,16 @@ impl MigratorTrait for Migrator {
             Box::new(m20251111_000004_token_expiry::Migration),
             Box::new(m20251111_000006_token_plain::Migration),
             Box::new(m20251111_000005_enclosure_progress::Migration),
+            Box::new(m20251112_000007_entry_tsv::Migration),
+            Box::new(m20251112_000008_webhook::Migration),
+            Box::new(m20251112_000009_integration::Migration),
+            Box::new(m20251112_000010_job_payload_integration::Migration),
+            Box::new(m20251112_000011_feed_integrations::Migration),
+            Box::new(m20251112_000012_feed_rule_params::Migration),
+            Box::new(m20251112_000013_seed_rule_templates::Migration),
+            Box::new(m20251112_000014_seed_more_rule_templates::Migration),
+            Box::new(m20251112_000015_user_role::Migration),
+            Box::new(m20251112_000016_user_prefs::Migration),
         ]
     }
 }

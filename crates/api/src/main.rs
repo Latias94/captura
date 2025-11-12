@@ -29,6 +29,7 @@ use once_cell::sync::OnceCell;
 use rand_core::OsRng;
 use rand_core::RngCore;
 // use scraper::{Html, Selector};
+use sea_orm::ConnectionTrait;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter,
     QueryOrder, QuerySelect, Set,
@@ -52,8 +53,15 @@ mod feeds;
 mod rules;
 // compat no longer needed; remove legacy compatible routes
 mod compat;
+mod state;
+pub use state::AppState;
 mod favicon;
+mod hub;
+mod integrations;
+mod media;
 mod opml;
+mod search;
+mod webhooks;
 // testkit 已抽离为独立 crate: captura-testkit
 
 // Re-export types for tests no longer needed; keep API modules self-contained
@@ -137,6 +145,7 @@ async fn main() -> anyhow::Result<()> {
                 .patch(crate::feeds::update_feed)
                 .delete(crate::feeds::delete_feed),
         )
+        .route("/feeds/:id/rss", get(crate::feeds::rss_feed))
         .route("/feeds/:id/refresh", post(crate::feeds::refresh_feed))
         .route(
             "/feeds/:id/enqueue-refresh",
@@ -167,6 +176,29 @@ async fn main() -> anyhow::Result<()> {
         .route("/jobs", get(list_jobs))
         .route("/jobs/run-once", post(run_jobs_once))
         .route("/jobs/enqueue-due-feeds", post(enqueue_due_feeds))
+        // media proxy
+        .route("/media", get(crate::media::proxy))
+        // webhooks
+        .route(
+            "/webhooks",
+            get(crate::webhooks::list).post(crate::webhooks::create),
+        )
+        .route(
+            "/webhooks/:id",
+            get(crate::webhooks::get).delete(crate::webhooks::delete),
+        )
+        // integrations
+        .route(
+            "/integrations",
+            get(crate::integrations::list).post(crate::integrations::create),
+        )
+        .route(
+            "/integrations/:id",
+            get(crate::integrations::get)
+                .put(crate::integrations::update)
+                .delete(crate::integrations::delete),
+        )
+        .route("/integrations/jobs", get(list_integration_jobs))
         // rules
         .route(
             "/rules",
@@ -179,6 +211,13 @@ async fn main() -> anyhow::Result<()> {
                 .delete(crate::rules::delete_rule),
         )
         .route("/rules/try", post(crate::rules::try_rule))
+        .route("/rules/templates", get(crate::rules::list_templates))
+        .route("/rules/templates/:id", get(crate::rules::get_template))
+        .route(
+            "/feeds/from-template",
+            post(crate::rules::create_feed_from_template),
+        )
+        .route("/feeds/validate-hub", post(crate::hub::validate_hub))
         // Fever 兼容
         .route(
             "/fever",
@@ -267,7 +306,20 @@ async fn main() -> anyhow::Result<()> {
             get(crate::compat::reader::items_contents),
         );
 
+    // 根路径健康探针
+    async fn liveness() -> &'static str {
+        "OK"
+    }
+    async fn readiness(State(st): State<AppState>) -> &'static str {
+        // 简单检查数据库连通性
+        let _ = st.db.execute_unprepared("SELECT 1").await;
+        "OK"
+    }
+
     let app = Router::new()
+        .route("/healthz", get(liveness))
+        .route("/readyz", get(readiness))
+        .route("/readiness", get(readiness))
         .merge(compat_root)
         .nest("/api/v1", api_v1)
         .nest("/v1", crate::compat::miniflux::router())
@@ -279,10 +331,7 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-#[derive(Clone)]
-pub(crate) struct AppState {
-    db: DatabaseConnection,
-}
+// AppState 已迁移至 state.rs，并在此处通过 `pub use` 进行再导出
 
 // moved to compat::miniflux::router
 
@@ -329,6 +378,7 @@ async fn create_user(
     let am = user::ActiveModel {
         username: Set(body.username),
         password_hash: Set(hash),
+        role: Set(captura_storage::entity::user::UserRole::Admin),
         created_at: Set(now),
         ..Default::default()
     };
@@ -671,6 +721,7 @@ mod tests {
             site_url: None,
             feed_url: "not a url".into(),
             rule_id: None,
+            rule_params_json: None,
             user_agent: None,
             headers_json: None,
             cookies: None,
@@ -870,6 +921,7 @@ mod tests {
             site_url: None,
             feed_url: "https://blog.rust-lang.org/feed.xml".into(),
             rule_id: None,
+            rule_params_json: None,
             user_agent: Some("captura-tests/0.1".into()),
             headers_json: None,
             cookies: None,
@@ -1127,6 +1179,7 @@ mod tests {
             site_url: None,
             feed_url: "https://example.com/feed".into(),
             rule_id: None,
+            rule_params_json: None,
             user_agent: None,
             headers_json: None,
             cookies: None,
@@ -1152,6 +1205,7 @@ mod tests {
             site_url: None,
             feed_url: "https://example.com/feed".into(),
             rule_id: None,
+            rule_params_json: None,
             user_agent: None,
             headers_json: None,
             cookies: None,
@@ -1533,6 +1587,7 @@ async fn list_jobs(
                 job::JobType::RuleRefresh => "rule_refresh".into(),
                 job::JobType::Favicon => "favicon".into(),
                 job::JobType::Prune => "prune".into(),
+                job::JobType::Integration => "integration".into(),
             },
             status: match j.status {
                 job::JobStatus::Pending => "pending".into(),
@@ -1543,6 +1598,71 @@ async fn list_jobs(
             run_at: j.run_at.to_rfc3339(),
             attempts: j.attempts,
             last_error: j.last_error,
+        })
+        .collect();
+    Ok(Json(list))
+}
+
+#[derive(Deserialize)]
+struct IntegrationJobsQuery {
+    status: Option<String>,
+    limit: Option<u64>,
+    offset: Option<u64>,
+}
+
+#[derive(Serialize)]
+struct IntegrationJobDto {
+    id: i64,
+    status: String,
+    run_at: String,
+    attempts: i32,
+    last_error: Option<String>,
+    feed_id: Option<i64>,
+    payload: serde_json::Value,
+}
+
+async fn list_integration_jobs(
+    State(st): State<AppState>,
+    TypedHeader(Authorization(bearer)): TypedHeader<Authorization<Bearer>>,
+    Query(q): Query<IntegrationJobsQuery>,
+) -> ApiResult<Json<Vec<IntegrationJobDto>>> {
+    let user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
+    validate_limit_offset(q.limit, q.offset)?;
+    let mut sel = Job::find()
+        .filter(job::Column::UserId.eq(user.user_id))
+        .filter(job::Column::JobType.eq(job::JobType::Integration));
+    if let Some(ref s) = q.status {
+        let st = match &s[..] {
+            "pending" => job::JobStatus::Pending,
+            "running" => job::JobStatus::Running,
+            "done" => job::JobStatus::Done,
+            "failed" => job::JobStatus::Failed,
+            _ => job::JobStatus::Pending,
+        };
+        sel = sel.filter(job::Column::Status.eq(st));
+    }
+    let rows = sel
+        .order_by_desc(job::Column::RunAt)
+        .limit(q.limit.unwrap_or(50))
+        .offset(q.offset.unwrap_or(0))
+        .all(&st.db)
+        .await
+        .map_err(internal)?;
+    let list = rows
+        .into_iter()
+        .map(|j| IntegrationJobDto {
+            id: j.id,
+            status: match j.status {
+                job::JobStatus::Pending => "pending".into(),
+                job::JobStatus::Running => "running".into(),
+                job::JobStatus::Done => "done".into(),
+                job::JobStatus::Failed => "failed".into(),
+            },
+            run_at: j.run_at.to_rfc3339(),
+            attempts: j.attempts,
+            last_error: j.last_error,
+            feed_id: j.feed_id,
+            payload: j.payload_json.unwrap_or(serde_json::json!({})),
         })
         .collect();
     Ok(Json(list))

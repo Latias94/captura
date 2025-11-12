@@ -12,6 +12,8 @@ pub enum JobType {
     Favicon,
     #[sea_orm(string_value = "prune")]
     Prune,
+    #[sea_orm(string_value = "integration")]
+    Integration,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, EnumIter, DeriveActiveEnum)]
@@ -41,6 +43,7 @@ pub struct Model {
     pub run_at: DateTimeWithTimeZone,
     pub attempts: i32,
     pub last_error: Option<String>,
+    pub payload_json: Option<Json>,
     pub created_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,
 }

@@ -1,0 +1,44 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:18-alpine
+    container_name: captura-db
+    environment:
+      POSTGRES_USER: captura
+      POSTGRES_PASSWORD: captura
+      POSTGRES_DB: captura
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "captura"]
+      interval: 10s
+      start_period: 30s
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: captura:latest
+    container_name: captura-api
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # 最小环境变量（对齐 Miniflux 风格）
+      DATABASE_URL: ${DATABASE_URL:-postgres://captura:captura@db/captura}
+      RUST_LOG: info
+      # 可选：调度器开关（默认已开启）
+      # SCHEDULER_ENABLED: "true"
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pgdata:

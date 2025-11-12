@@ -104,6 +104,7 @@ pub async fn run_once(db: &DatabaseConnection, max: u64) -> Result<usize> {
             let res = match j.job_type {
                 job::JobType::FeedRefresh => refresh_feed_job(&db, &j).await,
                 job::JobType::Favicon => refresh_favicon_job(&db, &j).await,
+                job::JobType::Integration => deliver_integration_job(&db, &j).await,
                 _ => Err(captura_common::Error::Other(anyhow::anyhow!(
                     "unknown job type"
                 ))),
@@ -122,6 +123,28 @@ pub async fn run_once(db: &DatabaseConnection, max: u64) -> Result<usize> {
                         if let Some(fid) = j.feed_id {
                             // attempts 在运行前已 +1，这里应传入最新的 attempts 值
                             let _ = update_feed_on_failure(&db, fid, j.attempts + 1).await;
+                        } else if matches!(j.job_type, job::JobType::Integration) {
+                            // 对于集成任务，按通用回退规则设置下一次运行时间
+                            let now2 = Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
+                            let base: i64 = std::env::var("SCHEDULER_BACKOFF_BASE_SECS")
+                                .ok()
+                                .and_then(|s| s.parse().ok())
+                                .unwrap_or(60);
+                            let maxs: i64 = std::env::var("SCHEDULER_BACKOFF_MAX_SECS")
+                                .ok()
+                                .and_then(|s| s.parse().ok())
+                                .unwrap_or(1800);
+                            let pow = ((j.attempts + 1) as u32).min(10);
+                            let factor = if pow >= 63 {
+                                i64::MAX / base.max(1)
+                            } else {
+                                (1i64) << pow
+                            };
+                            let mut delay = base.saturating_mul(factor);
+                            if delay > maxs {
+                                delay = maxs;
+                            }
+                            am.run_at = Set(now2 + chrono::Duration::seconds(delay.max(30)));
                         }
                     }
                 }
@@ -206,6 +229,86 @@ async fn refresh_favicon_job(db: &DatabaseConnection, j: &job::Model) -> Result<
         .await
         .map_err(|e| captura_common::Error::Storage(e.to_string()))?;
     Ok(())
+}
+
+#[instrument]
+async fn deliver_integration_job(db: &DatabaseConnection, j: &job::Model) -> Result<()> {
+    use captura_storage::entity::{entry, feed};
+    let payload = j
+        .payload_json
+        .clone()
+        .ok_or_else(|| captura_common::Error::Config("integration job missing payload".into()))?;
+    let event_type = payload
+        .get("event_type")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| captura_common::Error::Config("event_type missing".into()))?;
+    match event_type {
+        "new_entries" => {
+            let feed_id = payload
+                .get("feed_id")
+                .and_then(|v| v.as_i64())
+                .ok_or_else(|| captura_common::Error::Config("feed_id missing".into()))?;
+            let entry_ids: Vec<i64> = payload
+                .get("entry_ids")
+                .and_then(|v| v.as_array())
+                .ok_or_else(|| captura_common::Error::Config("entry_ids missing".into()))?
+                .iter()
+                .filter_map(|v| v.as_i64())
+                .collect();
+            let f = feed::Entity::find_by_id(feed_id)
+                .one(db)
+                .await
+                .map_err(|e| captura_common::Error::Storage(e.to_string()))?
+                .ok_or_else(|| captura_common::Error::NotFound("feed".into()))?;
+            captura_service::integration::emit_new_entries(db, j.user_id, &f, &entry_ids).await;
+            Ok(())
+        }
+        "save_entry" => {
+            let entry_id = payload
+                .get("entry_id")
+                .and_then(|v| v.as_i64())
+                .ok_or_else(|| captura_common::Error::Config("entry_id missing".into()))?;
+            let e = entry::Entity::find_by_id(entry_id)
+                .one(db)
+                .await
+                .map_err(|e| captura_common::Error::Storage(e.to_string()))?
+                .ok_or_else(|| captura_common::Error::NotFound("entry".into()))?;
+            captura_service::integration::emit_save_entry(db, j.user_id, &e).await;
+            Ok(())
+        }
+        _ => Err(captura_common::Error::Config(
+            "unknown integration event".into(),
+        )),
+    }
+}
+
+pub async fn enqueue_integration_event(
+    db: &DatabaseConnection,
+    user_id: i64,
+    feed_id: Option<i64>,
+    payload: serde_json::Value,
+) -> Result<i64> {
+    let now = Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
+    let am = job::ActiveModel {
+        user_id: Set(user_id),
+        feed_id: Set(feed_id),
+        rule_id: Set(None),
+        job_type: Set(job::JobType::Integration),
+        status: Set(job::JobStatus::Pending),
+        priority: Set(10),
+        run_at: Set(now),
+        attempts: Set(0),
+        last_error: Set(None),
+        payload_json: Set(Some(payload)),
+        created_at: Set(now),
+        updated_at: Set(now),
+        ..Default::default()
+    };
+    let res = am
+        .insert(db)
+        .await
+        .map_err(|e| captura_common::Error::Storage(e.to_string()))?;
+    Ok(res.id)
 }
 
 #[instrument]
