@@ -80,7 +80,7 @@ pub(crate) async fn create(
     State(st): State<AppState>,
     TypedHeader(Authorization(bearer)): TypedHeader<Authorization<Bearer>>,
     Json(req): Json<CreateIntegrationReq>,
-) -> ApiResult<Json<crate::IdResp>> {
+) -> ApiResult<Json<captura_api::IdResp>> {
     let user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
     if req.kind.trim().is_empty() {
         return Err(bad_request("kind required"));
@@ -96,7 +96,7 @@ pub(crate) async fn create(
         ..Default::default()
     };
     let m = am.insert(&st.db).await.map_err(internal)?;
-    Ok(Json(crate::IdResp { id: m.id }))
+    Ok(Json(captura_api::IdResp { id: m.id }))
 }
 
 #[derive(Deserialize)]

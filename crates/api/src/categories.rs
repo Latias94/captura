@@ -14,6 +14,7 @@ use captura_storage::entity::{category, prelude::*};
 use crate::auth::AuthUser;
 use crate::error::{bad_request, internal, not_found, ApiResult};
 use crate::AppState;
+use captura_api::IdResp;
 
 #[derive(Serialize)]
 pub(crate) struct CategoryDto {
@@ -51,7 +52,7 @@ pub(crate) async fn create_category(
     State(st): State<AppState>,
     TypedHeader(Authorization(bearer)): TypedHeader<Authorization<Bearer>>,
     Json(body): Json<CreateCategoryReq>,
-) -> ApiResult<Json<crate::IdResp>> {
+) -> ApiResult<Json<IdResp>> {
     let user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
     let name = body.name.trim();
     if name.is_empty() || name.len() > 128 {
@@ -65,7 +66,7 @@ pub(crate) async fn create_category(
         ..Default::default()
     };
     let c = am.insert(&st.db).await.map_err(internal)?;
-    Ok(Json(crate::IdResp { id: c.id }))
+    Ok(Json(IdResp { id: c.id }))
 }
 
 #[derive(Deserialize)]

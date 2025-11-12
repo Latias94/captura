@@ -7,6 +7,16 @@ Base paths
 - Fever 兼容：`/fever`（单端点 GET/POST）
 - Google Reader 兼容：`/reader/api/0/*`
 
+路由挂载与兼容层说明
+
+- 兼容端点（Miniflux/Fever/Reader）不再重复挂载在 `/api/v1` 下，避免路径分叉与行为不一致。
+- 建议客户端使用：
+  - 原生 REST：固定访问 `/api/v1/*`
+  - Miniflux 客户端：固定访问 `/v1/*`
+  - Fever 客户端：固定访问 `/fever`
+  - Google Reader 客户端：固定访问 `/reader/api/0/*`
+  
+
 ## Auth
 
 - `POST /users`

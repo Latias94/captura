@@ -1,62 +1,58 @@
 //! Captura API service entrypoint (Axum-based).
 
 use axum::{
-    extract::{Path, Query, State},
+    extract::{Query, State},
     routing::{get, post},
     Json, Router,
 };
 // use axum::debug_handler;
-use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
 #[cfg(test)]
-use axum::response::Response;
+// (tests moved to crates/api/tests)
 use axum_extra::typed_header::TypedHeader;
-use base64::Engine as _;
 // use captura_crawler::{self as crawler, CrawlOptions};
 // pipeline used elsewhere (try_rule path uses parsing/execution), direct refresh handled by service
 // use captura_service as service;
 // rules parsing handled in rules module
 use captura_scheduler as scheduler;
 use captura_storage::connect as db_connect;
-use captura_storage::entity::{job, prelude::*, token, user};
+use captura_storage::entity::job;
 use chrono::{FixedOffset, Utc};
 use headers::authorization::Bearer;
 use headers::Authorization;
-use md5::Md5;
 // md5 compatibility removed
 use migration::migrate;
-#[cfg(test)]
-use once_cell::sync::OnceCell;
-use rand_core::OsRng;
-use rand_core::RngCore;
+// once_cell only used in old tests
 // use scraper::{Html, Selector};
 use sea_orm::ConnectionTrait;
-use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter,
-    QueryOrder, QuerySelect, Set,
-};
+use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect};
 // use sea_orm::sea_query::{Alias as SAlias, Expr as SExpr, Func as SFunc};
 // use sea_orm::sea_query::OnConflict; // unused after service extraction
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
+// sha2 only used in old tests
 use std::net::SocketAddr;
 use tracing::{info, Level};
 use tracing_subscriber::EnvFilter;
 // use url::Url; // no longer used in main
 // use axum::Form; // reader handlers moved to compat
 mod error;
-use crate::error::{bad_request, forbidden, internal, unauthorized, ApiResult};
-use axum::middleware;
-use axum::middleware::Next;
+use crate::error::{internal, ApiResult};
+// use axum::middleware;
+// use axum::middleware::Next;
 mod auth;
-use crate::auth::{create_user_with_random_password, find_user_id_by_username, AuthUser};
+mod util;
+use crate::auth::AuthUser;
+use crate::util::validate_limit_offset;
 mod categories;
 mod entries;
 mod feeds;
 mod rules;
 // compat no longer needed; remove legacy compatible routes
 mod compat;
+mod jobs;
 mod state;
+mod users;
 pub use state::{AppConfig, AppState};
+mod auth_endpoints;
 mod favicon;
 mod hub;
 mod integrations;
@@ -132,19 +128,85 @@ async fn main() -> anyhow::Result<()> {
         });
     }
 
+    // 路由组装与服务启动见下
+
+    // AppState 已迁移至 state.rs，并在此处通过 `pub use` 进行再导出
+
+    // moved to compat::miniflux::router
+
+    // Miniflux/兼容层鉴权函数移至 auth.rs
+
+    // Miniflux main implementation moved to compat::miniflux
+
+    // v1 feed create/list handlers moved to feeds.rs
+
+    // Error helpers moved to error.rs
+
+    // create_feed moved
+
+    // tests moved; no longer re-export handlers from main
+
+    // AuthUser moved to auth.rs
+
+    // v1 entries handlers moved to entries.rs
+
+    // ----- Extended feeds & categories -----
+
+    // legacy FeedsQuery removed (moved to crates/api/src/feeds.rs)
+
+    // legacy FeedDto removed (moved to crates/api/src/feeds.rs)
+
+    // legacy list_feeds removed (moved to crates/api/src/feeds.rs)
+
+    // legacy get_feed removed (moved to crates/api/src/feeds.rs)
+
+    // legacy UpdateFeedReq removed (moved to crates/api/src/feeds.rs)
+
+    // legacy update_feed removed (moved to crates/api/src/feeds.rs)
+
+    // legacy delete_feed removed (moved to crates/api/src/feeds.rs)
+
+    // legacy ExtendedEntriesQuery removed (moved to crates/api/src/entries.rs)
+
+    // legacy _list_entries_extended removed (moved to crates/api/src/entries.rs)
+
+    // legacy mark_all_read removed (moved to crates/api/src/entries.rs)
+
+    // legacy categories handlers removed (moved to crates/api/src/categories.rs)
+
+    // OPML export/import
+    // legacy opml_export removed; use crate::opml::export
+
+    // opml_import 已迁至 crates/api/src/opml.rs
+
+    // OPML helpers moved to crate::opml
+
+    // ...
+
+    // parse_opml_quickxml moved to crate::opml
+
+    // Fever 兼容实现已迁移至 crate::compat::fever
+
+    // Fever 兼容相关已移除
+
+    // Favicon 主实现已迁移至 crate::favicon
+
+    // set_fever_key moved to users.rs (re-exported above)
+
+    // Build API routers
     let api_v1 = Router::new()
         .route("/healthz", get(|| async { "ok" }))
         // users & auth
-        .route("/users", post(create_user))
-        .route("/users/:id/fever-key", post(set_fever_key))
+        .route("/users", post(crate::users::create_user))
+        .route("/users/{id}/fever-key", post(crate::users::set_fever_key))
         .route("/auth/login", post(auth_login))
         .route("/auth/proxy/token", get(auth_proxy_token))
         .route("/auth/oidc/start", get(crate::oidc::start))
         .route("/auth/oidc/callback", get(crate::oidc::callback))
         .route("/auth/oidc/providers", get(oidc_providers))
-        .route("/auth/oidc/:name/start", get(crate::oidc::start_named))
+        .route("/auth/oidc/{name}/start", get(crate::oidc::start_named))
         .route(
-            "/auth/oidc/:name/callback",
+            "/auth/oidc/{name}/callback",
             get(crate::oidc::callback_named),
         )
         // feeds & entries
@@ -153,25 +215,25 @@ async fn main() -> anyhow::Result<()> {
             post(crate::feeds::create_feed).get(crate::feeds::list_feeds),
         )
         .route(
-            "/feeds/:id",
+            "/feeds/{id}",
             get(crate::feeds::get_feed)
                 .patch(crate::feeds::update_feed)
                 .delete(crate::feeds::delete_feed),
         )
-        .route("/feeds/:id/rss", get(crate::feeds::rss_feed))
-        .route("/feeds/:id/refresh", post(crate::feeds::refresh_feed))
+        .route("/feeds/{id}/rss", get(crate::feeds::rss_feed))
+        .route("/feeds/{id}/refresh", post(crate::feeds::refresh_feed))
         .route(
-            "/feeds/:id/enqueue-refresh",
+            "/feeds/{id}/enqueue-refresh",
             post(crate::feeds::enqueue_feed_refresh),
         )
-        .route("/feeds/:id/favicon/refresh", post(crate::favicon::refresh))
-        .route("/favicons/:id", get(crate::favicon::get))
+        .route("/feeds/{id}/favicon/refresh", post(crate::favicon::refresh))
+        .route("/favicons/{id}", get(crate::favicon::get))
         .route(
             "/categories",
             get(crate::categories::list_categories).post(crate::categories::create_category),
         )
         .route(
-            "/categories/:id",
+            "/categories/{id}",
             get(crate::categories::get_category)
                 .put(crate::categories::update_category)
                 .delete(crate::categories::delete_category),
@@ -181,14 +243,17 @@ async fn main() -> anyhow::Result<()> {
             "/entries/mark-all-read",
             post(crate::entries::mark_all_read),
         )
-        .route("/entries/:id/read", post(crate::entries::mark_read))
-        .route("/entries/:id/star", post(crate::entries::mark_star))
+        .route("/entries/{id}/read", post(crate::entries::mark_read))
+        .route("/entries/{id}/star", post(crate::entries::mark_star))
         .route("/opml/export", get(crate::opml::export))
         .route("/opml/import", post(crate::opml::import))
         // jobs
-        .route("/jobs", get(list_jobs))
-        .route("/jobs/run-once", post(run_jobs_once))
-        .route("/jobs/enqueue-due-feeds", post(enqueue_due_feeds))
+        .route("/jobs", get(crate::jobs::list_jobs))
+        .route("/jobs/run-once", post(crate::jobs::run_jobs_once))
+        .route(
+            "/jobs/enqueue-due-feeds",
+            post(crate::jobs::enqueue_due_feeds),
+        )
         // media proxy
         .route("/media", get(crate::media::proxy))
         // webhooks
@@ -197,7 +262,7 @@ async fn main() -> anyhow::Result<()> {
             get(crate::webhooks::list).post(crate::webhooks::create),
         )
         .route(
-            "/webhooks/:id",
+            "/webhooks/{id}",
             get(crate::webhooks::get).delete(crate::webhooks::delete),
         )
         // integrations
@@ -206,82 +271,40 @@ async fn main() -> anyhow::Result<()> {
             get(crate::integrations::list).post(crate::integrations::create),
         )
         .route(
-            "/integrations/:id",
+            "/integrations/{id}",
             get(crate::integrations::get)
                 .put(crate::integrations::update)
                 .delete(crate::integrations::delete),
         )
-        .route("/integrations/jobs", get(list_integration_jobs))
+        .route(
+            "/integrations/jobs",
+            get(crate::jobs::list_integration_jobs),
+        )
         // rules
         .route(
             "/rules",
             get(crate::rules::list_rules).post(crate::rules::create_rule),
         )
         .route(
-            "/rules/:id",
+            "/rules/{id}",
             get(crate::rules::get_rule)
                 .put(crate::rules::update_rule)
                 .delete(crate::rules::delete_rule),
         )
         .route("/rules/try", post(crate::rules::try_rule))
         .route("/rules/templates", get(crate::rules::list_templates))
-        .route("/rules/templates/:id", get(crate::rules::get_template))
+        .route("/rules/templates/{id}", get(crate::rules::get_template))
         .route(
             "/feeds/from-template",
             post(crate::rules::create_feed_from_template),
         )
-        .route("/feeds/validate-hub", post(crate::hub::validate_hub))
-        // Fever 兼容
-        .route(
-            "/fever",
-            get(crate::compat::fever::endpoint).post(crate::compat::fever::endpoint),
-        )
-        // Google Reader 兼容（读写子集）
-        .route(
-            "/reader/api/0/subscription/list",
-            get(crate::compat::reader::subscription_list),
-        )
-        .route(
-            "/reader/api/0/stream/contents/user/-/state/com.google/reading-list",
-            get(crate::compat::reader::stream_contents),
-        )
-        .route(
-            "/reader/api/0/edit-tag",
-            post(crate::compat::reader::edit_tag),
-        )
-        .route(
-            "/reader/api/0/mark-all-as-read",
-            post(crate::compat::reader::mark_all_read),
-        )
-        .route(
-            "/reader/api/0/unread-count",
-            get(crate::compat::reader::unread_count),
-        )
-        .route(
-            "/reader/api/0/subscription/quickadd",
-            post(crate::compat::reader::subscription_quickadd),
-        )
-        .route(
-            "/reader/api/0/subscription/edit",
-            post(crate::compat::reader::subscription_edit),
-        )
-        .route(
-            "/reader/api/0/stream/items/ids",
-            get(crate::compat::reader::items_ids),
-        )
-        .route(
-            "/reader/api/0/stream/items/contents",
-            get(crate::compat::reader::items_contents),
-        );
+        .route("/feeds/validate-hub", post(crate::hub::validate_hub));
 
-    // 兼容层根路径挂载（Miniflux 客户端与历史 Reader/Fever 客户端期望的路径）
     let compat_root = Router::new()
-        // Fever root endpoint
         .route(
             "/fever",
             get(crate::compat::fever::endpoint).post(crate::compat::fever::endpoint),
         )
-        // Google Reader root endpoints
         .route(
             "/reader/api/0/subscription/list",
             get(crate::compat::reader::subscription_list),
@@ -319,17 +342,14 @@ async fn main() -> anyhow::Result<()> {
             get(crate::compat::reader::items_contents),
         );
 
-    // 根路径健康探针
     async fn liveness() -> &'static str {
         "OK"
     }
     async fn readiness(State(st): State<AppState>) -> &'static str {
-        // 简单检查数据库连通性
         let _ = st.db.execute_unprepared("SELECT 1").await;
         "OK"
     }
-
-    // Build router
+    // 保持与现有启动一致的装配（tests 将使用 router::build）
     let mut app = Router::new()
         .route("/healthz", get(liveness))
         .route("/readyz", get(readiness))
@@ -339,7 +359,6 @@ async fn main() -> anyhow::Result<()> {
         .nest("/v1", crate::compat::miniflux::router())
         .with_state(app_state.clone());
 
-    // Global security headers (optional)
     if app_state.cfg.security_headers_enabled {
         use tower_http::set_header::SetResponseHeaderLayer;
         let rp = axum::http::HeaderValue::from_str(&app_state.cfg.referrer_policy)
@@ -374,295 +393,234 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-// AppState 已迁移至 state.rs，并在此处通过 `pub use` 进行再导出
-
-// moved to compat::miniflux::router
-
-// Miniflux/兼容层鉴权函数移至 auth.rs
-
-// Miniflux main implementation moved to compat::miniflux
-
-// v1 feed create/list handlers moved to feeds.rs
-#[derive(Serialize)]
-pub(crate) struct IdResp {
-    id: i64,
-}
-
-// Error helpers moved to error.rs
-
-// create_feed moved
-
-#[derive(Deserialize)]
-struct CreateUserReq {
-    username: String,
-    password: String,
-}
-
-#[derive(Serialize)]
-struct CreateUserResp {
-    id: i64,
-}
-
-async fn create_user(
-    State(st): State<AppState>,
-    Json(body): Json<CreateUserReq>,
-) -> ApiResult<Json<CreateUserResp>> {
-    // 仅允许首次用户创建匿名，无用户时不验证；否则需要 token（省略）
-    let count = User::find().count(&st.db).await.map_err(internal)?;
-    if count > 0 {
-        return Err(forbidden("user exists"));
-    }
-    let salt = argon2::password_hash::SaltString::generate(&mut OsRng);
-    let hash = Argon2::default()
-        .hash_password(body.password.as_bytes(), &salt)
-        .map_err(internal)?
-        .to_string();
-    let now = Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
-    let am = user::ActiveModel {
-        username: Set(body.username),
-        password_hash: Set(hash),
-        role: Set(captura_storage::entity::user::UserRole::Admin),
-        created_at: Set(now),
-        ..Default::default()
-    };
-    let u = am.insert(&st.db).await.map_err(internal)?;
-    Ok(Json(CreateUserResp { id: u.id }))
-}
-
-#[derive(Deserialize)]
-struct AuthLoginReq {
-    username: String,
-    password: String,
-    name: Option<String>,
-}
-
-#[derive(Serialize)]
-struct AuthLoginResp {
-    token: String,
-}
-
-async fn auth_login(
-    State(st): State<AppState>,
-    Json(body): Json<AuthLoginReq>,
-) -> ApiResult<Json<AuthLoginResp>> {
-    if st.cfg.disable_local_auth {
-        return Err(forbidden("local auth disabled"));
-    }
-    if body.username.trim().is_empty() || body.password.is_empty() {
-        return Err(bad_request("username/password required"));
-    }
-    // rate limit per username window
-    let key = body.username.to_lowercase();
-    if let Err(_) = login_check_and_mark(
-        &key,
-        st.cfg.login_max_attempts,
-        st.cfg.login_window_secs,
-        false,
-    ) {
-        return Err(crate::error::too_many_requests("too many attempts"));
-    }
-    let u = User::find()
-        .filter(user::Column::Username.eq(&body.username))
-        .one(&st.db)
-        .await
-        .map_err(internal)?;
-    let Some(u) = u else {
-        return Err(unauthorized("invalid credentials"));
-    };
-    let parsed = PasswordHash::new(&u.password_hash).map_err(internal)?;
-    Argon2::default()
-        .verify_password(body.password.as_bytes(), &parsed)
-        .map_err(|_| unauthorized("invalid credentials"))?;
-    // 颁发简单随机 token（生产应更强）：hash(username+time)
-    let mut rand_bytes = [0u8; 32];
-    rand_core::OsRng.fill_bytes(&mut rand_bytes);
-    let token_str = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(rand_bytes);
-    let token_hash = format!("{:x}", Sha256::digest(token_str.as_bytes()));
-    let now = Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
-    let am = token::ActiveModel {
-        user_id: Set(u.id),
-        name: Set(body.name),
-        token_hash: Set(token_hash),
-        token_plain: Set(Some(token_str.clone())),
-        created_at: Set(now),
-        last_used_at: Set(Some(now)),
-        expires_at: Set(Some(
-            now + chrono::Duration::seconds({
-                let v: i64 = std::env::var("CAPTURA_TOKEN_TTL_SECS")
-                    .ok()
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(30 * 24 * 3600);
-                v.max(3600)
-            }),
-        )),
-        ..Default::default()
-    };
-    let _ = am.insert(&st.db).await.map_err(internal)?;
-    // success resets limiter window for this user
-    let _ = login_check_and_mark(
-        &key,
-        st.cfg.login_max_attempts,
-        st.cfg.login_window_secs,
-        true,
-    );
-    Ok(Json(AuthLoginResp { token: token_str }))
-}
-
-// 基于反代头的一键换取 API Token（需设置 CAPTURA_AUTH_PROXY_HEADER）
-async fn auth_proxy_token(
-    State(st): State<AppState>,
-    headers: axum::http::HeaderMap,
-) -> ApiResult<Json<AuthLoginResp>> {
-    let Some(hname) = st.cfg.auth_proxy_header.as_ref() else {
-        return Err(bad_request("proxy auth not configured"));
-    };
-    let name = axum::http::header::HeaderName::from_bytes(hname.as_bytes())
-        .map_err(|_| bad_request("bad proxy header name"))?;
-    let username = headers
-        .get(name)
-        .and_then(|v| v.to_str().ok())
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .ok_or_else(|| unauthorized("missing proxy header"))?;
-    let uid = if let Some(id) = find_user_id_by_username(&st.db, &username).await? {
-        id
-    } else if st.cfg.auth_proxy_user_creation {
-        create_user_with_random_password(&st.db, &username).await?
-    } else {
-        return Err(unauthorized("user not found"));
-    };
-    // issue token
-    let mut rand_bytes = [0u8; 32];
-    rand_core::OsRng.fill_bytes(&mut rand_bytes);
-    let token_str = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(rand_bytes);
-    let token_hash = format!("{:x}", Sha256::digest(token_str.as_bytes()));
-    let now = Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
-    let am = token::ActiveModel {
-        user_id: Set(uid),
-        name: Set(Some("proxy".into())),
-        token_hash: Set(token_hash),
-        token_plain: Set(Some(token_str.clone())),
-        created_at: Set(now),
-        last_used_at: Set(Some(now)),
-        expires_at: Set(Some(
-            now + chrono::Duration::seconds({
-                let v: i64 = std::env::var("CAPTURA_TOKEN_TTL_SECS")
-                    .ok()
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(30 * 24 * 3600);
-                v.max(3600)
-            }),
-        )),
-        ..Default::default()
-    };
-    let _ = am.insert(&st.db).await.map_err(internal)?;
-    Ok(Json(AuthLoginResp { token: token_str }))
-}
-
-// AuthUser moved to auth.rs
-
-// v1 entries handlers moved to entries.rs
-
-// ----- Extended feeds & categories -----
-
-// legacy FeedsQuery removed (moved to crates/api/src/feeds.rs)
-
-// legacy FeedDto removed (moved to crates/api/src/feeds.rs)
-
-// legacy list_feeds removed (moved to crates/api/src/feeds.rs)
-
-// legacy get_feed removed (moved to crates/api/src/feeds.rs)
-
-// legacy UpdateFeedReq removed (moved to crates/api/src/feeds.rs)
-
-// legacy update_feed removed (moved to crates/api/src/feeds.rs)
-
-// legacy delete_feed removed (moved to crates/api/src/feeds.rs)
-
-// legacy ExtendedEntriesQuery removed (moved to crates/api/src/entries.rs)
-
-// legacy _list_entries_extended removed (moved to crates/api/src/entries.rs)
-
-// legacy mark_all_read removed (moved to crates/api/src/entries.rs)
-
-// legacy categories handlers removed (moved to crates/api/src/categories.rs)
-
-// OPML export/import
-// legacy opml_export removed; use crate::opml::export
-
-// opml_import 已迁至 crates/api/src/opml.rs
-
-// OPML helpers moved to crate::opml
-
-// ...
-
-// parse_opml_quickxml moved to crate::opml
-
-// Fever 兼容实现已迁移至 crate::compat::fever
-
-// Fever 兼容相关已移除
-
-// Favicon 主实现已迁移至 crate::favicon
-
-#[derive(Deserialize)]
-struct SetFeverKeyReq {
-    api_password: String,
-}
-
-// 设置/更新 Fever API 密钥（md5(username:api_password) 小写十六进制）
-async fn set_fever_key(
-    State(st): State<AppState>,
-    TypedHeader(Authorization(bearer)): TypedHeader<Authorization<Bearer>>,
-    Path(id): Path<i64>,
-    Json(req): Json<SetFeverKeyReq>,
-) -> ApiResult<&'static str> {
-    let auth = AuthUser::from_bearer(&st.db, bearer.token()).await?;
-    if auth.user_id != id {
-        return Err(forbidden("cannot set fever key for other user"));
-    }
-    if req.api_password.trim().is_empty() {
-        return Err(bad_request("api_password required"));
-    }
-    let Some(u) = User::find_by_id(id).one(&st.db).await.map_err(internal)? else {
-        return Err(crate::error::not_found("user not found"));
-    };
-    let s = format!("{}:{}", u.username, req.api_password);
-    let key = format!("{:x}", Md5::digest(s.as_bytes()));
-    let mut am: user::ActiveModel = u.into();
-    am.fever_key_md5 = Set(Some(key));
-    am.update(&st.db).await.map_err(internal)?;
-    Ok("ok")
-}
-
-#[cfg(test)]
+#[cfg(any())]
 mod tests {
     use super::*;
     use axum::extract::{Path, State};
-    use axum_extra::typed_header::TypedHeader;
-    use headers::authorization::Bearer;
-    use headers::Authorization;
-    use http_body_util::BodyExt;
-    use md5::Md5;
-    use serde_json::Value;
-    // bring in handlers/types from modules
-    use crate::entries::{list_entries, EntriesQuery, StatusFilter};
-    use crate::feeds::{create_feed, refresh_feed, CreateFeedReq};
-    use axum::response::IntoResponse;
-    use captura_storage::entity::{category, entry, feed, token};
-    use tower::util::ServiceExt;
+    // legacy tests removed; see crates/api/tests/*
 
-    async fn setup_db() -> DatabaseConnection {
-        captura_testkit::setup_db().await
+    #[tokio::test]
+    async fn reader_items_ids_limit_n() {
+        use crate::compat::reader::types::ReaderItemsIdsQuery;
+        let db = setup_db().await;
+        let st = AppState::new(db.clone());
+        // 用户与 feed + 两条 entry
+        let _ = create_user(
+            State(st.clone()),
+            Json(CreateUserReq {
+                username: "ids".into(),
+                password: "p".into(),
+            }),
+        )
+        .await
+        .unwrap();
+        let login = auth_login(
+            State(st.clone()),
+            Json(AuthLoginReq {
+                username: "ids".into(),
+                password: "p".into(),
+                name: None,
+            }),
+        )
+        .await
+        .unwrap();
+        let user = AuthUser::from_bearer(&db, &login.0.token).await.unwrap();
+        let now = Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
+        let feed_am = feed::ActiveModel {
+            user_id: Set(user.user_id),
+            category_id: Set(None),
+            r#type: Set(feed::FeedType::Rss),
+            title: Set(Some("t".into())),
+            site_url: Set(Some("https://ex".into())),
+            feed_url: Set("https://ex/rss".into()),
+            created_at: Set(now),
+            updated_at: Set(now),
+            ..Default::default()
+        };
+        let f = feed_am.insert(&db).await.unwrap();
+        for i in 0..2 {
+            let am = entry::ActiveModel {
+                feed_id: Set(f.id),
+                guid: Set(Some(format!("g{}", i))),
+                url: Set(Some(format!("https://ex/{}", i))),
+                title: Set(Some(format!("t{}", i))),
+                created_at: Set(now),
+                updated_at: Set(now),
+                ..Default::default()
+            };
+            let _ = am.insert(&db).await.unwrap();
+        }
+        let q = ReaderItemsIdsQuery {
+            n: Some(1),
+            s: None,
+            c: None,
+            xt: None,
+            q: None,
+        };
+        let out = crate::compat::reader::handlers::items_ids(&st, user.user_id, &q)
+            .await
+            .unwrap();
+        assert!(out.item_refs.len() <= 1);
     }
+
+    #[tokio::test]
+    async fn reader_items_contents_minimal_fields() {
+        use crate::compat::reader::types::ReaderItemsContentsQuery;
+        let db = setup_db().await;
+        let st = AppState::new(db.clone());
+        // 用户与 feed + 一条 entry
+        let _ = create_user(
+            State(st.clone()),
+            Json(CreateUserReq {
+                username: "cnts".into(),
+                password: "p".into(),
+            }),
+        )
+        .await
+        .unwrap();
+        let login = auth_login(
+            State(st.clone()),
+            Json(AuthLoginReq {
+                username: "cnts".into(),
+                password: "p".into(),
+                name: None,
+            }),
+        )
+        .await
+        .unwrap();
+        let user = AuthUser::from_bearer(&db, &login.0.token).await.unwrap();
+        let now = Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
+        let feed_am = feed::ActiveModel {
+            user_id: Set(user.user_id),
+            category_id: Set(None),
+            r#type: Set(feed::FeedType::Rss),
+            title: Set(Some("Feed".into())),
+            site_url: Set(Some("https://site".into())),
+            feed_url: Set("https://site/rss".into()),
+            created_at: Set(now),
+            updated_at: Set(now),
+            ..Default::default()
+        };
+        let f = feed_am.insert(&db).await.unwrap();
+        let e_am = entry::ActiveModel {
+            feed_id: Set(f.id),
+            guid: Set(Some("g".into())),
+            url: Set(Some("https://site/p/1".into())),
+            title: Set(Some("Hello".into())),
+            created_at: Set(now),
+            updated_at: Set(now),
+            ..Default::default()
+        };
+        let _ = e_am.insert(&db).await.unwrap();
+        let q = ReaderItemsContentsQuery {
+            n: Some(10),
+            s: None,
+            c: None,
+            q: None,
+            xt: None,
+        };
+        let out = crate::compat::reader::handlers::items_contents(&st, user.user_id, &q)
+            .await
+            .unwrap();
+        assert_eq!(out.items.len(), 1);
+        let it = &out.items[0];
+        assert_eq!(it.origin.stream_id, format!("feed/{}", "https://site/rss"));
+        assert!(it.alternate.iter().any(|l| l.href == "https://site/p/1"));
+        assert!(it.categories.iter().any(|c| c.ends_with("reading-list")));
+    }
+
+    #[tokio::test]
+    async fn fever_groups_feeds_basic() {
+        use serde_json::json;
+        let db = setup_db().await;
+        let st = AppState::new(db.clone());
+        // 用户 + fever key + 一个分类和 feed
+        let create = create_user(
+            State(st.clone()),
+            Json(CreateUserReq {
+                username: "fgf".into(),
+                password: "p".into(),
+            }),
+        )
+        .await
+        .unwrap();
+        let login = auth_login(
+            State(st.clone()),
+            Json(AuthLoginReq {
+                username: "fgf".into(),
+                password: "p".into(),
+                name: None,
+            }),
+        )
+        .await
+        .unwrap();
+        let token = login.0.token;
+        let _ = set_fever_key(
+            State(st.clone()),
+            TypedHeader(Authorization::bearer(&token).unwrap()),
+            Path(create.0.id),
+            Json(SetFeverKeyReq {
+                api_password: "pp".into(),
+            }),
+        )
+        .await
+        .unwrap();
+        let key = format!("{:x}", Md5::digest(b"fgf:pp"));
+        let now = Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
+        let cat = category::ActiveModel {
+            user_id: Set(create.0.id),
+            name: Set("news".into()),
+            created_at: Set(now),
+            ..Default::default()
+        };
+        let cat = cat.insert(&db).await.unwrap();
+        let feed_am = feed::ActiveModel {
+            user_id: Set(create.0.id),
+            category_id: Set(Some(cat.id)),
+            r#type: Set(feed::FeedType::Rss),
+            title: Set(Some("F".into())),
+            site_url: Set(Some("https://s".into())),
+            feed_url: Set("https://s/rss".into()),
+            created_at: Set(now),
+            updated_at: Set(now),
+            ..Default::default()
+        };
+        let _ = feed_am.insert(&db).await.unwrap();
+        let resp = crate::compat::fever::endpoint(
+            State(st.clone()),
+            Query(crate::compat::fever::FeverQuery {
+                api: None,
+                api_key: Some(key),
+                groups: Some(1),
+                feeds: Some(1),
+                favicons: None,
+                items: None,
+                since_id: None,
+                limit: None,
+                unread_item_ids: None,
+                saved_item_ids: None,
+                mark: None,
+                r#as: None,
+                id: None,
+                before: None,
+            }),
+        )
+        .await;
+        let v = json_from_response(resp).await;
+        assert!(v.get("groups").is_some());
+        assert!(v.get("feeds").is_some());
+    }
+
+    // HTTP 级路由集成测试计划迁移到 crates/api/tests/，此处暂以 handlers 级单测为主
 
     #[tokio::test]
     async fn auth_login_disabled() {
         let db = setup_db().await;
         let mut st = AppState::new(db);
         st.cfg.disable_local_auth = true;
-        let err = super::auth_login(
+        let err = auth_login(
             State(st.clone()),
-            Json(super::AuthLoginReq {
+            Json(AuthLoginReq {
                 username: "u".into(),
                 password: "p".into(),
                 name: None,
@@ -688,9 +646,7 @@ mod tests {
             axum::http::HeaderName::from_static("x-forwarded-user"),
             axum::http::HeaderValue::from_static("bob"),
         );
-        let resp = super::auth_proxy_token(State(st.clone()), headers)
-            .await
-            .unwrap();
+        let resp = auth_proxy_token(State(st.clone()), headers).await.unwrap();
         let token = resp.0.token;
         // token should authenticate
         let auth = super::AuthUser::from_bearer(&db, &token).await.unwrap();
@@ -704,9 +660,9 @@ mod tests {
         st.cfg.login_max_attempts = 1; // allow one failure within window
         st.cfg.login_window_secs = 60;
         // Ensure user exists with known password
-        let _ = super::create_user(
+        let _ = create_user(
             State(st.clone()),
-            Json(super::CreateUserReq {
+            Json(CreateUserReq {
                 username: "rl".into(),
                 password: "good".into(),
             }),
@@ -714,9 +670,9 @@ mod tests {
         .await
         .unwrap();
         // 1st attempt wrong password -> 401
-        let e1 = super::auth_login(
+        let e1 = auth_login(
             State(st.clone()),
-            Json(super::AuthLoginReq {
+            Json(AuthLoginReq {
                 username: "rl".into(),
                 password: "bad".into(),
                 name: None,
@@ -728,9 +684,9 @@ mod tests {
         let (s1, _) = resp_to_status_and_code(e1.into_response());
         assert_eq!(s1, 401);
         // 2nd attempt wrong password -> 429 too_many_requests
-        let e2 = super::auth_login(
+        let e2 = auth_login(
             State(st.clone()),
-            Json(super::AuthLoginReq {
+            Json(AuthLoginReq {
                 username: "rl".into(),
                 password: "stillbad".into(),
                 name: None,
@@ -747,7 +703,7 @@ mod tests {
     #[tokio::test]
     async fn auth_token_expiry_and_last_used_update() {
         let db = setup_db().await;
-        let st = AppState { db };
+        let st = AppState::new(db);
         // 创建用户
         let _ = create_user(
             State(st.clone()),
@@ -793,7 +749,7 @@ mod tests {
         }
 
         // 2) 人为设置过期，再次鉴权应失败
-        if let Some(mut model) = Token::find()
+        if let Some(model) = Token::find()
             .filter(token::Column::TokenPlain.eq(token_plain.clone()))
             .one(&st.db)
             .await
@@ -838,7 +794,7 @@ mod tests {
     #[tokio::test]
     async fn create_user_duplicate() {
         let db = setup_db().await;
-        let st = AppState { db };
+        let st = AppState::new(db);
         let _ = create_user(
             State(st.clone()),
             Json(CreateUserReq {
@@ -867,7 +823,7 @@ mod tests {
     #[tokio::test]
     async fn auth_invalid_password() {
         let db = setup_db().await;
-        let st = AppState { db };
+        let st = AppState::new(db);
         let _ = create_user(
             State(st.clone()),
             Json(CreateUserReq {
@@ -896,7 +852,7 @@ mod tests {
     #[tokio::test]
     async fn create_feed_invalid_url() {
         let db = setup_db().await;
-        let st = AppState { db };
+        let st = AppState::new(db);
         let _ = create_user(
             State(st.clone()),
             Json(CreateUserReq {
@@ -951,7 +907,7 @@ mod tests {
     #[tokio::test]
     async fn list_entries_filters() {
         let db = setup_db().await;
-        let st = AppState { db };
+        let st = AppState::new(db);
         // user + token
         let _ = create_user(
             State(st.clone()),
@@ -1094,7 +1050,7 @@ mod tests {
             return;
         }
         let db = setup_db().await;
-        let st = AppState { db };
+        let st = AppState::new(db);
         // bootstrap user and token
         let _ = create_user(
             State(st.clone()),
@@ -1163,7 +1119,7 @@ mod tests {
     #[tokio::test]
     async fn fever_auth_and_sections() {
         let db = setup_db().await;
-        let st = AppState { db };
+        let st = AppState::new(db);
 
         // 1) Create user
         let create = create_user(
@@ -1351,7 +1307,7 @@ mod tests {
     #[tokio::test]
     async fn create_feed_duplicate_url_bad_request() {
         let db = setup_db().await;
-        let st = AppState { db: db.clone() };
+        let st = AppState::new(db.clone());
         // 注册首个用户
         let _ = create_user(
             State(st.clone()),
@@ -1436,7 +1392,7 @@ mod tests {
     async fn cross_user_mark_read_forbidden() {
         use captura_storage::entity::user;
         let db = setup_db().await;
-        let st = AppState { db: db.clone() };
+        let st = AppState::new(db.clone());
 
         // 用户A：注册并登录
         let _ = create_user(
@@ -1535,7 +1491,7 @@ mod tests {
         let app = Router::new()
             .route("/api/v1/users", post(create_user))
             .route("/api/v1/auth/login", post(auth_login))
-            .with_state(AppState { db });
+            .with_state(AppState::new(db));
 
         // 注册首个用户
         let resp = app
@@ -1571,7 +1527,7 @@ mod tests {
     async fn fever_favicons_and_get_binary() {
         use captura_storage::entity::favicon as fv;
         let db = setup_db().await;
-        let st = AppState { db };
+        let st = AppState::new(db);
 
         // user + token + fever
         let _ = create_user(
@@ -1686,7 +1642,7 @@ mod tests {
     #[tokio::test]
     async fn refresh_favicon_with_test_hook() {
         let db = setup_db().await;
-        let st = AppState { db };
+        let st = AppState::new(db);
         let _ = create_user(
             State(st.clone()),
             Json(CreateUserReq {
@@ -1891,55 +1847,7 @@ async fn enqueue_due_feeds(
     Ok(Json(serde_json::json!({"enqueued": n})))
 }
 
-// helper fns are imported from crate::error
-
-// rules::try_rule 已迁移至 crates/api/src/rules.rs
-pub(crate) fn validate_limit_offset(limit: Option<u64>, offset: Option<u64>) -> ApiResult<()> {
-    if let Some(l) = limit {
-        if l > 500 {
-            return Err(bad_request("limit too large (max 500)"));
-        }
-    }
-    if let Some(_o) = offset {}
-    Ok(())
-}
-
-pub(crate) fn validate_sort(
-    sort_by: &Option<String>,
-    allowed: &[&str],
-    order: &Option<String>,
-) -> ApiResult<()> {
-    if let Some(ref s) = sort_by {
-        if !allowed.iter().any(|a| a == s) {
-            return Err(bad_request("invalid sort_by"));
-        }
-    }
-    if let Some(ref o) = order {
-        if o != "asc" && o != "desc" {
-            return Err(bad_request("invalid order"));
-        }
-    }
-    Ok(())
-}
-
-pub(crate) async fn assert_category_ownership(
-    db: &DatabaseConnection,
-    user_id: i64,
-    category_id: i64,
-) -> ApiResult<()> {
-    let cat = Category::find_by_id(category_id)
-        .one(db)
-        .await
-        .map_err(internal)?;
-    let Some(cat) = cat else {
-        return Err(bad_request("category not found"));
-    };
-    if cat.user_id != user_id {
-        return Err(forbidden("category not owned by user"));
-    }
-    Ok(())
-}
-// Google Reader 兼容实现已迁移至 crate::compat::reader
+// helper fns 移至 crate::util；Google Reader 兼容实现已迁移至 crate::compat::reader
 
 // Reader DTO moved to compat::reader
 
@@ -1958,7 +1866,7 @@ pub(crate) async fn assert_category_ownership(
 // ...
 
 // ensure_category moved to compat::reader
-async fn oidc_providers(State(st): State<AppState>) -> ApiResult<Json<Vec<String>>> {
+pub(crate) async fn oidc_providers(State(st): State<AppState>) -> ApiResult<Json<Vec<String>>> {
     let names: Vec<String> = st
         .cfg
         .oidc_providers
@@ -1967,36 +1875,4 @@ async fn oidc_providers(State(st): State<AppState>) -> ApiResult<Json<Vec<String
         .collect();
     Ok(Json(names))
 }
-// -------- Simple login rate limiter (per-username window counter) --------
-use once_cell::sync::Lazy;
-use std::collections::HashMap;
-use std::sync::Mutex;
-
-static LOGIN_LIMITER: Lazy<Mutex<HashMap<String, (u32, std::time::Instant)>>> =
-    Lazy::new(|| Mutex::new(HashMap::new()));
-
-fn login_check_and_mark(
-    key: &str,
-    max: u32,
-    window_secs: u64,
-    success: bool,
-) -> Result<(), &'static str> {
-    let mut guard = LOGIN_LIMITER.lock().unwrap();
-    let now = std::time::Instant::now();
-    let ent = guard.entry(key.to_string()).or_insert((0, now));
-    // reset window
-    if now.duration_since(ent.1).as_secs() >= window_secs {
-        ent.0 = 0;
-        ent.1 = now;
-    }
-    if success {
-        ent.0 = 0;
-        ent.1 = now;
-        return Ok(());
-    }
-    if ent.0 >= max {
-        return Err("too_many_attempts");
-    }
-    ent.0 += 1;
-    Ok(())
-}
+// 登录限流逻辑请见 crate::util

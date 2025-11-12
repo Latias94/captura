@@ -63,7 +63,7 @@ content:
             let yaml_escaped = yaml.replace("'", "''");
             let sql = format!(
                 "INSERT INTO rule (rule_id, version, namespace, description, yaml, examples_json, verified_at, maintainer, created_at, updated_at) \
-                 VALUES ('{}','0.1','{}',NULL,'{}',{}, CURRENT_TIMESTAMP, 'captura', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP) \
+                 VALUES ('{}','0.1','{}',NULL,'{}','{}', CURRENT_TIMESTAMP, 'captura', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP) \
                  ON CONFLICT(rule_id) DO NOTHING",
                 rid, ns, yaml_escaped, examples
             );

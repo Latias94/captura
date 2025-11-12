@@ -19,8 +19,8 @@ use captura_storage::entity::{feed, job, prelude::*, rule};
 
 use crate::auth::AuthUser;
 use crate::error::{bad_request, internal, not_found, ApiResult};
+use crate::util::{validate_limit_offset, validate_sort};
 use crate::AppState;
-use crate::{validate_limit_offset, validate_sort};
 
 #[derive(Deserialize)]
 pub(crate) struct CreateFeedReq {
@@ -205,7 +205,7 @@ pub(crate) async fn update_feed(
         return Err(not_found("feed not found"));
     };
     if let Some(cid) = body.category_id {
-        crate::assert_category_ownership(&st.db, user.user_id, cid).await?;
+        crate::util::assert_category_ownership(&st.db, user.user_id, cid).await?;
     }
     let mut am: feed::ActiveModel = f.into();
     if let Some(t) = body.title {
@@ -348,7 +348,7 @@ pub(crate) async fn create_feed(
         }
     }
     if let Some(cid) = body.category_id {
-        crate::assert_category_ownership(&st.db, user.user_id, cid).await?;
+        crate::util::assert_category_ownership(&st.db, user.user_id, cid).await?;
     }
     let dup = Feed::find()
         .filter(feed::Column::UserId.eq(user.user_id))
@@ -605,4 +605,5 @@ fn xml_escape(s: &str) -> String {
     s.replace('&', "&amp;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")
+        .replace('"', "&quot;")
 }

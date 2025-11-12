@@ -409,7 +409,7 @@ async fn update_feed_on_failure(
 #[cfg(test)]
 mod it {
     use super::*;
-    use captura_storage::entity::{feed, prelude::*, user};
+    use captura_storage::entity::{feed, prelude::Job, user};
 
     #[tokio::test]
     async fn backoff_on_failed_feed_refresh() {
@@ -493,7 +493,7 @@ mod it {
 mod live_tests {
     use super::*;
     use captura_storage::entity::entry;
-    use migration::migrate;
+    // use migration::migrate; // not used in live tests
     use sea_orm::PaginatorTrait;
 
     fn should_run_live() -> bool {

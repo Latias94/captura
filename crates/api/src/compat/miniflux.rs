@@ -26,7 +26,7 @@ pub fn router() -> Router<AppState> {
         .route("/me", get(users::me))
         .route("/users", get(users::list).post(users::create))
         .route(
-            "/users/:id",
+            "/users/{id}",
             get(users::get).put(users::update).delete(users::delete),
         )
         .route(
@@ -35,13 +35,13 @@ pub fn router() -> Router<AppState> {
         )
         .route("/categories/counters", get(categories::counters))
         .route(
-            "/categories/:id/mark-all-as-read",
+            "/categories/{id}/mark-all-as-read",
             put(categories::mark_all_read),
         )
-        .route("/categories/:id/feeds", get(categories::feeds))
-        .route("/categories/:id/refresh", put(categories::refresh))
+        .route("/categories/{id}/feeds", get(categories::feeds))
+        .route("/categories/{id}/refresh", put(categories::refresh))
         .route(
-            "/categories/:id",
+            "/categories/{id}",
             put(categories::update).delete(categories::delete),
         )
         .route("/feeds/counters", get(feeds::counters))
@@ -49,31 +49,31 @@ pub fn router() -> Router<AppState> {
         .route("/feeds", get(feeds::list).post(feeds::create))
         .route("/feeds/refresh", put(feeds::refresh_all))
         .route(
-            "/feeds/:id",
+            "/feeds/{id}",
             get(feeds::get).put(feeds::update).delete(feeds::delete),
         )
-        .route("/feeds/:id/mark-all-read", post(feeds::mark_all_read))
-        .route("/feeds/:id/refresh", post(feeds::refresh_one))
-        .route("/feeds/:id/icon", get(icons::icon_by_feed))
+        .route("/feeds/{id}/mark-all-read", post(feeds::mark_all_read))
+        .route("/feeds/{id}/refresh", post(feeds::refresh_one))
+        .route("/feeds/{id}/icon", get(icons::icon_by_feed))
         .route("/entries", get(entries::list).put(entries::update_bulk))
-        .route("/entries/:id", get(entries::get).put(entries::update))
-        .route("/entries/:id/star", put(entries::toggle_star))
-        .route("/entries/:id/bookmark", put(entries::toggle_star))
-        .route("/entries/:id/save", post(entries::save))
+        .route("/entries/{id}", get(entries::get).put(entries::update))
+        .route("/entries/{id}/star", put(entries::toggle_star))
+        .route("/entries/{id}/bookmark", put(entries::toggle_star))
+        .route("/entries/{id}/save", post(entries::save))
         .route(
-            "/entries/:id/tags",
+            "/entries/{id}/tags",
             post(entries::add_tags).delete(entries::remove_tags),
         )
-        .route("/entries/:id/fetch-content", get(entries::fetch_content))
-        .route("/feeds/:id/entries", get(entries::feed_entries))
-        .route("/categories/:id/entries", get(categories::entries))
+        .route("/entries/{id}/fetch-content", get(entries::fetch_content))
+        .route("/feeds/{id}/entries", get(entries::feed_entries))
+        .route("/categories/{id}/entries", get(categories::entries))
         .route("/flush-history", put(entries::flush_history))
-        .route("/users/:id/mark-all-as-read", put(users::mark_all_read))
+        .route("/users/{id}/mark-all-as-read", put(users::mark_all_read))
         .route("/api-keys", get(apikeys::list).post(apikeys::create))
-        .route("/api-keys/:id", delete(apikeys::delete))
-        .route("/icons/:id", get(icons::icon_by_id))
+        .route("/api-keys/{id}", delete(apikeys::delete))
+        .route("/icons/{id}", get(icons::icon_by_id))
         .route(
-            "/enclosures/:id",
+            "/enclosures/{id}",
             get(enclosures::get).put(enclosures::update),
         )
         .route("/export", get(export_import::export))
@@ -82,7 +82,7 @@ pub fn router() -> Router<AppState> {
         .route("/integrations/status", get(integrations::status))
         .route("/tags", get(tags::list).post(tags::create))
         .route(
-            "/tags/:name",
+            "/tags/{name}",
             get(tags::get).delete(tags::delete).put(tags::rename),
         )
 }

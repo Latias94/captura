@@ -350,8 +350,13 @@ pub async fn refresh_rule_feed(
     let mut entries = Vec::new();
     for (link, title) in items {
         let url = link.as_deref().map(|u| absolutize(&final_list_url, u));
-        let mut content_html: Option<String> = match &spec.content.r#use[..] {
-            "css" => {
+        // 首选策略：content.use
+        let mut content_html: Option<String> = match spec.content.r#use.as_str() {
+            "readability" => {
+                readability_like_strategy_async(&client, url.as_deref(), &spec.fetch, Some(feed))
+                    .await
+            }
+            _ => {
                 if let Some(sel) = &spec.content.selector {
                     if let Some(u) = &url {
                         Some(
@@ -365,12 +370,20 @@ pub async fn refresh_rule_feed(
                     None
                 }
             }
-            _ => None,
         };
+        // 可选回退：content.fallback=readability
         if content_html.is_none() {
-            content_html =
-                readability_like_strategy_async(&client, url.as_deref(), &spec.fetch, Some(feed))
+            if let Some(fb) = &spec.content.fallback {
+                if fb.eq_ignore_ascii_case("readability") {
+                    content_html = readability_like_strategy_async(
+                        &client,
+                        url.as_deref(),
+                        &spec.fetch,
+                        Some(feed),
+                    )
                     .await;
+                }
+            }
         }
 
         entries.push(NormalizedEntry {
@@ -385,6 +398,8 @@ pub async fn refresh_rule_feed(
             extras: serde_json::json!({}),
         });
     }
+    // 规则同样应用条目过滤（与标准 Feed 路径保持一致）
+    apply_entry_filters(feed, &mut entries);
     Ok(entries)
 }
 
@@ -422,7 +437,7 @@ async fn fetch_and_select_strategy(
     for el in doc.select(&s) {
         out.push_str(&el.html());
     }
-    Ok(out)
+    Ok(sanitize_html(&out))
 }
 
 async fn readability_like_strategy_async(
@@ -440,6 +455,11 @@ async fn readability_like_strategy_async(
         Err(_) => return None,
     };
     let doc = Html::parse_document(&html);
+    readability_like_pick(&doc).or_else(|| Some(sanitize_html(&html)))
+}
+
+// 纯文档版可测试的 readability 择优逻辑
+fn readability_like_pick(doc: &Html) -> Option<String> {
     let candidates = [
         "article",
         "main",
@@ -451,11 +471,39 @@ async fn readability_like_strategy_async(
     for c in candidates.iter() {
         if let Ok(s) = Selector::parse(c) {
             if let Some(el) = doc.select(&s).next() {
-                return Some(el.html());
+                return Some(sanitize_html(&el.html()));
             }
         }
     }
-    Some(html)
+    None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn readability_picks_article() {
+        let html = r#"<html><body><article><p>Hello</p></article><div class='content'><p>Other</p></div></body></html>"#;
+        let doc = Html::parse_document(html);
+        let out = readability_like_pick(&doc).unwrap();
+        assert!(out.contains("Hello"));
+    }
+
+    #[test]
+    fn readability_picks_common_selector() {
+        let html = r#"<html><body><div class='post'><p>PickMe</p></div><div class='article'><p>Alt</p></div></body></html>"#;
+        let doc = Html::parse_document(html);
+        let out = readability_like_pick(&doc).unwrap();
+        assert!(out.contains("PickMe") || out.contains("Alt"));
+    }
+
+    #[test]
+    fn readability_fallback_none() {
+        let html = r#"<html><body>Plain <b>text</b></body></html>"#;
+        let doc = Html::parse_document(html);
+        assert!(readability_like_pick(&doc).is_none());
+    }
 }
 
 async fn fetch_html_strategy(
@@ -569,6 +617,7 @@ mod live_tests {
             feed_url: feed_url.into(),
             favicon_id: None,
             rule_id: None,
+            rule_params_json: None,
             user_agent: Some("captura-tests/0.1".into()),
             headers_json: None,
             cookies: None,
@@ -591,6 +640,7 @@ mod live_tests {
             url_rewrite_rules: None,
             block_filter_entry_rules: None,
             keep_filter_entry_rules: None,
+            integrations_json: None,
             created_at: now,
             updated_at: now,
         }

@@ -29,7 +29,7 @@ captura-service = { path = "../service" }
 sha2.workspace = true
 argon2.workspace = true
 rand_core.workspace = true
-axum-extra = { version = "0.9", features = ["typed-header"] }
+axum-extra = { version = "0.12", features = ["typed-header"] }
 headers = "0.4"
 quick-xml.workspace = true
 url.workspace = true
@@ -48,5 +48,5 @@ openidconnect = { version = "3", default-features = true, features = ["reqwest"]
 [dev-dependencies]
 http-body-util = "0.1"
 futures = "0.3"
-tower = { version = "0.4", features = ["util"] }
+tower = { version = "0.5", features = ["util"] }
 captura-testkit = { path = "../testkit" }

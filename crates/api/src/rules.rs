@@ -19,8 +19,9 @@ use captura_storage::entity::{feed, prelude::*, rule};
 
 use crate::auth::AuthUser;
 use crate::error::{bad_request, forbidden, internal, not_found, ApiResult};
-use crate::validate_limit_offset;
+use crate::util::validate_limit_offset;
 use crate::AppState;
+use captura_api::IdResp;
 use regex::Regex;
 
 #[derive(Serialize)]
@@ -47,7 +48,7 @@ pub(crate) async fn create_rule(
     State(st): State<AppState>,
     TypedHeader(Authorization(bearer)): TypedHeader<Authorization<Bearer>>,
     Json(body): Json<CreateRuleReq>,
-) -> ApiResult<Json<crate::IdResp>> {
+) -> ApiResult<Json<IdResp>> {
     let _user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
     let spec: RuleSpec = parse_rule(&body.yaml)
         .map_err(|e| bad_request(format!("invalid rule yaml: {}", e.to_string())))?;
@@ -67,7 +68,7 @@ pub(crate) async fn create_rule(
         ..Default::default()
     };
     let rec = am.insert(&st.db).await.map_err(internal)?;
-    Ok(Json(crate::IdResp { id: rec.id }))
+    Ok(Json(IdResp { id: rec.id }))
 }
 
 #[derive(Deserialize)]
@@ -316,13 +317,13 @@ pub(crate) async fn create_feed_from_template(
     State(st): State<AppState>,
     TypedHeader(Authorization(bearer)): TypedHeader<Authorization<Bearer>>,
     Json(req): Json<CreateFeedFromTemplateReq>,
-) -> ApiResult<Json<crate::IdResp>> {
+) -> ApiResult<Json<IdResp>> {
     let user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
     if !req.params.is_object() {
         return Err(bad_request("params must be object"));
     }
     if let Some(cid) = req.category_id {
-        crate::assert_category_ownership(&st.db, user.user_id, cid).await?;
+        crate::util::assert_category_ownership(&st.db, user.user_id, cid).await?;
     }
     let Some(r) = Rule::find_by_id(req.template_id)
         .one(&st.db)
@@ -391,7 +392,7 @@ pub(crate) async fn create_feed_from_template(
         ..Default::default()
     };
     let res = am.insert(&st.db).await.map_err(internal)?;
-    Ok(Json(crate::IdResp { id: res.id }))
+    Ok(Json(captura_api::IdResp { id: res.id }))
 }
 
 #[derive(Deserialize)]

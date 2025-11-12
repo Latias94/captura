@@ -80,7 +80,7 @@ pub(crate) async fn create(
     State(st): State<AppState>,
     TypedHeader(Authorization(bearer)): TypedHeader<Authorization<Bearer>>,
     Json(body): Json<CreateWebhookReq>,
-) -> ApiResult<Json<crate::IdResp>> {
+) -> ApiResult<Json<captura_api::IdResp>> {
     let user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
     if body.url.trim().is_empty() {
         return Err(bad_request("url required"));
@@ -101,7 +101,7 @@ pub(crate) async fn create(
         ..Default::default()
     };
     let w = am.insert(&st.db).await.map_err(internal)?;
-    Ok(Json(crate::IdResp { id: w.id }))
+    Ok(Json(captura_api::IdResp { id: w.id }))
 }
 
 pub(crate) async fn delete(

@@ -22,7 +22,7 @@ authors = ["captura contributors"]
 
 [workspace.dependencies]
 anyhow = "1"
-axum = { version = "0.7", features = ["macros", "json"] }
+axum = { version = "0.8", features = ["macros", "json"] }
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
 feed-rs = "1"
 once_cell = "1"
@@ -52,4 +52,4 @@ base64 = "0.22"
 ammonia = "4"
 urlencoding = "2"
 hex = "0.4"
-tower-http = { version = "0.5", features = ["set-header"] }
+tower-http = { version = "0.6", features = ["set-header"] }

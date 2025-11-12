@@ -8,7 +8,6 @@ use chrono::{FixedOffset, Utc};
 use headers::authorization::Bearer;
 use headers::Authorization;
 use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set};
-use url::Url;
 
 use crate::auth::AuthUser;
 use crate::error::{bad_request, internal, not_found, ApiResult};
@@ -138,3 +137,5 @@ pub(crate) async fn get(
     }
     Ok(resp)
 }
+#[cfg(not(test))]
+use url::Url;
