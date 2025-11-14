@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use crate::auth::AuthUser;
 use crate::error::{bad_request, internal, not_found, ApiResult};
 use crate::AppState;
-use captura_storage::entity::{integration, prelude::*};
+use captura_storage::entity::integration;
 
 #[derive(Serialize)]
 pub(crate) struct IntegrationDto {
@@ -35,7 +35,7 @@ pub(crate) async fn list(
     TypedHeader(Authorization(bearer)): TypedHeader<Authorization<Bearer>>,
 ) -> ApiResult<Json<Vec<IntegrationDto>>> {
     let user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
-    let list = Integration::find()
+    let list = integration::Entity::find()
         .filter(integration::Column::UserId.eq(user.user_id))
         .all(&st.db)
         .await
@@ -59,7 +59,7 @@ pub(crate) async fn get(
     Path(id): Path<i64>,
 ) -> ApiResult<Json<IntegrationDto>> {
     let user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
-    let Some(m) = Integration::find_by_id(id)
+    let Some(m) = integration::Entity::find_by_id(id)
         .filter(integration::Column::UserId.eq(user.user_id))
         .one(&st.db)
         .await
@@ -112,7 +112,7 @@ pub(crate) async fn update(
     Json(req): Json<UpdateIntegrationReq>,
 ) -> ApiResult<&'static str> {
     let user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
-    let Some(m) = Integration::find_by_id(id)
+    let Some(m) = integration::Entity::find_by_id(id)
         .filter(integration::Column::UserId.eq(user.user_id))
         .one(&st.db)
         .await
@@ -138,7 +138,7 @@ pub(crate) async fn delete(
     Path(id): Path<i64>,
 ) -> ApiResult<&'static str> {
     let user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
-    if let Some(m) = Integration::find_by_id(id)
+    if let Some(m) = integration::Entity::find_by_id(id)
         .filter(integration::Column::UserId.eq(user.user_id))
         .one(&st.db)
         .await

@@ -12,7 +12,7 @@ use sea_orm::{
 };
 use serde::{Deserialize, Serialize};
 
-use captura_storage::entity::{entry, feed, prelude::*};
+use captura_storage::entity::{entry, feed};
 
 use crate::auth::AuthUser;
 use crate::entry_options::{apply_entry_flags, EntryUpdateFlags};
@@ -72,7 +72,7 @@ pub(crate) async fn list_entries(
             return Err(bad_request("q too long"));
         }
     }
-    let mut sel = Entry::find()
+    let mut sel = entry::Entity::find()
         .join(JoinType::InnerJoin, entry::Relation::Feed.def())
         .filter(feed::Column::UserId.eq(user.user_id));
     if let Some(fid) = q.feed_id {
@@ -206,8 +206,8 @@ pub(crate) async fn mark_read(
     Json(body): Json<BoolBody>,
 ) -> ApiResult<&'static str> {
     let user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
-    if let Some(e) = Entry::find_by_id(id).one(&st.db).await.map_err(internal)? {
-        let owned = Feed::find_by_id(e.feed_id)
+    if let Some(e) = entry::Entity::find_by_id(id).one(&st.db).await.map_err(internal)? {
+        let owned = feed::Entity::find_by_id(e.feed_id)
             .filter(feed::Column::UserId.eq(user.user_id))
             .one(&st.db)
             .await
@@ -236,8 +236,8 @@ pub(crate) async fn mark_star(
     Json(body): Json<BoolBody>,
 ) -> ApiResult<&'static str> {
     let user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
-    if let Some(e) = Entry::find_by_id(id).one(&st.db).await.map_err(internal)? {
-        let owned = Feed::find_by_id(e.feed_id)
+    if let Some(e) = entry::Entity::find_by_id(id).one(&st.db).await.map_err(internal)? {
+        let owned = feed::Entity::find_by_id(e.feed_id)
             .filter(feed::Column::UserId.eq(user.user_id))
             .one(&st.db)
             .await
@@ -274,7 +274,7 @@ pub(crate) async fn mark_all_read(
     if body.feed_id.is_none() && body.category_id.is_none() {
         return Err(bad_request("feed_id or category_id required"));
     }
-    let mut sel = Entry::find()
+    let mut sel = entry::Entity::find()
         .join(JoinType::InnerJoin, entry::Relation::Feed.def())
         .filter(feed::Column::UserId.eq(user.user_id));
     if let Some(fid) = body.feed_id {

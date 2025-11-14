@@ -2,7 +2,7 @@
 
 use captura_common::Result;
 use captura_pipeline::{refresh_feed_with_meta, refresh_rule_with_yaml, RefreshMeta};
-use captura_storage::entity::{entry, feed, prelude::*};
+use captura_storage::entity::{entry, feed, rule};
 use chrono::{FixedOffset, Utc};
 use sea_orm::sea_query::OnConflict;
 use sea_orm::{
@@ -18,7 +18,7 @@ pub mod webhook;
 /// Refresh a feed by id and persist new entries, update feed metadata.
 /// Returns number of inserted entries.
 pub async fn refresh_and_persist_by_id(db: &DatabaseConnection, feed_id: i64) -> Result<usize> {
-    let Some(f) = Feed::find_by_id(feed_id)
+    let Some(f) = feed::Entity::find_by_id(feed_id)
         .one(db)
         .await
         .map_err(|e| captura_common::Error::Storage(e.to_string()))?
@@ -36,7 +36,7 @@ pub async fn refresh_and_persist(db: &DatabaseConnection, f: &feed::Model) -> Re
     let (entries, meta): (Vec<captura_common::NormalizedEntry>, Option<RefreshMeta>) =
         if matches!(f.r#type, feed::FeedType::Rule) {
             let yaml = if let Some(rid) = f.rule_id {
-                let r = Rule::find_by_id(rid)
+                let r = rule::Entity::find_by_id(rid)
                     .one(db)
                     .await
                     .map_err(|e| captura_common::Error::Storage(e.to_string()))?
@@ -69,7 +69,7 @@ pub async fn refresh_and_persist(db: &DatabaseConnection, f: &feed::Model) -> Re
         let existing: HashSet<String> = if guids.is_empty() {
             Default::default()
         } else {
-            Entry::find()
+            entry::Entity::find()
                 .filter(entry::Column::FeedId.eq(f.id))
                 .filter(entry::Column::Guid.is_in(guids.clone()))
                 .select_only()
@@ -121,7 +121,7 @@ pub async fn refresh_and_persist(db: &DatabaseConnection, f: &feed::Model) -> Re
         let mut new_entry_ids: Vec<i64> = Vec::new();
 
         if !models.is_empty() {
-            let _ = Entry::insert_many(models)
+            let _ = entry::Entity::insert_many(models)
                 .on_conflict(
                     OnConflict::columns([entry::Column::FeedId, entry::Column::Guid])
                         .do_nothing()
@@ -139,7 +139,7 @@ pub async fn refresh_and_persist(db: &DatabaseConnection, f: &feed::Model) -> Re
 
             if inserted > 0 {
                 // Map guid -> entry_id so we can persist enclosures and know new entry ids.
-                let id_pairs: Vec<(Option<String>, i64)> = Entry::find()
+                let id_pairs: Vec<(Option<String>, i64)> = entry::Entity::find()
                     .filter(entry::Column::FeedId.eq(f.id))
                     .filter(entry::Column::Guid.is_in(new_guids.clone()))
                     .select_only()
@@ -197,7 +197,7 @@ pub async fn refresh_and_persist(db: &DatabaseConnection, f: &feed::Model) -> Re
 
         // Update feed meta on success if meta provided.
         if let Some(m) = meta {
-            if let Some(model) = Feed::find_by_id(f.id)
+            if let Some(model) = feed::Entity::find_by_id(f.id)
                 .one(&txn)
                 .await
                 .map_err(|e| captura_common::Error::Storage(e.to_string()))?

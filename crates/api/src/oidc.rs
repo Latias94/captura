@@ -23,7 +23,6 @@ use sha2::{Digest, Sha256};
 use crate::error::{bad_request, internal, unauthorized, ApiResult};
 use crate::state::OidcProvider;
 use crate::AppState;
-use captura_storage::entity::prelude::*;
 use captura_storage::entity::{token, user};
 
 fn hmac_sign(secret: &str, payload_b64: &str) -> String {
@@ -165,7 +164,7 @@ pub(crate) async fn callback(
         format!("oidc:{}", claims.subject().as_str())
     };
     // Upsert user
-    let existing = User::find()
+    let existing = user::Entity::find()
         .filter(user::Column::Username.eq(&username))
         .one(&st.db)
         .await
@@ -332,7 +331,7 @@ async fn finish_with_user_and_token(
     } else {
         format!("oidc:{}", claims.subject().as_str())
     };
-    let existing = User::find()
+    let existing = user::Entity::find()
         .filter(user::Column::Username.eq(&username))
         .one(&st.db)
         .await

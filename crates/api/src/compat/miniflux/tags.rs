@@ -10,7 +10,6 @@ use sea_orm::{
     QuerySelect, RelationTrait, Set,
 };
 
-use captura_storage::entity::prelude::*;
 use captura_storage::entity::{entry_label, label};
 
 #[derive(serde::Serialize)]
@@ -24,13 +23,13 @@ pub(crate) async fn list(
     headers: axum::http::HeaderMap,
 ) -> MfResult<Json<Vec<MfTag>>> {
     let auth = mf_auth(&st, &headers).await.map_err(from_api_error)?;
-    let labels = Label::find()
+    let labels = label::Entity::find()
         .filter(label::Column::UserId.eq(auth.user_id))
         .order_by_asc(label::Column::Name)
         .all(&st.db)
         .await
         .map_err(internal)?;
-    let counts: Vec<(i64, i64)> = EntryLabel::find()
+    let counts: Vec<(i64, i64)> = entry_label::Entity::find()
         .join(
             sea_orm::JoinType::InnerJoin,
             entry_label::Relation::Label.def(),
@@ -74,7 +73,7 @@ pub(crate) async fn create(
     if name.is_empty() {
         return Err(bad_request("title required").into());
     }
-    if let Some(l) = Label::find()
+    if let Some(l) = label::Entity::find()
         .filter(label::Column::UserId.eq(auth.user_id))
         .filter(label::Column::Name.eq(name))
         .one(&st.db)
@@ -107,7 +106,7 @@ pub(crate) async fn get(
     Path(name): Path<String>,
 ) -> MfResult<Json<MfTag>> {
     let auth = mf_auth(&st, &headers).await?;
-    let Some(l) = Label::find()
+    let Some(l) = label::Entity::find()
         .filter(label::Column::UserId.eq(auth.user_id))
         .filter(label::Column::Name.eq(name.as_str()))
         .one(&st.db)
@@ -116,7 +115,7 @@ pub(crate) async fn get(
     else {
         return Err(not_found("tag").into());
     };
-    let cnt = EntryLabel::find()
+    let cnt = entry_label::Entity::find()
         .filter(entry_label::Column::LabelId.eq(l.id))
         .count(&st.db)
         .await
@@ -133,7 +132,7 @@ pub(crate) async fn delete(
     Path(name): Path<String>,
 ) -> MfResult<&'static str> {
     let auth = mf_auth(&st, &headers).await.map_err(from_api_error)?;
-    let Some(l) = Label::find()
+    let Some(l) = label::Entity::find()
         .filter(label::Column::UserId.eq(auth.user_id))
         .filter(label::Column::Name.eq(name.as_str()))
         .one(&st.db)
@@ -142,7 +141,7 @@ pub(crate) async fn delete(
     else {
         return Err(not_found("tag").into());
     };
-    let _ = EntryLabel::delete_many()
+    let _ = entry_label::Entity::delete_many()
         .filter(entry_label::Column::LabelId.eq(l.id))
         .exec(&st.db)
         .await
@@ -169,7 +168,7 @@ pub(crate) async fn rename(
     if new_name.is_empty() {
         return Err(bad_request("title required").into());
     }
-    let Some(l) = Label::find()
+    let Some(l) = label::Entity::find()
         .filter(label::Column::UserId.eq(auth.user_id))
         .filter(label::Column::Name.eq(name.as_str()))
         .one(&st.db)
@@ -178,7 +177,7 @@ pub(crate) async fn rename(
     else {
         return Err(not_found("tag").into());
     };
-    if let Some(existing) = Label::find()
+    if let Some(existing) = label::Entity::find()
         .filter(label::Column::UserId.eq(auth.user_id))
         .filter(label::Column::Name.eq(new_name))
         .one(&st.db)
@@ -195,7 +194,7 @@ pub(crate) async fn rename(
         am.color = Set(body.color.clone());
     }
     let l = am.update(&st.db).await.map_err(internal)?;
-    let cnt = EntryLabel::find()
+    let cnt = entry_label::Entity::find()
         .filter(entry_label::Column::LabelId.eq(l.id))
         .count(&st.db)
         .await

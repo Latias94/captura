@@ -13,7 +13,6 @@ use sea_orm::{
 
 use axum::response::IntoResponse;
 use captura_pipeline::extractor;
-use captura_storage::entity::prelude::*;
 use captura_storage::entity::{enclosure, entry, entry_label, feed, label};
 
 #[derive(serde::Deserialize, Default)]
@@ -48,7 +47,7 @@ pub(crate) async fn list(
 ) -> MfResult<Json<MfEntryResultSet>> {
     let auth = mf_auth(&st, &headers).await.map_err(from_api_error)?;
     // restrict to current user feeds
-    let mut feed_sel = Feed::find().filter(feed::Column::UserId.eq(auth.user_id));
+    let mut feed_sel = feed::Entity::find().filter(feed::Column::UserId.eq(auth.user_id));
     if let Some(cid) = q.category_id {
         feed_sel = feed_sel.filter(feed::Column::CategoryId.eq(cid));
     }
@@ -59,7 +58,7 @@ pub(crate) async fn list(
         .all(&st.db)
         .await
         .map_err(internal)?;
-    let mut sel = Entry::find().filter(entry::Column::FeedId.is_in(feed_ids));
+    let mut sel = entry::Entity::find().filter(entry::Column::FeedId.is_in(feed_ids));
     if let Some(fid) = q.feed_id {
         sel = sel.filter(entry::Column::FeedId.eq(fid));
     }
@@ -185,7 +184,7 @@ pub(crate) async fn list(
     let limit = q.limit.unwrap_or(100).min(1000);
     let count = sel.clone().count(&st.db).await.map_err(internal)? as i64;
     let rows = sel
-        .find_also_related(Feed)
+        .find_also_related(feed::Entity)
         .limit(limit)
         .offset(q.offset.unwrap_or(0))
         .all(&st.db)
@@ -196,7 +195,7 @@ pub(crate) async fn list(
         std::collections::HashMap::new();
     let mut tag_map: std::collections::HashMap<i64, Vec<String>> = std::collections::HashMap::new();
     if !entry_ids.is_empty() {
-        let encs = Enclosure::find()
+        let encs = enclosure::Entity::find()
             .filter(enclosure::Column::EntryId.is_in(entry_ids.clone()))
             .all(&st.db)
             .await
@@ -211,7 +210,7 @@ pub(crate) async fn list(
                 media_progression: 0,
             });
         }
-        let pairs: Vec<(i64, String)> = EntryLabel::find()
+        let pairs: Vec<(i64, String)> = entry_label::Entity::find()
             .join(
                 sea_orm::JoinType::InnerJoin,
                 entry_label::Relation::Label.def(),
@@ -291,10 +290,10 @@ pub(crate) async fn get(
     Path(id): Path<i64>,
 ) -> MfResult<Json<MfEntryDto>> {
     let auth = mf_auth(&st, &headers).await.map_err(from_api_error)?;
-    let Some(e) = Entry::find_by_id(id).one(&st.db).await.map_err(internal)? else {
+    let Some(e) = entry::Entity::find_by_id(id).one(&st.db).await.map_err(internal)? else {
         return Err(not_found("entry").into());
     };
-    let Some(f) = Feed::find_by_id(e.feed_id)
+    let Some(f) = feed::Entity::find_by_id(e.feed_id)
         .filter(feed::Column::UserId.eq(auth.user_id))
         .one(&st.db)
         .await
@@ -302,7 +301,7 @@ pub(crate) async fn get(
     else {
         return Err(not_found("entry").into());
     };
-    let pairs: Vec<(i64, String)> = EntryLabel::find()
+    let pairs: Vec<(i64, String)> = entry_label::Entity::find()
         .join(
             sea_orm::JoinType::InnerJoin,
             entry_label::Relation::Label.def(),
@@ -375,7 +374,7 @@ pub(crate) async fn update_bulk(
         )
             .into_response());
     }
-    let feed_ids: Vec<i64> = Feed::find()
+    let feed_ids: Vec<i64> = feed::Entity::find()
         .filter(feed::Column::UserId.eq(auth.user_id))
         .select_only()
         .column(feed::Column::Id)
@@ -383,7 +382,7 @@ pub(crate) async fn update_bulk(
         .all(&st.db)
         .await
         .map_err(internal)?;
-    let mut upd = Entry::update_many();
+    let mut upd = entry::Entity::update_many();
     match body.status.as_str() {
         "read" => {
             upd = upd.col_expr(entry::Column::IsRead, sea_orm::sea_query::Expr::value(true));
@@ -421,10 +420,10 @@ pub(crate) async fn update(
     Json(body): Json<MfUpdateEntry>,
 ) -> MfResult<Json<MfEntryDto>> {
     let auth = mf_auth(&st, &headers).await.map_err(from_api_error)?;
-    let Some(e) = Entry::find_by_id(id).one(&st.db).await.map_err(internal)? else {
+    let Some(e) = entry::Entity::find_by_id(id).one(&st.db).await.map_err(internal)? else {
         return Err(not_found("entry").into());
     };
-    let owned = Feed::find_by_id(e.feed_id)
+    let owned = feed::Entity::find_by_id(e.feed_id)
         .filter(feed::Column::UserId.eq(auth.user_id))
         .one(&st.db)
         .await
@@ -458,10 +457,10 @@ pub(crate) async fn update(
     }
     let _ = am.update(&st.db).await.map_err(internal)?;
     // 返回更新后的条目（与 GET /v1/entries/:id 一致）
-    let Some(e) = Entry::find_by_id(id).one(&st.db).await.map_err(internal)? else {
+    let Some(e) = entry::Entity::find_by_id(id).one(&st.db).await.map_err(internal)? else {
         return Err(not_found("entry").into());
     };
-    let Some(f) = Feed::find_by_id(e.feed_id)
+    let Some(f) = feed::Entity::find_by_id(e.feed_id)
         .filter(feed::Column::UserId.eq(auth.user_id))
         .one(&st.db)
         .await
@@ -469,7 +468,7 @@ pub(crate) async fn update(
     else {
         return Err(not_found("entry").into());
     };
-    let pairs: Vec<(i64, String)> = EntryLabel::find()
+    let pairs: Vec<(i64, String)> = entry_label::Entity::find()
         .join(
             sea_orm::JoinType::InnerJoin,
             entry_label::Relation::Label.def(),
@@ -529,10 +528,10 @@ pub(crate) async fn toggle_star(
     Path(id): Path<i64>,
 ) -> MfResult<axum::response::Response> {
     let auth = mf_auth(&st, &headers).await.map_err(from_api_error)?;
-    let Some(e) = Entry::find_by_id(id).one(&st.db).await.map_err(internal)? else {
+    let Some(e) = entry::Entity::find_by_id(id).one(&st.db).await.map_err(internal)? else {
         return Err(not_found("entry").into());
     };
-    let owned = Feed::find_by_id(e.feed_id)
+    let owned = feed::Entity::find_by_id(e.feed_id)
         .filter(feed::Column::UserId.eq(auth.user_id))
         .one(&st.db)
         .await
@@ -571,7 +570,7 @@ pub(crate) async fn flush_history(
         .max(1);
     let cutoff =
         Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap()) - chrono::Duration::days(days);
-    let feed_ids: Vec<i64> = Feed::find()
+    let feed_ids: Vec<i64> = feed::Entity::find()
         .filter(feed::Column::UserId.eq(auth.user_id))
         .select_only()
         .column(feed::Column::Id)
@@ -582,7 +581,7 @@ pub(crate) async fn flush_history(
     if feed_ids.is_empty() {
         return Ok((axum::http::StatusCode::ACCEPTED, axum::body::Body::empty()).into_response());
     }
-    let _ = Entry::delete_many()
+    let _ = entry::Entity::delete_many()
         .filter(entry::Column::FeedId.is_in(feed_ids))
         .filter(entry::Column::IsRead.eq(true))
         .filter(entry::Column::IsStarred.eq(false))
@@ -611,10 +610,10 @@ pub(crate) async fn fetch_content(
     Query(q): Query<MfFetchContentQuery>,
 ) -> MfResult<Json<MfEntryContentResp>> {
     let auth = mf_auth(&st, &headers).await.map_err(from_api_error)?;
-    let Some(e) = Entry::find_by_id(id).one(&st.db).await.map_err(internal)? else {
+    let Some(e) = entry::Entity::find_by_id(id).one(&st.db).await.map_err(internal)? else {
         return Err(not_found("entry").into());
     };
-    let owned = Feed::find_by_id(e.feed_id)
+    let owned = feed::Entity::find_by_id(e.feed_id)
         .filter(feed::Column::UserId.eq(auth.user_id))
         .one(&st.db)
         .await
@@ -623,7 +622,7 @@ pub(crate) async fn fetch_content(
     if !owned {
         return Err(not_found("entry").into());
     }
-    let Some(f) = Feed::find_by_id(e.feed_id)
+    let Some(f) = feed::Entity::find_by_id(e.feed_id)
         .one(&st.db)
         .await
         .map_err(internal)?
@@ -654,7 +653,7 @@ pub(crate) async fn fetch_content(
     }
     // 可选回写正文/标题
     if q.update_content.unwrap_or(false) {
-        if let Some(model) = Entry::find_by_id(e.id)
+        if let Some(model) = entry::Entity::find_by_id(e.id)
             .one(&st.db)
             .await
             .map_err(internal)?
@@ -678,10 +677,10 @@ pub(crate) async fn save(
     Path(id): Path<i64>,
 ) -> MfResult<&'static str> {
     let auth = mf_auth(&st, &headers).await.map_err(from_api_error)?;
-    let Some(e) = Entry::find_by_id(id).one(&st.db).await.map_err(internal)? else {
+    let Some(e) = entry::Entity::find_by_id(id).one(&st.db).await.map_err(internal)? else {
         return Err(not_found("entry").into());
     };
-    let owned = Feed::find_by_id(e.feed_id)
+    let owned = feed::Entity::find_by_id(e.feed_id)
         .filter(feed::Column::UserId.eq(auth.user_id))
         .one(&st.db)
         .await
@@ -697,7 +696,7 @@ pub(crate) async fn save(
     let mut am: entry::ActiveModel = e.into();
     am.extras_json = Set(Some(extras));
     let _ = am.update(&st.db).await.map_err(internal)?;
-    if let Some(model) = Entry::find_by_id(id).one(&st.db).await.map_err(internal)? {
+    if let Some(model) = entry::Entity::find_by_id(id).one(&st.db).await.map_err(internal)? {
         let _ = captura_service::webhook::emit_save_entry(&st.db, auth.user_id, &model).await;
         let payload = serde_json::json!({"event_type":"save_entry","entry_id": model.id});
         let _ = captura_scheduler::enqueue_integration_event(
@@ -724,10 +723,10 @@ pub(crate) async fn add_tags(
     Json(body): Json<MfSetTagsReq>,
 ) -> MfResult<&'static str> {
     let auth = mf_auth(&st, &headers).await.map_err(from_api_error)?;
-    let Some(e) = Entry::find_by_id(id).one(&st.db).await.map_err(internal)? else {
+    let Some(e) = entry::Entity::find_by_id(id).one(&st.db).await.map_err(internal)? else {
         return Err(not_found("entry").into());
     };
-    let owned = Feed::find_by_id(e.feed_id)
+    let owned = feed::Entity::find_by_id(e.feed_id)
         .filter(feed::Column::UserId.eq(auth.user_id))
         .one(&st.db)
         .await
@@ -747,7 +746,7 @@ pub(crate) async fn add_tags(
     if names.is_empty() {
         return Ok("ok");
     }
-    let existing: Vec<(i64, String)> = Label::find()
+    let existing: Vec<(i64, String)> = label::Entity::find()
         .filter(label::Column::UserId.eq(auth.user_id))
         .filter(label::Column::Name.is_in(names.clone()))
         .select_only()
@@ -781,7 +780,7 @@ pub(crate) async fn add_tags(
         .filter_map(|n| name_to_id.get(n).copied())
         .collect();
     if !label_ids.is_empty() {
-        let existing_pairs: Vec<i64> = EntryLabel::find()
+        let existing_pairs: Vec<i64> = entry_label::Entity::find()
             .filter(entry_label::Column::EntryId.eq(id))
             .filter(entry_label::Column::LabelId.is_in(label_ids.clone()))
             .select_only()
@@ -811,10 +810,10 @@ pub(crate) async fn remove_tags(
     Json(body): Json<MfSetTagsReq>,
 ) -> MfResult<&'static str> {
     let auth = mf_auth(&st, &headers).await?;
-    let Some(e) = Entry::find_by_id(id).one(&st.db).await.map_err(internal)? else {
+    let Some(e) = entry::Entity::find_by_id(id).one(&st.db).await.map_err(internal)? else {
         return Err(not_found("entry").into());
     };
-    let owned = Feed::find_by_id(e.feed_id)
+    let owned = feed::Entity::find_by_id(e.feed_id)
         .filter(feed::Column::UserId.eq(auth.user_id))
         .one(&st.db)
         .await
@@ -834,7 +833,7 @@ pub(crate) async fn remove_tags(
     if names.is_empty() {
         return Ok("ok");
     }
-    let label_ids: Vec<i64> = Label::find()
+    let label_ids: Vec<i64> = label::Entity::find()
         .filter(label::Column::UserId.eq(auth.user_id))
         .filter(label::Column::Name.is_in(names))
         .select_only()
@@ -844,7 +843,7 @@ pub(crate) async fn remove_tags(
         .await
         .map_err(internal)?;
     if !label_ids.is_empty() {
-        let _ = EntryLabel::delete_many()
+        let _ = entry_label::Entity::delete_many()
             .filter(entry_label::Column::EntryId.eq(id))
             .filter(entry_label::Column::LabelId.is_in(label_ids))
             .exec(&st.db)

@@ -16,8 +16,8 @@ pub(crate) async fn status(
     headers: axum::http::HeaderMap,
 ) -> MfResult<Json<MfIntegrationsStatus>> {
     let auth = mf_auth(&st, &headers).await.map_err(from_api_error)?;
-    use captura_storage::entity::{integration, prelude::*};
-    let count = Integration::find()
+    use captura_storage::entity::integration;
+    let count = integration::Entity::find()
         .filter(integration::Column::UserId.eq(auth.user_id))
         .filter(integration::Column::Enabled.eq(true))
         .count(&st.db)

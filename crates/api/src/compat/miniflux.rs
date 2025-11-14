@@ -835,7 +835,7 @@ mod it {
     #[tokio::test]
     async fn miniflux_update_feed_clear_basic_auth_on_empty() {
         use axum::{body::Body, http::Request};
-        use captura_storage::entity::prelude::*;
+        use captura_storage::entity::feed;
         use sea_orm::{ActiveModelTrait, Set};
 
         let db = setup_db().await;
@@ -876,7 +876,7 @@ mod it {
         assert_eq!(resp.status(), StatusCode::OK);
 
         // verify
-        let model = Feed::find_by_id(f.id).one(&db).await.unwrap().unwrap();
+        let model = feed::Entity::find_by_id(f.id).one(&db).await.unwrap().unwrap();
         assert!(model.username.is_none());
         assert!(model.password.is_none());
     }
@@ -884,7 +884,7 @@ mod it {
     #[tokio::test]
     async fn miniflux_update_feed_clear_cookie_proxy_on_empty() {
         use axum::{body::Body, http::Request};
-        use captura_storage::entity::prelude::*;
+        use captura_storage::entity::feed;
         use sea_orm::{ActiveModelTrait, Set};
 
         let db = setup_db().await;
@@ -925,7 +925,7 @@ mod it {
         assert_eq!(resp.status(), StatusCode::OK);
 
         // verify
-        let model = Feed::find_by_id(f.id).one(&db).await.unwrap().unwrap();
+        let model = feed::Entity::find_by_id(f.id).one(&db).await.unwrap().unwrap();
         assert!(model.cookies.is_none());
         assert!(model.proxy_url.is_none());
     }
@@ -933,7 +933,7 @@ mod it {
     #[tokio::test]
     async fn miniflux_update_feed_clear_user_agent_on_empty() {
         use axum::{body::Body, http::Request};
-        use captura_storage::entity::prelude::*;
+        use captura_storage::entity::feed;
         use sea_orm::{ActiveModelTrait, Set};
 
         let db = setup_db().await;
@@ -973,7 +973,7 @@ mod it {
         assert_eq!(resp.status(), StatusCode::OK);
 
         // verify
-        let model = Feed::find_by_id(f.id).one(&db).await.unwrap().unwrap();
+        let model = feed::Entity::find_by_id(f.id).one(&db).await.unwrap().unwrap();
         assert!(model.user_agent.is_none());
     }
 

@@ -1,14 +1,3 @@
-pub use super::category::Entity as Category;
-pub use super::enclosure::Entity as Enclosure;
-pub use super::entry::Entity as Entry;
-pub use super::entry_label::Entity as EntryLabel;
-pub use super::favicon::Entity as Favicon;
-pub use super::feed::Entity as Feed;
-pub use super::integration::Entity as Integration;
-pub use super::job::Entity as Job;
-pub use super::label::Entity as Label;
-pub use super::rule::Entity as Rule;
-pub use super::token::Entity as Token;
-pub use super::user::Entity as User;
-pub use super::user_pref::Entity as UserPref;
-pub use super::webhook::Entity as Webhook;
+// Prelude is kept empty for now. Existing callers should import
+// entity modules directly, e.g. `use captura_storage::entity::feed;`
+// and refer to `feed::Entity`, `feed::Model`, etc.

@@ -8,19 +8,19 @@ use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set};
 use crate::auth::AuthUser;
 use crate::error::{bad_request, internal, ApiResult};
 use crate::AppState;
-use captura_storage::entity::{category, feed, prelude::*};
+use captura_storage::entity::{category, feed};
 
 pub(crate) async fn export(
     State(st): State<AppState>,
     TypedHeader(Authorization(bearer)): TypedHeader<Authorization<Bearer>>,
 ) -> ApiResult<(axum::http::HeaderMap, String)> {
     let user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
-    let cats = Category::find()
+    let cats = category::Entity::find()
         .filter(category::Column::UserId.eq(user.user_id))
         .all(&st.db)
         .await
         .map_err(internal)?;
-    let feeds = Feed::find()
+    let feeds = feed::Entity::find()
         .filter(feed::Column::UserId.eq(user.user_id))
         .all(&st.db)
         .await
@@ -75,7 +75,7 @@ pub(crate) async fn import(
     let outlines = parse_opml_quickxml(&body).unwrap_or_else(|_| extract_outlines(&body));
     const MAX_OUTLINES: usize = 2000;
     let now = Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
-    let mut cat_map: std::collections::HashMap<String, i64> = Category::find()
+    let mut cat_map: std::collections::HashMap<String, i64> = category::Entity::find()
         .filter(category::Column::UserId.eq(user.user_id))
         .all(&st.db)
         .await
@@ -108,7 +108,7 @@ pub(crate) async fn import(
                 } else {
                     None
                 };
-                let dup = Feed::find()
+                let dup = feed::Entity::find()
                     .filter(feed::Column::UserId.eq(user.user_id))
                     .filter(feed::Column::FeedUrl.eq(&xml_url))
                     .one(&st.db)

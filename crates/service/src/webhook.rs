@@ -1,4 +1,4 @@
-use captura_storage::entity::{prelude::*, webhook};
+use captura_storage::entity::webhook;
 use hmac::{Hmac, Mac};
 use reqwest::Client;
 use sea_orm::{
@@ -15,7 +15,7 @@ pub async fn emit_new_entries(
     if entry_ids.is_empty() {
         return Ok(());
     }
-    let hooks = Webhook::find()
+    let hooks = webhook::Entity::find()
         .filter(webhook::Column::UserId.eq(user_id))
         .filter(webhook::Column::Enabled.eq(true))
         .all(db)
@@ -179,7 +179,7 @@ async fn deliver(
     event_type: &str,
     payload: &serde_json::Value,
 ) -> captura_common::Result<()> {
-    let hooks = Webhook::find()
+    let hooks = webhook::Entity::find()
         .filter(webhook::Column::UserId.eq(user_id))
         .filter(webhook::Column::Enabled.eq(true))
         .all(db)
@@ -195,7 +195,13 @@ async fn deliver(
         .map_err(|e| captura_common::Error::Network(e.to_string()))?;
     for h in hooks {
         if let Some(ref ev) = h.events {
-            let allow = ev.split(',').any(|e| e.trim() == event_type);
+            let mut allow = false;
+            for part in ev.split(',') {
+                if part.trim() == event_type {
+                    allow = true;
+                    break;
+                }
+            }
             if !allow {
                 continue;
             }

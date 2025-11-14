@@ -9,7 +9,7 @@ use headers::Authorization;
 use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, QueryOrder, Set};
 use serde::{Deserialize, Serialize};
 
-use captura_storage::entity::{category, prelude::*};
+use captura_storage::entity::category;
 
 use crate::auth::AuthUser;
 use crate::error::{bad_request, internal, not_found, ApiResult};
@@ -27,7 +27,7 @@ pub(crate) async fn list_categories(
     TypedHeader(Authorization(bearer)): TypedHeader<Authorization<Bearer>>,
 ) -> ApiResult<Json<Vec<CategoryDto>>> {
     let user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
-    let list = Category::find()
+    let list = category::Entity::find()
         .filter(category::Column::UserId.eq(user.user_id))
         .order_by_asc(category::Column::Id)
         .all(&st.db)
@@ -80,7 +80,7 @@ pub(crate) async fn get_category(
     Path(id): Path<i64>,
 ) -> ApiResult<Json<CategoryDto>> {
     let user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
-    let Some(c) = Category::find()
+    let Some(c) = category::Entity::find()
         .filter(category::Column::UserId.eq(user.user_id))
         .filter(category::Column::Id.eq(id))
         .one(&st.db)
@@ -102,7 +102,7 @@ pub(crate) async fn update_category(
     Json(body): Json<UpdateCategoryReq>,
 ) -> ApiResult<&'static str> {
     let user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
-    let Some(c) = Category::find()
+    let Some(c) = category::Entity::find()
         .filter(category::Column::UserId.eq(user.user_id))
         .filter(category::Column::Id.eq(id))
         .one(&st.db)
@@ -127,7 +127,7 @@ pub(crate) async fn delete_category(
     Path(id): Path<i64>,
 ) -> ApiResult<&'static str> {
     let user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
-    let Some(c) = Category::find()
+    let Some(c) = category::Entity::find()
         .filter(category::Column::UserId.eq(user.user_id))
         .filter(category::Column::Id.eq(id))
         .one(&st.db)

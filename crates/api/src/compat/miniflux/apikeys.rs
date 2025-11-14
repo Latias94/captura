@@ -9,7 +9,6 @@ use rand_core::{OsRng, RngCore};
 use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set};
 use sha2::Digest;
 
-use captura_storage::entity::prelude::*;
 use captura_storage::entity::token;
 
 #[derive(serde::Serialize)]
@@ -35,7 +34,7 @@ pub(crate) async fn list(
     headers: axum::http::HeaderMap,
 ) -> MfResult<Json<Vec<MfApiKeyDto>>> {
     let auth = mf_auth(&st, &headers).await.map_err(from_api_error)?;
-    let keys = Token::find()
+    let keys = token::Entity::find()
         .filter(token::Column::UserId.eq(auth.user_id))
         .all(&st.db)
         .await
@@ -92,7 +91,7 @@ pub(crate) async fn delete(
     Path(id): Path<i64>,
 ) -> MfResult<&'static str> {
     let auth = mf_auth(&st, &headers).await.map_err(from_api_error)?;
-    if let Some(k) = Token::find_by_id(id)
+    if let Some(k) = token::Entity::find_by_id(id)
         .filter(token::Column::UserId.eq(auth.user_id))
         .one(&st.db)
         .await

@@ -7,14 +7,13 @@ use axum::extract::State;
 use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, Set};
 
 use captura_storage::entity::feed;
-use captura_storage::entity::prelude::*;
 
 pub(crate) async fn export(
     State(st): State<AppState>,
     headers: axum::http::HeaderMap,
 ) -> MfResult<(axum::http::HeaderMap, String)> {
     let auth = mf_auth(&st, &headers).await?;
-    let feeds = Feed::find()
+    let feeds = feed::Entity::find()
         .filter(feed::Column::UserId.eq(auth.user_id))
         .all(&st.db)
         .await
@@ -85,7 +84,7 @@ pub(crate) async fn import(
         if url.is_empty() {
             continue;
         }
-        let exists = Feed::find()
+        let exists = feed::Entity::find()
             .filter(feed::Column::UserId.eq(auth.user_id))
             .filter(feed::Column::FeedUrl.eq(&url))
             .count(&st.db)

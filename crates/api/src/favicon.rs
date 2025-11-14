@@ -12,7 +12,7 @@ use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set};
 use crate::auth::AuthUser;
 use crate::error::{bad_request, internal, not_found, ApiResult};
 use crate::AppState;
-use captura_storage::entity::{feed, prelude::*};
+use captura_storage::entity::feed;
 
 #[derive(serde::Serialize)]
 pub(crate) struct FaviconResp {
@@ -62,7 +62,7 @@ pub(crate) async fn refresh(
 ) -> ApiResult<Json<FaviconResp>> {
     use captura_storage::entity::favicon as fv;
     let user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
-    let Some(f) = Feed::find()
+    let Some(f) = feed::Entity::find()
         .filter(feed::Column::Id.eq(id))
         .filter(feed::Column::UserId.eq(user.user_id))
         .one(&st.db)
@@ -113,7 +113,7 @@ pub(crate) async fn get(
         return Err(not_found("favicon not found"));
     };
     if let Some(fid) = f.feed_id {
-        let owned = Feed::find_by_id(fid)
+        let owned = feed::Entity::find_by_id(fid)
             .filter(feed::Column::UserId.eq(user.user_id))
             .one(&st.db)
             .await

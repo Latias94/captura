@@ -9,7 +9,7 @@ use crate::auth::AuthUser;
 use crate::error::{internal, ApiResult};
 use crate::util::validate_limit_offset;
 use crate::AppState;
-use captura_storage::entity::{job, prelude::*};
+use captura_storage::entity::job;
 
 #[derive(Deserialize)]
 pub struct JobsQuery {
@@ -35,7 +35,7 @@ pub async fn list_jobs(
 ) -> ApiResult<axum::Json<Vec<JobDto>>> {
     let user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
     validate_limit_offset(q.limit, q.offset)?;
-    let mut sel = Job::find().filter(job::Column::UserId.eq(user.user_id));
+    let mut sel = job::Entity::find().filter(job::Column::UserId.eq(user.user_id));
     if let Some(ref s) = q.status {
         let stv = match &s[..] {
             "pending" => job::JobStatus::Pending,
@@ -103,7 +103,7 @@ pub async fn list_integration_jobs(
 ) -> ApiResult<axum::Json<Vec<IntegrationJobDto>>> {
     let user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
     validate_limit_offset(q.limit, q.offset)?;
-    let mut sel = Job::find()
+    let mut sel = job::Entity::find()
         .filter(job::Column::UserId.eq(user.user_id))
         .filter(job::Column::JobType.eq(job::JobType::Integration));
     if let Some(ref s) = q.status {

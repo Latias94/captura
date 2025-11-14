@@ -14,7 +14,7 @@ use axum_extra::typed_header::TypedHeader;
 use captura_scheduler as scheduler;
 use captura_storage::connect as db_connect;
 use captura_storage::entity::job;
-use captura_storage::entity::prelude::Job;
+use captura_storage::entity::job::Entity as Job;
 use headers::authorization::Bearer;
 use headers::Authorization;
 // md5 compatibility removed
@@ -1053,7 +1053,7 @@ mod tests {
 
     #[tokio::test]
     async fn create_feed_with_basic_auth_fields() {
-        use captura_storage::entity::prelude::*;
+        use captura_storage::entity::feed;
         use sea_orm::EntityTrait;
 
         let db = setup_db().await;
@@ -1108,14 +1108,14 @@ mod tests {
         .await
         .unwrap();
         let fid = created.0.id;
-        let f = Feed::find_by_id(fid).one(&st.db).await.unwrap().unwrap();
+        let f = feed::Entity::find_by_id(fid).one(&st.db).await.unwrap().unwrap();
         assert_eq!(f.username.as_deref(), Some("authu"));
         assert_eq!(f.password.as_deref(), Some("authp"));
     }
 
     #[tokio::test]
     async fn update_feed_basic_auth_fields() {
-        use captura_storage::entity::prelude::*;
+        use captura_storage::entity::feed;
         use sea_orm::EntityTrait;
 
         let db = setup_db().await;
@@ -1198,14 +1198,14 @@ mod tests {
         .unwrap();
 
         // verify
-        let f = Feed::find_by_id(fid).one(&st.db).await.unwrap().unwrap();
+        let f = feed::Entity::find_by_id(fid).one(&st.db).await.unwrap().unwrap();
         assert_eq!(f.username.as_deref(), Some("u2"));
         assert_eq!(f.password.as_deref(), Some("p2"));
     }
 
     #[tokio::test]
     async fn update_feed_clear_cookie_proxy_on_empty() {
-        use captura_storage::entity::prelude::*;
+        use captura_storage::entity::feed;
         use sea_orm::EntityTrait;
 
         let db = setup_db().await;
@@ -1287,14 +1287,14 @@ mod tests {
         .await
         .unwrap();
 
-        let f = Feed::find_by_id(fid).one(&st.db).await.unwrap().unwrap();
+        let f = feed::Entity::find_by_id(fid).one(&st.db).await.unwrap().unwrap();
         assert!(f.cookies.is_none());
         assert!(f.proxy_url.is_none());
     }
 
     #[tokio::test]
     async fn update_feed_clear_user_agent_on_empty() {
-        use captura_storage::entity::prelude::*;
+        use captura_storage::entity::feed;
         use sea_orm::EntityTrait;
 
         let db = setup_db().await;
@@ -1382,7 +1382,7 @@ mod tests {
 
     #[tokio::test]
     async fn create_feed_clear_ua_cookie_proxy_on_empty() {
-        use captura_storage::entity::prelude::*;
+        use captura_storage::entity::feed;
         use sea_orm::EntityTrait;
 
         let db = setup_db().await;
@@ -1437,7 +1437,7 @@ mod tests {
         .unwrap();
         let fid = created.0.id;
 
-        let f = Feed::find_by_id(fid).one(&st.db).await.unwrap().unwrap();
+        let f = feed::Entity::find_by_id(fid).one(&st.db).await.unwrap().unwrap();
         assert!(f.user_agent.is_none());
         assert!(f.cookies.is_none());
         assert!(f.proxy_url.is_none());

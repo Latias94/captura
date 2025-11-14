@@ -2,6 +2,7 @@ use captura_common::{NormalizedEntry, Result};
 use captura_hub::types::{HandlerCtx as HubHandlerCtx, HubData, HubHandler, HubItem, HubResult};
 use captura_rules::v1::RuleSpecV1;
 use captura_storage::entity::feed;
+use crate::rules_engine::merge_rule_params_v1;
 use tracing::debug;
 
 use crate::hub_utils;
@@ -395,7 +396,7 @@ pub(crate) async fn execute_builtin_hub_for_rule(
         return None;
     };
 
-    let params = crate::merge_rule_params_v1(spec, feed.rule_params_json.as_ref());
+    let params = merge_rule_params_v1(spec, feed.rule_params_json.as_ref());
     let mut param_map = serde_json::Map::new();
     if let Some(val) = params {
         if let Some(obj) = val.as_object() {

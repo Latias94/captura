@@ -13,8 +13,7 @@ use sea_orm::{
 
 use axum::response::IntoResponse;
 use captura_service as service;
-use captura_storage::entity::prelude::*;
-use captura_storage::entity::{entry, feed, job};
+use captura_storage::entity::{category, entry, feed, job};
 
 #[derive(serde::Deserialize)]
 pub(crate) struct MfFeedsQuery {
@@ -33,9 +32,9 @@ pub(crate) async fn list(
     Query(q): Query<MfFeedsQuery>,
 ) -> MfResult<Json<Vec<MfFeedDto>>> {
     let auth = mf_auth(&st, &headers).await.map_err(from_api_error)?;
-    let mut sel = Feed::find()
+    let mut sel = feed::Entity::find()
         .filter(feed::Column::UserId.eq(auth.user_id))
-        .find_also_related(Category);
+        .find_also_related(category::Entity);
     if let Some(cid) = q.category_id {
         sel = sel.filter(feed::Column::CategoryId.eq(cid));
     }
@@ -99,7 +98,7 @@ pub(crate) async fn list(
     if q.with_counters.unwrap_or(false) {
         let feed_ids: Vec<i64> = out.iter().map(|d| d.id).collect();
         if !feed_ids.is_empty() {
-            let pairs: Vec<(i64, i64)> = Entry::find()
+            let pairs: Vec<(i64, i64)> = entry::Entity::find()
                 .filter(entry::Column::FeedId.is_in(feed_ids.clone()))
                 .filter(entry::Column::IsRead.eq(false))
                 .select_only()
@@ -194,9 +193,9 @@ pub(crate) async fn get(
     Path(id): Path<i64>,
 ) -> MfResult<Json<MfFeedDto>> {
     let auth = mf_auth(&st, &headers).await.map_err(from_api_error)?;
-    let (f, c) = Feed::find_by_id(id)
+    let (f, c) = feed::Entity::find_by_id(id)
         .filter(feed::Column::UserId.eq(auth.user_id))
-        .find_also_related(Category)
+        .find_also_related(category::Entity)
         .one(&st.db)
         .await
         .map_err(internal)?
@@ -240,7 +239,7 @@ pub(crate) async fn update(
     Json(body): Json<MfUpdateFeed>,
 ) -> MfResult<&'static str> {
     let auth = mf_auth(&st, &headers).await.map_err(from_api_error)?;
-    let Some(f) = Feed::find_by_id(id)
+    let Some(f) = feed::Entity::find_by_id(id)
         .filter(feed::Column::UserId.eq(auth.user_id))
         .one(&st.db)
         .await
@@ -292,7 +291,7 @@ pub(crate) async fn delete(
     Path(id): Path<i64>,
 ) -> MfResult<&'static str> {
     let auth = mf_auth(&st, &headers).await?;
-    let Some(f) = Feed::find_by_id(id)
+    let Some(f) = feed::Entity::find_by_id(id)
         .filter(feed::Column::UserId.eq(auth.user_id))
         .one(&st.db)
         .await
@@ -311,7 +310,7 @@ pub(crate) async fn mark_all_read(
     Path(id): Path<i64>,
 ) -> MfResult<axum::response::Response> {
     let auth = mf_auth(&st, &headers).await.map_err(from_api_error)?;
-    let Some(_f) = Feed::find_by_id(id)
+    let Some(_f) = feed::Entity::find_by_id(id)
         .filter(feed::Column::UserId.eq(auth.user_id))
         .one(&st.db)
         .await
@@ -319,7 +318,7 @@ pub(crate) async fn mark_all_read(
     else {
         return Err(not_found("feed").into());
     };
-    let _ = Entry::update_many()
+    let _ = entry::Entity::update_many()
         .col_expr(entry::Column::IsRead, sea_orm::sea_query::Expr::value(true))
         .filter(entry::Column::FeedId.eq(id))
         .exec(&st.db)
@@ -343,7 +342,7 @@ pub(crate) async fn refresh_all(
     Query(q): Query<MfRefreshFeedsQuery>,
 ) -> MfResult<axum::response::Response> {
     let auth = mf_auth(&st, &headers).await.map_err(from_api_error)?;
-    let mut sel = Feed::find().filter(feed::Column::UserId.eq(auth.user_id));
+    let mut sel = feed::Entity::find().filter(feed::Column::UserId.eq(auth.user_id));
     if let Some(cid) = q.category_id {
         sel = sel.filter(feed::Column::CategoryId.eq(cid));
     }
@@ -357,7 +356,7 @@ pub(crate) async fn refresh_all(
     let now = Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
     let mut enqueued = 0i64;
     for fid in feeds {
-        let exists = Job::find()
+        let exists = job::Entity::find()
             .filter(job::Column::FeedId.eq(fid))
             .filter(job::Column::JobType.eq(job::JobType::FeedRefresh))
             .filter(
@@ -424,7 +423,7 @@ pub(crate) async fn counters(
     headers: axum::http::HeaderMap,
 ) -> MfResult<Json<MfFeedCountersResp>> {
     let auth = mf_auth(&st, &headers).await.map_err(from_api_error)?;
-    let feed_ids: Vec<i64> = Feed::find()
+    let feed_ids: Vec<i64> = feed::Entity::find()
         .filter(feed::Column::UserId.eq(auth.user_id))
         .select_only()
         .column(feed::Column::Id)
@@ -438,7 +437,7 @@ pub(crate) async fn counters(
         return Ok(Json(MfFeedCountersResp { reads, unreads }));
     }
     // unread per feed
-    let unread_pairs: Vec<(i64, i64)> = Entry::find()
+    let unread_pairs: Vec<(i64, i64)> = entry::Entity::find()
         .filter(entry::Column::FeedId.is_in(feed_ids.clone()))
         .filter(entry::Column::IsRead.eq(false))
         .select_only()
@@ -453,7 +452,7 @@ pub(crate) async fn counters(
         unreads.insert(fid, cnt);
     }
     // read per feed
-    let read_pairs: Vec<(i64, i64)> = Entry::find()
+    let read_pairs: Vec<(i64, i64)> = entry::Entity::find()
         .filter(entry::Column::FeedId.is_in(feed_ids.clone()))
         .filter(entry::Column::IsRead.eq(true))
         .select_only()

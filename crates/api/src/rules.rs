@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 
 use captura_crawler::{self as crawler, CrawlOptions};
 use captura_rules::v1::{parse_rule_v1, RuleSpecV1, SourceType};
-use captura_storage::entity::{feed, prelude::*, rule};
+use captura_storage::entity::{feed, rule};
 
 use crate::auth::AuthUser;
 use crate::error::{bad_request, forbidden, internal, not_found, ApiResult};
@@ -86,7 +86,7 @@ pub(crate) async fn list_rules(
 ) -> ApiResult<Json<Vec<RuleDto>>> {
     let _user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
     validate_limit_offset(q.limit, q.offset)?;
-    let mut sel = Rule::find();
+    let mut sel = rule::Entity::find();
     if let Some(ref s) = q.q {
         let like = format!("%{}%", s);
         sel = sel.filter(
@@ -125,7 +125,7 @@ pub(crate) async fn get_rule(
     Path(id): Path<i64>,
 ) -> ApiResult<Json<RuleDto>> {
     let _user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
-    let Some(r) = Rule::find_by_id(id).one(&st.db).await.map_err(internal)? else {
+    let Some(r) = rule::Entity::find_by_id(id).one(&st.db).await.map_err(internal)? else {
         return Err(not_found("rule not found"));
     };
     Ok(Json(RuleDto {
@@ -144,7 +144,7 @@ pub(crate) async fn update_rule(
     Json(body): Json<CreateRuleReq>,
 ) -> ApiResult<&'static str> {
     let _user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
-    let Some(r) = Rule::find_by_id(id).one(&st.db).await.map_err(internal)? else {
+    let Some(r) = rule::Entity::find_by_id(id).one(&st.db).await.map_err(internal)? else {
         return Err(not_found("rule not found"));
     };
     let spec: RuleSpecV1 =
@@ -170,7 +170,7 @@ pub(crate) async fn delete_rule(
 ) -> ApiResult<&'static str> {
     let _user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
     // prevent delete when feeds reference the rule
-    let used = Feed::find()
+    let used = feed::Entity::find()
         .filter(feed::Column::RuleId.eq(id))
         .count(&st.db)
         .await
@@ -178,7 +178,7 @@ pub(crate) async fn delete_rule(
     if used > 0 {
         return Err(forbidden("rule is in use by feeds"));
     }
-    let Some(r) = Rule::find_by_id(id).one(&st.db).await.map_err(internal)? else {
+    let Some(r) = rule::Entity::find_by_id(id).one(&st.db).await.map_err(internal)? else {
         return Err(not_found("rule not found"));
     };
     let am: rule::ActiveModel = r.into();
@@ -276,7 +276,7 @@ pub(crate) async fn list_templates(
     let _user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
     validate_limit_offset(q.limit, q.offset)?;
     // 简单策略：按 namespace 过滤或按 rule_id/description 模糊匹配
-    let mut sel = Rule::find();
+    let mut sel = rule::Entity::find();
     if let Some(ref ns) = q.ns {
         sel = sel.filter(rule::Column::Namespace.eq(ns.to_string()));
     }
@@ -326,7 +326,7 @@ pub(crate) async fn get_template(
     Path(id): Path<i64>,
 ) -> ApiResult<Json<RuleTemplateDto>> {
     let _user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
-    let Some(r) = Rule::find_by_id(id).one(&st.db).await.map_err(internal)? else {
+    let Some(r) = rule::Entity::find_by_id(id).one(&st.db).await.map_err(internal)? else {
         return Err(not_found("rule template"));
     };
     let params = extract_params_from_yaml(&r.yaml);
@@ -360,7 +360,7 @@ pub(crate) async fn create_feed_from_template(
     if let Some(cid) = req.category_id {
         crate::util::assert_category_ownership(&st.db, user.user_id, cid).await?;
     }
-    let Some(r) = Rule::find_by_id(req.template_id)
+    let Some(r) = rule::Entity::find_by_id(req.template_id)
         .one(&st.db)
         .await
         .map_err(internal)?
@@ -484,7 +484,7 @@ pub(crate) async fn try_rule(
         let rid = req
             .rule_id
             .ok_or_else(|| bad_request("rule_id or yaml required"))?;
-        let r = Rule::find_by_id(rid)
+        let r = rule::Entity::find_by_id(rid)
             .one(&st.db)
             .await
             .map_err(internal)?

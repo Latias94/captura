@@ -9,7 +9,6 @@ use sea_orm::{
     ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, QuerySelect, RelationTrait, Set,
 };
 
-use captura_storage::entity::prelude::*;
 use captura_storage::entity::{enclosure, entry, feed};
 
 #[derive(serde::Serialize)]
@@ -33,14 +32,14 @@ pub(crate) async fn get(
     Path(id): Path<i64>,
 ) -> MfResult<Json<MfEnclosureDtoFull>> {
     let auth = mf_auth(&st, &headers).await.map_err(from_api_error)?;
-    let Some(en) = Enclosure::find_by_id(id)
+    let Some(en) = enclosure::Entity::find_by_id(id)
         .one(&st.db)
         .await
         .map_err(internal)?
     else {
         return Err(not_found("enclosure").into());
     };
-    let owned = Entry::find_by_id(en.entry_id)
+    let owned = entry::Entity::find_by_id(en.entry_id)
         .join(sea_orm::JoinType::InnerJoin, entry::Relation::Feed.def())
         .filter(feed::Column::UserId.eq(auth.user_id))
         .one(&st.db)
@@ -74,14 +73,14 @@ pub(crate) async fn update(
     Json(body): Json<MfEnclosureUpdate>,
 ) -> MfResult<axum::response::Response> {
     let auth = mf_auth(&st, &headers).await.map_err(from_api_error)?;
-    let Some(en) = Enclosure::find_by_id(id)
+    let Some(en) = enclosure::Entity::find_by_id(id)
         .one(&st.db)
         .await
         .map_err(internal)?
     else {
         return Err(not_found("enclosure").into());
     };
-    let owned = Entry::find_by_id(en.entry_id)
+    let owned = entry::Entity::find_by_id(en.entry_id)
         .join(sea_orm::JoinType::InnerJoin, entry::Relation::Feed.def())
         .filter(feed::Column::UserId.eq(auth.user_id))
         .one(&st.db)

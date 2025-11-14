@@ -3,7 +3,7 @@ use sea_orm::DatabaseConnection;
 use std::collections::HashMap;
 use std::sync::Mutex;
 
-use captura_storage::entity::prelude::*;
+use captura_storage::entity::category;
 use sea_orm::EntityTrait;
 
 use crate::error::{bad_request, forbidden, internal, ApiResult};
@@ -44,7 +44,7 @@ pub(crate) async fn assert_category_ownership(
     user_id: i64,
     category_id: i64,
 ) -> ApiResult<()> {
-    let cat = Category::find_by_id(category_id)
+    let cat = category::Entity::find_by_id(category_id)
         .one(db)
         .await
         .map_err(internal)?;

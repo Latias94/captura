@@ -20,11 +20,11 @@ pub async fn setup_db() -> DatabaseConnection {
 
 /// 创建用户并颁发一个明文 token（仅测试使用）
 pub async fn seed_user_and_token(db: &DatabaseConnection, username: &str) -> (i64, String) {
-    use captura_storage::entity::{prelude::*, token, user};
+    use captura_storage::entity::{token, user};
     let now = Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
 
     // 如果用户已存在则复用
-    if let Ok(Some(u)) = User::find()
+    if let Ok(Some(u)) = user::Entity::find()
         .filter(user::Column::Username.eq(username))
         .one(db)
         .await

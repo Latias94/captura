@@ -14,7 +14,7 @@ use sha2::Digest;
 use crate::auth::AuthUser;
 use crate::error::{bad_request, forbidden, internal, ApiResult};
 use crate::AppState;
-use captura_storage::entity::{prelude::*, user};
+use captura_storage::entity::user;
 
 #[derive(Deserialize)]
 pub struct CreateUserReq {
@@ -31,7 +31,7 @@ pub async fn create_user(
     axum::extract::State(st): axum::extract::State<AppState>,
     Json(body): Json<CreateUserReq>,
 ) -> ApiResult<Json<CreateUserResp>> {
-    let count = User::find().count(&st.db).await.map_err(internal)?;
+    let count = user::Entity::find().count(&st.db).await.map_err(internal)?;
     if count > 0 {
         return Err(forbidden("user exists"));
     }
@@ -70,7 +70,7 @@ pub async fn set_fever_key(
     if req.api_password.trim().is_empty() {
         return Err(bad_request("api_password required"));
     }
-    let Some(u) = User::find_by_id(id).one(&st.db).await.map_err(internal)? else {
+    let Some(u) = user::Entity::find_by_id(id).one(&st.db).await.map_err(internal)? else {
         return Err(crate::error::not_found("user not found"));
     };
     let s = format!("{}:{}", u.username, req.api_password);

@@ -6,7 +6,7 @@ use sea_orm::{
 
 use crate::error::{internal, ApiResult};
 use crate::AppState;
-use captura_storage::entity::{category, entry, feed, prelude::*};
+use captura_storage::entity::{category, entry, feed};
 
 use super::types::*;
 
@@ -14,12 +14,12 @@ pub(crate) async fn subscription_list(
     st: &AppState,
     user_id: i64,
 ) -> ApiResult<ReaderSubscriptionListResp> {
-    let feeds = Feed::find()
+    let feeds = feed::Entity::find()
         .filter(feed::Column::UserId.eq(user_id))
         .all(&st.db)
         .await
         .map_err(internal)?;
-    let cats = Category::find()
+    let cats = category::Entity::find()
         .filter(category::Column::UserId.eq(user_id))
         .all(&st.db)
         .await
@@ -57,7 +57,7 @@ pub(crate) async fn stream_contents(
     q: &ReaderQuery,
 ) -> ApiResult<ReaderStreamResp> {
     let limit = q.n.unwrap_or(50).min(200);
-    let mut sel = Entry::find()
+    let mut sel = entry::Entity::find()
         .join(sea_orm::JoinType::InnerJoin, entry::Relation::Feed.def())
         .filter(feed::Column::UserId.eq(user_id));
     // 注：为确保兼容性与稳定性，items_ids 暂不按 s=feed/<url> 过滤；
@@ -87,7 +87,7 @@ pub(crate) async fn stream_contents(
         .order_by_desc(entry::Column::PublishedAt)
         .order_by_desc(entry::Column::CreatedAt)
         .limit(limit)
-        .find_also_related(Feed)
+        .find_also_related(feed::Entity)
         .all(&st.db)
         .await
         .map_err(internal)?;
@@ -154,7 +154,7 @@ pub(crate) async fn items_ids(
     let limit = q.n.unwrap_or(50).min(200);
     // 注意：不要显式 JOIN，再调用 find_also_related(Feed) 否则会导致 feed 列重复造成歧义
     // 与 items_contents 保持一致，直接按 feed 列过滤，依赖 find_also_related(Feed) 的 JOIN
-    let mut sel = Entry::find().filter(feed::Column::UserId.eq(user_id));
+    let mut sel = entry::Entity::find().filter(feed::Column::UserId.eq(user_id));
     if let Some(ref s) = q.s {
         if s.starts_with("feed/") {
             let raw = s.trim_start_matches("feed/");
@@ -197,7 +197,7 @@ pub(crate) async fn items_ids(
         .order_by_desc(entry::Column::PublishedAt)
         .order_by_desc(entry::Column::CreatedAt)
         .limit(limit)
-        .find_also_related(Feed)
+        .find_also_related(feed::Entity)
         .all(&st.db)
         .await
         .map_err(internal)?;
@@ -226,7 +226,7 @@ pub(crate) async fn items_contents(
     q: &ReaderItemsContentsQuery,
 ) -> ApiResult<ReaderItemsContentsResp> {
     let limit = q.n.unwrap_or(50).min(200);
-    let mut sel = Entry::find().filter(feed::Column::UserId.eq(user_id));
+    let mut sel = entry::Entity::find().filter(feed::Column::UserId.eq(user_id));
     if let Some(ref s) = q.s {
         if s.starts_with("feed/") {
             let raw = s.trim_start_matches("feed/");
@@ -269,7 +269,7 @@ pub(crate) async fn items_contents(
         .order_by_desc(entry::Column::PublishedAt)
         .order_by_desc(entry::Column::CreatedAt)
         .limit(limit)
-        .find_also_related(Feed)
+        .find_also_related(feed::Entity)
         .all(&st.db)
         .await
         .map_err(internal)?;
@@ -311,7 +311,7 @@ pub(crate) async fn edit_tag(
         return Ok("OK");
     }
     let now = chrono::Utc::now().with_timezone(&chrono::FixedOffset::east_opt(0).unwrap());
-    let feed_ids: Vec<i64> = Feed::find()
+    let feed_ids: Vec<i64> = feed::Entity::find()
         .filter(feed::Column::UserId.eq(user_id))
         .select_only()
         .column(feed::Column::Id)
@@ -321,7 +321,7 @@ pub(crate) async fn edit_tag(
         .map_err(internal)?;
     if let Some(a) = f.a.as_deref() {
         if a.ends_with("/read") {
-            let _ = Entry::update_many()
+            let _ = entry::Entity::update_many()
                 .col_expr(entry::Column::IsRead, sea_orm::sea_query::Expr::value(true))
                 .col_expr(
                     entry::Column::UpdatedAt,
@@ -333,7 +333,7 @@ pub(crate) async fn edit_tag(
                 .await
                 .map_err(internal)?;
         } else if a.ends_with("/starred") {
-            let _ = Entry::update_many()
+            let _ = entry::Entity::update_many()
                 .col_expr(
                     entry::Column::IsStarred,
                     sea_orm::sea_query::Expr::value(true),
@@ -351,7 +351,7 @@ pub(crate) async fn edit_tag(
     }
     if let Some(r) = f.r.as_deref() {
         if r.ends_with("/read") {
-            let _ = Entry::update_many()
+            let _ = entry::Entity::update_many()
                 .col_expr(
                     entry::Column::IsRead,
                     sea_orm::sea_query::Expr::value(false),
@@ -366,7 +366,7 @@ pub(crate) async fn edit_tag(
                 .await
                 .map_err(internal)?;
         } else if r.ends_with("/starred") {
-            let _ = Entry::update_many()
+            let _ = entry::Entity::update_many()
                 .col_expr(
                     entry::Column::IsStarred,
                     sea_orm::sea_query::Expr::value(false),
@@ -405,7 +405,7 @@ pub(crate) async fn mark_all_read(
             }
         }
     }
-    let feeds: Vec<i64> = Feed::find()
+    let feeds: Vec<i64> = feed::Entity::find()
         .filter(feed::Column::UserId.eq(user_id))
         .select_only()
         .column(feed::Column::Id)
@@ -414,7 +414,7 @@ pub(crate) async fn mark_all_read(
         .await
         .map_err(internal)?;
     if !feeds.is_empty() {
-        let _ = Entry::update_many()
+        let _ = entry::Entity::update_many()
             .col_expr(entry::Column::IsRead, sea_orm::sea_query::Expr::value(true))
             .col_expr(
                 entry::Column::UpdatedAt,
@@ -430,13 +430,13 @@ pub(crate) async fn mark_all_read(
 }
 
 pub(crate) async fn unread_count(st: &AppState, user_id: i64) -> ApiResult<ReaderUnreadCountResp> {
-    let feeds: Vec<feed::Model> = Feed::find()
+    let feeds: Vec<feed::Model> = feed::Entity::find()
         .filter(feed::Column::UserId.eq(user_id))
         .all(&st.db)
         .await
         .map_err(internal)?;
     let mut items: Vec<ReaderUnreadCountItem> = Vec::new();
-    let total: i64 = Entry::find()
+    let total: i64 = entry::Entity::find()
         .join(sea_orm::JoinType::InnerJoin, entry::Relation::Feed.def())
         .filter(feed::Column::UserId.eq(user_id))
         .filter(entry::Column::IsRead.eq(false))
@@ -448,7 +448,7 @@ pub(crate) async fn unread_count(st: &AppState, user_id: i64) -> ApiResult<Reade
         count: total,
     });
     for f in &feeds {
-        let c = Entry::find()
+        let c = entry::Entity::find()
             .filter(entry::Column::FeedId.eq(f.id))
             .filter(entry::Column::IsRead.eq(false))
             .count(&st.db)
@@ -470,7 +470,7 @@ pub(crate) async fn subscription_quickadd(
     f: &ReaderQuickAddForm,
 ) -> ApiResult<ReaderQuickAddResp> {
     let url = f.quickadd.trim();
-    let dup = Feed::find()
+    let dup = feed::Entity::find()
         .filter(feed::Column::UserId.eq(user_id))
         .filter(feed::Column::FeedUrl.eq(url))
         .one(&st.db)
@@ -529,7 +529,7 @@ pub(crate) async fn subscription_edit(
 ) -> ApiResult<&'static str> {
     let feed_url = f.s.trim_start_matches("feed/");
     if f.ac.as_str() == "unsubscribe" {
-        if let Some(fm) = Feed::find()
+        if let Some(fm) = feed::Entity::find()
             .filter(feed::Column::UserId.eq(user_id))
             .filter(feed::Column::FeedUrl.eq(feed_url))
             .one(&st.db)

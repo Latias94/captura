@@ -15,7 +15,7 @@ use url::Url;
 
 use captura_service as service;
 use captura_storage::entity::{enclosure, entry};
-use captura_storage::entity::{feed, job, prelude::*, rule};
+use captura_storage::entity::{feed, job, rule};
 
 use crate::auth::AuthUser;
 use crate::error::{bad_request, internal, not_found, ApiResult};
@@ -85,7 +85,7 @@ pub(crate) async fn list_feeds(
         &["updated_at", "created_at", "error_count", "title"],
         &q.order,
     )?;
-    let mut sel = Feed::find().filter(feed::Column::UserId.eq(user.user_id));
+    let mut sel = feed::Entity::find().filter(feed::Column::UserId.eq(user.user_id));
     if let Some(cid) = q.category_id {
         sel = sel.filter(feed::Column::CategoryId.eq(cid));
     }
@@ -157,7 +157,7 @@ pub(crate) async fn get_feed(
     Path(id): Path<i64>,
 ) -> ApiResult<Json<FeedDto>> {
     let user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
-    let Some(f) = Feed::find()
+    let Some(f) = feed::Entity::find()
         .filter(feed::Column::UserId.eq(user.user_id))
         .filter(feed::Column::Id.eq(id))
         .one(&st.db)
@@ -204,7 +204,7 @@ pub(crate) async fn update_feed(
     Json(body): Json<UpdateFeedReq>,
 ) -> ApiResult<&'static str> {
     let user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
-    let Some(f) = Feed::find()
+    let Some(f) = feed::Entity::find()
         .filter(feed::Column::UserId.eq(user.user_id))
         .filter(feed::Column::Id.eq(id))
         .one(&st.db)
@@ -260,7 +260,7 @@ pub(crate) async fn delete_feed(
     Path(id): Path<i64>,
 ) -> ApiResult<&'static str> {
     let user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
-    let Some(f) = Feed::find()
+    let Some(f) = feed::Entity::find()
         .filter(feed::Column::UserId.eq(user.user_id))
         .filter(feed::Column::Id.eq(id))
         .one(&st.db)
@@ -339,7 +339,7 @@ pub(crate) async fn create_feed(
     if let Some(cid) = body.category_id {
         crate::util::assert_category_ownership(&st.db, user.user_id, cid).await?;
     }
-    let dup = Feed::find()
+    let dup = feed::Entity::find()
         .filter(feed::Column::UserId.eq(user.user_id))
         .filter(feed::Column::FeedUrl.eq(&normalized_feed_url))
         .one(&st.db)
@@ -351,7 +351,7 @@ pub(crate) async fn create_feed(
     // 如果是 captura_hub 路由，优先落地为 rule 型订阅（模板 + 参数）
     if let Some((rid, params)) = hub_mapped_rule {
         // 找模板
-        let tpl = Rule::find()
+        let tpl = rule::Entity::find()
             .filter(rule::Column::RuleId.eq(rid.clone()))
             .one(&st.db)
             .await
@@ -506,7 +506,7 @@ pub(crate) async fn refresh_feed(
     Path(id): Path<i64>,
 ) -> ApiResult<Json<serde_json::Value>> {
     let user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
-    let Some(f) = Feed::find()
+    let Some(f) = feed::Entity::find()
         .filter(feed::Column::Id.eq(id))
         .filter(feed::Column::UserId.eq(user.user_id))
         .one(&st.db)
@@ -532,7 +532,7 @@ pub(crate) async fn enqueue_feed_refresh(
     Path(id): Path<i64>,
 ) -> ApiResult<Json<EnqueueResp>> {
     let user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
-    let Some(f) = Feed::find()
+    let Some(f) = feed::Entity::find()
         .filter(feed::Column::Id.eq(id))
         .filter(feed::Column::UserId.eq(user.user_id))
         .one(&st.db)
@@ -565,7 +565,7 @@ pub(crate) async fn rss_feed(
     State(st): State<AppState>,
     Path(id): Path<i64>,
 ) -> ApiResult<Response> {
-    let Some(f) = Feed::find_by_id(id).one(&st.db).await.map_err(internal)? else {
+    let Some(f) = feed::Entity::find_by_id(id).one(&st.db).await.map_err(internal)? else {
         return Err(not_found("feed not found"));
     };
     // collect latest entries

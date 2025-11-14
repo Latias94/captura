@@ -9,7 +9,7 @@ use sea_orm::{
 use serde::Serialize;
 
 use crate::AppState;
-use captura_storage::entity::{category, entry, feed, prelude::*, user};
+use captura_storage::entity::{category, entry, feed, user};
 
 use super::types::FeverQuery;
 
@@ -30,7 +30,7 @@ pub(crate) async fn endpoint(st: &AppState, q: &FeverQuery) -> Response {
     let Some(ref api_key) = q.api_key else {
         return axum::Json(base).into_response();
     };
-    let user = User::find()
+    let user = user::Entity::find()
         .filter(user::Column::FeverKeyMd5.eq(api_key))
         .one(&st.db)
         .await;
@@ -72,7 +72,7 @@ pub(crate) async fn endpoint(st: &AppState, q: &FeverQuery) -> Response {
     });
 
     if q.groups.unwrap_or(0) == 1 {
-        let cats = Category::find()
+        let cats = category::Entity::find()
             .filter(category::Column::UserId.eq(user.id))
             .all(&st.db)
             .await
@@ -82,7 +82,7 @@ pub(crate) async fn endpoint(st: &AppState, q: &FeverQuery) -> Response {
             .map(|c| json!({"id": c.id, "title": c.name}))
             .collect();
         resp["groups"] = json!(groups);
-        let feeds = Feed::find()
+        let feeds = feed::Entity::find()
             .filter(feed::Column::UserId.eq(user.id))
             .all(&st.db)
             .await
@@ -102,7 +102,7 @@ pub(crate) async fn endpoint(st: &AppState, q: &FeverQuery) -> Response {
     }
 
     if q.feeds.unwrap_or(0) == 1 {
-        let feeds = Feed::find()
+        let feeds = feed::Entity::find()
             .filter(feed::Column::UserId.eq(user.id))
             .all(&st.db)
             .await
@@ -124,7 +124,7 @@ pub(crate) async fn endpoint(st: &AppState, q: &FeverQuery) -> Response {
     }
 
     if q.items.unwrap_or(0) == 1 {
-        let mut sel = Entry::find()
+        let mut sel = entry::Entity::find()
             .join(sea_orm::JoinType::InnerJoin, entry::Relation::Feed.def())
             .filter(feed::Column::UserId.eq(user.id));
         if let Some(since) = q.since_id {
@@ -158,7 +158,7 @@ pub(crate) async fn endpoint(st: &AppState, q: &FeverQuery) -> Response {
     }
 
     if q.unread_item_ids.unwrap_or(0) == 1 {
-        let ids: Vec<i64> = Entry::find()
+        let ids: Vec<i64> = entry::Entity::find()
             .join(sea_orm::JoinType::InnerJoin, entry::Relation::Feed.def())
             .filter(feed::Column::UserId.eq(user.id))
             .filter(entry::Column::IsRead.eq(false))
@@ -175,7 +175,7 @@ pub(crate) async fn endpoint(st: &AppState, q: &FeverQuery) -> Response {
             .join(","));
     }
     if q.saved_item_ids.unwrap_or(0) == 1 {
-        let ids: Vec<i64> = Entry::find()
+        let ids: Vec<i64> = entry::Entity::find()
             .join(sea_orm::JoinType::InnerJoin, entry::Relation::Feed.def())
             .filter(feed::Column::UserId.eq(user.id))
             .filter(entry::Column::IsStarred.eq(true))
@@ -194,7 +194,7 @@ pub(crate) async fn endpoint(st: &AppState, q: &FeverQuery) -> Response {
 
     if q.favicons.unwrap_or(0) == 1 {
         use captura_storage::entity::favicon as fv;
-        let feeds = Feed::find()
+        let feeds = feed::Entity::find()
             .filter(feed::Column::UserId.eq(user.id))
             .all(&st.db)
             .await
@@ -235,7 +235,7 @@ async fn fever_apply_write(
             return Ok(());
         }
         // 仅限当前用户条目
-        let feed_ids: Vec<i64> = Feed::find()
+        let feed_ids: Vec<i64> = feed::Entity::find()
             .filter(feed::Column::UserId.eq(user_id))
             .select_only()
             .column(feed::Column::Id)
@@ -245,7 +245,7 @@ async fn fever_apply_write(
         match asv {
             "read" | "unread" => {
                 let val = asv == "read";
-                let _ = Entry::update_many()
+                let _ = entry::Entity::update_many()
                     .col_expr(entry::Column::IsRead, sea_orm::sea_query::Expr::value(val))
                     .col_expr(
                         entry::Column::UpdatedAt,
@@ -258,7 +258,7 @@ async fn fever_apply_write(
             }
             "saved" | "unsaved" => {
                 let val = asv == "saved";
-                let _ = Entry::update_many()
+                let _ = entry::Entity::update_many()
                     .col_expr(
                         entry::Column::IsStarred,
                         sea_orm::sea_query::Expr::value(val),

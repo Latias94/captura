@@ -536,11 +536,11 @@ async fn execute_list_detail_v1(
             .map(|u| crate::absolutize(&final_list_url, u));
 
         let content_html: Option<String> = match content.mode {
-            crate::ContentMode::Readability => {
+            ContentMode::Readability => {
                 crate::readability_like_strategy_async(&client, url.as_deref(), &fetch_cfg, Some(feed))
                     .await
             }
-            crate::ContentMode::Css | crate::ContentMode::JsonFragment => {
+            ContentMode::Css | ContentMode::JsonFragment => {
                 if let Some(sel) = &content.selector {
                     if let Some(u) = &url {
                         Some(
@@ -636,11 +636,11 @@ async fn execute_single_page_v1(
     }
 
     let content_html: Option<String> = match content.mode {
-        crate::ContentMode::Readability => {
+        ContentMode::Readability => {
             crate::readability_like_strategy_async(&client, Some(&final_url), &fetch_cfg, Some(feed))
                 .await
         }
-        crate::ContentMode::Css | crate::ContentMode::JsonFragment => {
+        ContentMode::Css | ContentMode::JsonFragment => {
             if let Some(sel) = &content.selector {
                 Some(
                     crate::fetch_and_select_strategy(

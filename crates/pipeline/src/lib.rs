@@ -1,16 +1,13 @@
 //! Pipeline orchestrates fetcher / crawler / rules execution
 //! into normalized entries ready for persistence.
 
-use captura_common::{Error, NormalizedEntry, Result};
-use captura_crawler::{self as crawler, CrawlOptions};
+use captura_common::{NormalizedEntry, Result};
 use captura_fetcher::{FetchOptions, HttpFetcher};
-use captura_rules::v1::{ContentMergeMode, ContentMode, RuleSpecV1, SourceType};
 use captura_storage::entity::feed;
 use regex::Regex;
 use reqwest::header::HeaderMap;
 use reqwest::Client;
 use scraper::{Html, Selector};
-use serde_json::Value as JsonValue;
 use tracing::{debug, instrument};
 use url::Url;
 

@@ -10,7 +10,7 @@ use sha2::{Digest, Sha256};
 use crate::auth::{create_user_with_random_password, find_user_id_by_username};
 use crate::error::{bad_request, forbidden, internal, unauthorized, ApiResult};
 use crate::state::AppState;
-use captura_storage::entity::{prelude::*, token, user};
+use captura_storage::entity::{token, user};
 
 #[derive(Deserialize)]
 pub struct AuthLoginReq {
@@ -45,7 +45,7 @@ pub async fn auth_login(
     {
         return Err(crate::error::too_many_requests("too many attempts"));
     }
-    let u = User::find()
+    let u = user::Entity::find()
         .filter(user::Column::Username.eq(&body.username))
         .one(&st.db)
         .await

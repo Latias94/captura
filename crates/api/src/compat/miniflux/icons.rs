@@ -6,7 +6,6 @@ use axum::extract::{Path, State};
 use axum::response::IntoResponse;
 
 use captura_storage::entity::feed;
-use captura_storage::entity::prelude::*;
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 
 pub(crate) async fn icon_by_id(
@@ -42,7 +41,7 @@ pub(crate) async fn icon_by_feed(
 ) -> MfResult<axum::response::Response> {
     let auth = mf_auth(&st, &headers).await?;
     use captura_storage::entity::favicon as fv;
-    let Some(f) = Feed::find_by_id(id)
+    let Some(f) = feed::Entity::find_by_id(id)
         .filter(feed::Column::UserId.eq(auth.user_id))
         .one(&st.db)
         .await

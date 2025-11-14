@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use crate::auth::AuthUser;
 use crate::error::{bad_request, internal, not_found, ApiResult};
 use crate::AppState;
-use captura_storage::entity::{prelude::*, webhook};
+use captura_storage::entity::webhook;
 use rand_core::RngCore;
 
 #[derive(Serialize)]
@@ -35,7 +35,7 @@ pub(crate) async fn list(
     TypedHeader(Authorization(bearer)): TypedHeader<Authorization<Bearer>>,
 ) -> ApiResult<Json<Vec<WebhookDto>>> {
     let user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
-    let list = Webhook::find()
+    let list = webhook::Entity::find()
         .filter(webhook::Column::UserId.eq(user.user_id))
         .all(&st.db)
         .await
@@ -59,7 +59,7 @@ pub(crate) async fn get(
     Path(id): Path<i64>,
 ) -> ApiResult<Json<WebhookDto>> {
     let user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
-    let Some(w) = Webhook::find_by_id(id)
+    let Some(w) = webhook::Entity::find_by_id(id)
         .filter(webhook::Column::UserId.eq(user.user_id))
         .one(&st.db)
         .await
@@ -110,7 +110,7 @@ pub(crate) async fn delete(
     Path(id): Path<i64>,
 ) -> ApiResult<&'static str> {
     let user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
-    if let Some(w) = Webhook::find_by_id(id)
+    if let Some(w) = webhook::Entity::find_by_id(id)
         .filter(webhook::Column::UserId.eq(user.user_id))
         .one(&st.db)
         .await

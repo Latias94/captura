@@ -3,7 +3,7 @@
 use captura_common::Result;
 // use captura_pipeline::{refresh_feed_with_meta, refresh_rule_with_yaml};
 use captura_service as service;
-use captura_storage::entity::{favicon as fv, feed, job, prelude::*};
+use captura_storage::entity::{favicon as fv, feed, job};
 use chrono::{FixedOffset, Utc};
 use reqwest::{Client, Url};
 use sea_orm::PaginatorTrait;
@@ -39,7 +39,7 @@ impl Scheduler {
 
 pub async fn run_once(db: &DatabaseConnection, max: u64) -> Result<usize> {
     let now = Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
-    let jobs = Job::find()
+    let jobs = job::Entity::find()
         .filter(job::Column::Status.eq(job::JobStatus::Pending))
         .filter(job::Column::RunAt.lte(now))
         .order_by_desc(job::Column::Priority)
@@ -64,7 +64,7 @@ pub async fn run_once(db: &DatabaseConnection, max: u64) -> Result<usize> {
         // Only gate per-host for feed refresh
         if matches!(j.job_type, job::JobType::FeedRefresh) {
             if let Some(fid) = j.feed_id {
-                if let Some(f) = Feed::find_by_id(fid)
+                if let Some(f) = feed::Entity::find_by_id(fid)
                     .one(db)
                     .await
                     .map_err(|e| captura_common::Error::Storage(e.to_string()))?
@@ -93,7 +93,7 @@ pub async fn run_once(db: &DatabaseConnection, max: u64) -> Result<usize> {
         let db = db.clone();
         tasks.push(async move {
             // mark running
-            if let Some(model) = Job::find_by_id(j.id).one(&db).await.ok().flatten() {
+            if let Some(model) = job::Entity::find_by_id(j.id).one(&db).await.ok().flatten() {
                 let mut am: job::ActiveModel = model.into();
                 am.status = Set(job::JobStatus::Running);
                 am.attempts = Set(j.attempts + 1);
@@ -109,7 +109,7 @@ pub async fn run_once(db: &DatabaseConnection, max: u64) -> Result<usize> {
                 ))),
             };
             // finalize
-            if let Some(model) = Job::find_by_id(j.id).one(&db).await.ok().flatten() {
+            if let Some(model) = job::Entity::find_by_id(j.id).one(&db).await.ok().flatten() {
                 let mut am: job::ActiveModel = model.into();
                 match res {
                     Ok(_) => {
@@ -171,7 +171,7 @@ async fn refresh_feed_job(db: &DatabaseConnection, j: &job::Model) -> Result<()>
 }
 
 async fn refresh_favicon_job(db: &DatabaseConnection, j: &job::Model) -> Result<()> {
-    let Some(f) = Feed::find_by_id(j.feed_id.unwrap_or_default())
+    let Some(f) = feed::Entity::find_by_id(j.feed_id.unwrap_or_default())
         .one(db)
         .await
         .map_err(|e| captura_common::Error::Storage(e.to_string()))?
@@ -315,7 +315,7 @@ pub async fn enqueue_integration_event(
 pub async fn enqueue_due_feeds(db: &DatabaseConnection, max: u64) -> Result<u64> {
     let now = Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
     // find due feeds
-    let feeds = Feed::find()
+    let feeds = feed::Entity::find()
         .filter(feed::Column::Disabled.eq(false))
         .filter(feed::Column::NextRunAt.lte(now))
         .order_by_asc(feed::Column::NextRunAt)
@@ -326,7 +326,7 @@ pub async fn enqueue_due_feeds(db: &DatabaseConnection, max: u64) -> Result<u64>
     let mut enq = 0u64;
     for f in feeds {
         // skip if there is already a pending/running refresh for this feed
-        let exists = Job::find()
+        let exists = job::Entity::find()
             .filter(job::Column::FeedId.eq(f.id))
             .filter(job::Column::JobType.eq(job::JobType::FeedRefresh))
             .filter(
@@ -368,7 +368,7 @@ async fn update_feed_on_failure(
     attempts: i32,
     err_msg: Option<String>,
 ) -> Result<()> {
-    let Some(f) = Feed::find_by_id(feed_id)
+    let Some(f) = feed::Entity::find_by_id(feed_id)
         .one(db)
         .await
         .map_err(|e| captura_common::Error::Storage(e.to_string()))?
@@ -413,7 +413,7 @@ async fn update_feed_on_failure(
 #[cfg(test)]
 mod it {
     use super::*;
-    use captura_storage::entity::{feed, prelude::Job, user};
+    use captura_storage::entity::{feed, job, user};
 
     #[tokio::test]
     async fn backoff_on_failed_feed_refresh() {
@@ -476,7 +476,7 @@ mod it {
         assert_eq!(processed, 1);
 
         // 校验 Job 状态为 Failed 且 attempts=1
-        let j = Job::find()
+        let j = job::Entity::find()
             .order_by_desc(job::Column::Id)
             .one(&db)
             .await
@@ -487,7 +487,7 @@ mod it {
         assert!(j.last_error.unwrap_or_default().contains("rule"));
 
         // feed 应设置回退后的 next_run_at，并记录 error_count=1
-        let f2 = Feed::find_by_id(f.id).one(&db).await.unwrap().unwrap();
+        let f2 = feed::Entity::find_by_id(f.id).one(&db).await.unwrap().unwrap();
         assert!(f2.next_run_at.unwrap() > now);
         assert_eq!(f2.error_count, 1);
     }
@@ -496,7 +496,7 @@ mod it {
 #[cfg(test)]
 mod live_tests {
     use super::*;
-    use captura_storage::entity::entry;
+    use captura_storage::entity::{entry, job};
     // use migration::migrate; // not used in live tests
     use sea_orm::PaginatorTrait;
 
@@ -576,7 +576,7 @@ mod live_tests {
         assert!(processed >= 1);
 
         // entries persisted
-        let cnt = Entry::find()
+        let cnt = entry::Entity::find()
             .filter(entry::Column::FeedId.eq(f.id))
             .count(&db)
             .await
@@ -584,7 +584,7 @@ mod live_tests {
         assert!(cnt > 0, "should insert entries into DB");
 
         // job status done
-        let j = Job::find()
+        let j = job::Entity::find()
             .order_by_desc(job::Column::Id)
             .one(&db)
             .await

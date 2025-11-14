@@ -11,10 +11,8 @@ use sea_orm::{
     ActiveModelTrait, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder, Set,
 };
 
-use captura_storage::entity::prelude::*;
 use captura_storage::entity::user as user_entity;
-use captura_storage::entity::user_pref;
-use captura_storage::entity::{entry, feed};
+use captura_storage::entity::{entry, feed, user_pref};
 use sea_orm::QuerySelect;
 
 // ---------- DTO ----------
@@ -77,7 +75,7 @@ fn is_admin_role(role: &user_entity::UserRole) -> bool {
 }
 
 pub(super) async fn ensure_admin(st: &AppState, user_id: i64) -> MfResult<()> {
-    let u = User::find_by_id(user_id)
+    let u = user_entity::Entity::find_by_id(user_id)
         .one(&st.db)
         .await
         .map_err(internal)?
@@ -119,7 +117,7 @@ async fn map_user_full_with_prefs(
     u: user_entity::Model,
 ) -> MfResult<MfUserFullDto> {
     let mut dto = default_user_full(&u);
-    let prefs = UserPref::find()
+    let prefs = user_pref::Entity::find()
         .filter(user_pref::Column::UserId.eq(u.id))
         .all(db)
         .await
@@ -198,7 +196,7 @@ pub(crate) async fn me(
     headers: axum::http::HeaderMap,
 ) -> MfResult<Json<MfUserFullDto>> {
     let auth = mf_auth(&st, &headers).await.map_err(from_api_error)?;
-    let u = User::find_by_id(auth.user_id)
+    let u = user_entity::Entity::find_by_id(auth.user_id)
         .one(&st.db)
         .await
         .map_err(internal)?
@@ -213,7 +211,7 @@ pub(crate) async fn list(
 ) -> MfResult<Json<Vec<MfUserFullDto>>> {
     let auth = mf_auth(&st, &headers).await.map_err(from_api_error)?;
     ensure_admin(&st, auth.user_id).await?;
-    let users = User::find()
+    let users = user_entity::Entity::find()
         .order_by_asc(user_entity::Column::Id)
         .all(&st.db)
         .await
@@ -234,9 +232,9 @@ pub(crate) async fn get(
     ensure_admin(&st, auth.user_id).await?;
     let by_id = id_or_name.parse::<i64>().ok();
     let user = if let Some(id) = by_id {
-        User::find_by_id(id).one(&st.db).await.map_err(internal)?
+        user_entity::Entity::find_by_id(id).one(&st.db).await.map_err(internal)?
     } else {
-        User::find()
+        user_entity::Entity::find()
             .filter(user_entity::Column::Username.eq(id_or_name))
             .one(&st.db)
             .await
@@ -256,7 +254,7 @@ pub(crate) async fn create(
     if body.username.trim().is_empty() || body.password.is_empty() {
         return Err(bad_request("username/password required").into());
     }
-    let exists = User::find()
+    let exists = user_entity::Entity::find()
         .filter(user_entity::Column::Username.eq(&body.username))
         .count(&st.db)
         .await
@@ -295,7 +293,7 @@ pub(crate) async fn update(
 ) -> MfResult<Json<MfUserFullDto>> {
     let auth = mf_auth(&st, &headers).await.map_err(from_api_error)?;
     ensure_admin(&st, auth.user_id).await?;
-    let Some(model) = User::find_by_id(id).one(&st.db).await.map_err(internal)? else {
+    let Some(model) = user_entity::Entity::find_by_id(id).one(&st.db).await.map_err(internal)? else {
         return Err(not_found("user").into());
     };
     let mut am: user_entity::ActiveModel = model.into();
@@ -326,7 +324,7 @@ pub(crate) async fn update(
         v: serde_json::Value,
     ) -> MfResult<()> {
         let now = Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
-        if let Some(model) = UserPref::find()
+        if let Some(model) = user_pref::Entity::find()
             .filter(user_pref::Column::UserId.eq(user_id))
             .filter(user_pref::Column::Key.eq(key))
             .one(db)
@@ -424,7 +422,7 @@ pub(crate) async fn delete(
     if id == auth.user_id {
         return Err(bad_request("cannot delete self").into());
     }
-    let Some(u) = User::find_by_id(id).one(&st.db).await.map_err(internal)? else {
+    let Some(u) = user_entity::Entity::find_by_id(id).one(&st.db).await.map_err(internal)? else {
         return Err(not_found("user").into());
     };
     let am: user_entity::ActiveModel = u.into();
@@ -446,7 +444,7 @@ pub(crate) async fn mark_all_read(
     if auth.user_id != id {
         return Err(not_found("user").into());
     }
-    let feed_ids: Vec<i64> = Feed::find()
+    let feed_ids: Vec<i64> = feed::Entity::find()
         .filter(feed::Column::UserId.eq(id))
         .select_only()
         .column(feed::Column::Id)
@@ -455,7 +453,7 @@ pub(crate) async fn mark_all_read(
         .await
         .map_err(internal)?;
     if !feed_ids.is_empty() {
-        let _ = Entry::update_many()
+        let _ = entry::Entity::update_many()
             .col_expr(entry::Column::IsRead, sea_orm::sea_query::Expr::value(true))
             .filter(entry::Column::FeedId.is_in(feed_ids))
             .exec(&st.db)

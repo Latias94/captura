@@ -5,7 +5,7 @@ use sha2::{Digest, Sha256};
 
 use argon2::{PasswordHasher, PasswordVerifier};
 use base64::Engine;
-use captura_storage::entity::{prelude::*, token};
+use captura_storage::entity::{token, user};
 
 use crate::error::{internal, unauthorized, ApiResult};
 use crate::AppState;
@@ -20,7 +20,7 @@ pub struct AuthUser {
 impl AuthUser {
     pub async fn from_bearer(db: &DatabaseConnection, bearer: &str) -> ApiResult<Self> {
         let hash = format!("{:x}", Sha256::digest(bearer.as_bytes()));
-        let tok = Token::find()
+        let tok = token::Entity::find()
             .filter(token::Column::TokenHash.eq(hash))
             .one(db)
             .await
@@ -62,9 +62,9 @@ pub async fn mf_auth(st: &AppState, headers: &HeaderMap) -> ApiResult<AuthUser> 
                 if let Some(b64) = s.strip_prefix("Basic ") {
                     if let Ok(raw) = base64::engine::general_purpose::STANDARD.decode(b64) {
                         if let Ok(pair) = std::str::from_utf8(&raw) {
-                            if let Some((username, password)) = pair.split_once(':') {
-                                // 校验用户口令
-                                let u = User::find()
+                                if let Some((username, password)) = pair.split_once(':') {
+                                    // 校验用户口令
+                                let u = user::Entity::find()
                                     .filter(
                                         captura_storage::entity::user::Column::Username
                                             .eq(username),
@@ -119,7 +119,7 @@ pub(crate) async fn find_user_id_by_username(
     db: &DatabaseConnection,
     username: &str,
 ) -> ApiResult<Option<i64>> {
-    let u = User::find()
+    let u = user::Entity::find()
         .filter(captura_storage::entity::user::Column::Username.eq(username))
         .one(db)
         .await

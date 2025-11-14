@@ -10,7 +10,6 @@ use sea_orm::{
     ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect, Set,
 };
 
-use captura_storage::entity::prelude::*;
 use captura_storage::entity::{category, entry, feed};
 
 #[derive(serde::Deserialize, Default)]
@@ -24,7 +23,7 @@ pub(crate) async fn list(
     Query(q): Query<MfCatListQuery>,
 ) -> MfResult<Json<Vec<MfCategoryDto>>> {
     let auth = mf_auth(&st, &headers).await.map_err(from_api_error)?;
-    let cats = Category::find()
+    let cats = category::Entity::find()
         .filter(category::Column::UserId.eq(auth.user_id))
         .order_by_asc(category::Column::Id)
         .all(&st.db)
@@ -48,7 +47,7 @@ pub(crate) async fn list(
     // 统计 feed_count 与 total_unread
     let cat_ids: Vec<i64> = cats.iter().map(|c| c.id).collect();
     // 拉取该用户下的所有 feed（用于 unread 按分类汇总）
-    let feeds = Feed::find()
+    let feeds = feed::Entity::find()
         .filter(feed::Column::UserId.eq(auth.user_id))
         .all(&st.db)
         .await
@@ -65,7 +64,7 @@ pub(crate) async fn list(
     let feed_ids: Vec<i64> = feeds.iter().map(|f| f.id).collect();
     let mut unread_map: HashMap<i64, i64> = HashMap::new(); // category_id -> unread
     if !feed_ids.is_empty() {
-        let unread_pairs: Vec<(i64, i64)> = Entry::find()
+        let unread_pairs: Vec<(i64, i64)> = entry::Entity::find()
             .filter(entry::Column::FeedId.is_in(feed_ids.clone()))
             .filter(entry::Column::IsRead.eq(false))
             .select_only()
@@ -141,7 +140,7 @@ pub(crate) async fn counters(
     headers: axum::http::HeaderMap,
 ) -> MfResult<Json<Vec<MfCatCounter>>> {
     let auth = mf_auth(&st, &headers).await.map_err(from_api_error)?;
-    let feeds = Feed::find()
+    let feeds = feed::Entity::find()
         .filter(feed::Column::UserId.eq(auth.user_id))
         .all(&st.db)
         .await
@@ -150,7 +149,7 @@ pub(crate) async fn counters(
     if feed_ids.is_empty() {
         return Ok(Json(vec![]));
     }
-    let pairs: Vec<(i64, i64)> = Entry::find()
+    let pairs: Vec<(i64, i64)> = entry::Entity::find()
         .filter(entry::Column::FeedId.is_in(feed_ids.clone()))
         .filter(entry::Column::IsRead.eq(false))
         .select_only()
@@ -195,10 +194,10 @@ pub(crate) async fn feeds(
     Path(id): Path<i64>,
 ) -> MfResult<Json<Vec<MfFeedDto>>> {
     let auth = mf_auth(&st, &headers).await.map_err(from_api_error)?;
-    let list = Feed::find()
+    let list = feed::Entity::find()
         .filter(feed::Column::UserId.eq(auth.user_id))
         .filter(feed::Column::CategoryId.eq(id))
-        .find_also_related(Category)
+        .find_also_related(category::Entity)
         .all(&st.db)
         .await
         .map_err(internal)?;
@@ -213,7 +212,7 @@ pub(crate) async fn refresh(
     Path(id): Path<i64>,
 ) -> MfResult<&'static str> {
     let auth = mf_auth(&st, &headers).await.map_err(from_api_error)?;
-    let feeds = Feed::find()
+    let feeds = feed::Entity::find()
         .filter(feed::Column::UserId.eq(auth.user_id))
         .filter(feed::Column::CategoryId.eq(id))
         .all(&st.db)
@@ -240,7 +239,7 @@ pub(crate) async fn update(
     if body.title.trim().is_empty() {
         return Err(bad_request("title required").into());
     }
-    let Some(cat) = Category::find_by_id(id)
+    let Some(cat) = category::Entity::find_by_id(id)
         .filter(category::Column::UserId.eq(auth.user_id))
         .one(&st.db)
         .await
@@ -260,7 +259,7 @@ pub(crate) async fn delete(
     Path(id): Path<i64>,
 ) -> MfResult<&'static str> {
     let auth = mf_auth(&st, &headers).await?;
-    let _ = Feed::update_many()
+    let _ = feed::Entity::update_many()
         .col_expr(
             feed::Column::CategoryId,
             sea_orm::sea_query::Expr::value(Option::<i64>::None),
@@ -270,7 +269,7 @@ pub(crate) async fn delete(
         .exec(&st.db)
         .await
         .map_err(internal)?;
-    if let Some(cat) = Category::find_by_id(id)
+    if let Some(cat) = category::Entity::find_by_id(id)
         .filter(category::Column::UserId.eq(auth.user_id))
         .one(&st.db)
         .await
@@ -288,7 +287,7 @@ pub(crate) async fn mark_all_read(
     Path(id): Path<i64>,
 ) -> MfResult<&'static str> {
     let auth = mf_auth(&st, &headers).await?;
-    let feed_ids: Vec<i64> = Feed::find()
+    let feed_ids: Vec<i64> = feed::Entity::find()
         .filter(feed::Column::UserId.eq(auth.user_id))
         .filter(feed::Column::CategoryId.eq(id))
         .select_only()
@@ -298,7 +297,7 @@ pub(crate) async fn mark_all_read(
         .await
         .map_err(internal)?;
     if !feed_ids.is_empty() {
-        let _ = Entry::update_many()
+        let _ = entry::Entity::update_many()
             .col_expr(entry::Column::IsRead, sea_orm::sea_query::Expr::value(true))
             .filter(entry::Column::FeedId.is_in(feed_ids))
             .exec(&st.db)
