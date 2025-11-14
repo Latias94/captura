@@ -24,4 +24,3 @@ pub const META_HN_FRONT: RouteMeta = RouteMeta {
     url: "https://news.ycombinator.com/",
     description: "Hacker News front page stories.",
 };
-

@@ -45,4 +45,3 @@ pub const META_GITHUB_TRENDING: RouteMeta = RouteMeta {
     url: "https://github.com/trending",
     description: "GitHub Trending repositories (inspired by RSSHub github/trending route).",
 };
-

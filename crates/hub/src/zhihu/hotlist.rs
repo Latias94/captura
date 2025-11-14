@@ -24,4 +24,3 @@ pub const META_ZHIHU_HOTLIST: RouteMeta = RouteMeta {
     url: "https://www.zhihu.com/hot",
     description: "Zhihu hot list entries.",
 };
-

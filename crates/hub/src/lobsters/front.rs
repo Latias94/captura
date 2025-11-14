@@ -24,4 +24,3 @@ pub const META_LOBSTERS_FRONT: RouteMeta = RouteMeta {
     url: "https://lobste.rs/",
     description: "Lobsters front page stories.",
 };
-

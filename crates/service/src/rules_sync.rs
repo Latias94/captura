@@ -43,9 +43,7 @@ fn collect_yaml_files(root: &Path, out: &mut Vec<PathBuf>) -> std::io::Result<()
 }
 
 fn infer_namespace(rule_id: &str) -> Option<String> {
-    rule_id
-        .rsplit_once('.')
-        .map(|(ns, _)| ns.to_string())
+    rule_id.rsplit_once('.').map(|(ns, _)| ns.to_string())
 }
 
 /// 从给定根目录同步规则文件到数据库。
@@ -57,10 +55,7 @@ fn infer_namespace(rule_id: &str) -> Option<String> {
 ///   - 不存在 → INSERT；
 ///   - 已存在 → UPDATE（直接覆盖 yaml/description/examples）。
 /// - 任何解析或 IO 错误都会被计入 failed，但不会中断整体同步。
-pub async fn sync_rules_from_fs(
-    db: &DatabaseConnection,
-    root: &Path,
-) -> Result<RulesSyncReport> {
+pub async fn sync_rules_from_fs(db: &DatabaseConnection, root: &Path) -> Result<RulesSyncReport> {
     let mut files = Vec::new();
     collect_yaml_files(root, &mut files).map_err(|e| Error::Config(e.to_string()))?;
     files.sort();

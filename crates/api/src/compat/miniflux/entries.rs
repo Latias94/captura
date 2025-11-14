@@ -12,9 +12,9 @@ use sea_orm::{
 };
 
 use axum::response::IntoResponse;
+use captura_pipeline::extractor;
 use captura_storage::entity::prelude::*;
 use captura_storage::entity::{enclosure, entry, entry_label, feed, label};
-use captura_pipeline::extractor;
 
 #[derive(serde::Deserialize, Default)]
 pub(crate) struct MfEntriesQuery {
@@ -290,9 +290,7 @@ pub(crate) async fn get(
     headers: axum::http::HeaderMap,
     Path(id): Path<i64>,
 ) -> MfResult<Json<MfEntryDto>> {
-    let auth = mf_auth(&st, &headers)
-        .await
-        .map_err(from_api_error)?;
+    let auth = mf_auth(&st, &headers).await.map_err(from_api_error)?;
     let Some(e) = Entry::find_by_id(id).one(&st.db).await.map_err(internal)? else {
         return Err(not_found("entry").into());
     };
@@ -369,9 +367,7 @@ pub(crate) async fn update_bulk(
     headers: axum::http::HeaderMap,
     Json(body): Json<MfUpdateEntriesBulk>,
 ) -> MfResult<axum::response::Response> {
-    let auth = mf_auth(&st, &headers)
-        .await
-        .map_err(from_api_error)?;
+    let auth = mf_auth(&st, &headers).await.map_err(from_api_error)?;
     if body.entry_ids.is_empty() {
         return Ok((
             axum::http::StatusCode::NO_CONTENT,
@@ -424,9 +420,7 @@ pub(crate) async fn update(
     Path(id): Path<i64>,
     Json(body): Json<MfUpdateEntry>,
 ) -> MfResult<Json<MfEntryDto>> {
-    let auth = mf_auth(&st, &headers)
-        .await
-        .map_err(from_api_error)?;
+    let auth = mf_auth(&st, &headers).await.map_err(from_api_error)?;
     let Some(e) = Entry::find_by_id(id).one(&st.db).await.map_err(internal)? else {
         return Err(not_found("entry").into());
     };
@@ -534,9 +528,7 @@ pub(crate) async fn toggle_star(
     headers: axum::http::HeaderMap,
     Path(id): Path<i64>,
 ) -> MfResult<axum::response::Response> {
-    let auth = mf_auth(&st, &headers)
-        .await
-        .map_err(from_api_error)?;
+    let auth = mf_auth(&st, &headers).await.map_err(from_api_error)?;
     let Some(e) = Entry::find_by_id(id).one(&st.db).await.map_err(internal)? else {
         return Err(not_found("entry").into());
     };
@@ -571,9 +563,7 @@ pub(crate) async fn flush_history(
     State(st): State<AppState>,
     headers: axum::http::HeaderMap,
 ) -> MfResult<axum::response::Response> {
-    let auth = mf_auth(&st, &headers)
-        .await
-        .map_err(from_api_error)?;
+    let auth = mf_auth(&st, &headers).await.map_err(from_api_error)?;
     let days: i64 = std::env::var("FLUSH_HISTORY_DAYS")
         .ok()
         .and_then(|s| s.parse().ok())
@@ -620,9 +610,7 @@ pub(crate) async fn fetch_content(
     Path(id): Path<i64>,
     Query(q): Query<MfFetchContentQuery>,
 ) -> MfResult<Json<MfEntryContentResp>> {
-    let auth = mf_auth(&st, &headers)
-        .await
-        .map_err(from_api_error)?;
+    let auth = mf_auth(&st, &headers).await.map_err(from_api_error)?;
     let Some(e) = Entry::find_by_id(id).one(&st.db).await.map_err(internal)? else {
         return Err(not_found("entry").into());
     };
@@ -689,9 +677,7 @@ pub(crate) async fn save(
     headers: axum::http::HeaderMap,
     Path(id): Path<i64>,
 ) -> MfResult<&'static str> {
-    let auth = mf_auth(&st, &headers)
-        .await
-        .map_err(from_api_error)?;
+    let auth = mf_auth(&st, &headers).await.map_err(from_api_error)?;
     let Some(e) = Entry::find_by_id(id).one(&st.db).await.map_err(internal)? else {
         return Err(not_found("entry").into());
     };
@@ -737,9 +723,7 @@ pub(crate) async fn add_tags(
     Path(id): Path<i64>,
     Json(body): Json<MfSetTagsReq>,
 ) -> MfResult<&'static str> {
-    let auth = mf_auth(&st, &headers)
-        .await
-        .map_err(from_api_error)?;
+    let auth = mf_auth(&st, &headers).await.map_err(from_api_error)?;
     let Some(e) = Entry::find_by_id(id).one(&st.db).await.map_err(internal)? else {
         return Err(not_found("entry").into());
     };

@@ -23,9 +23,7 @@ pub(crate) async fn list(
     State(st): State<AppState>,
     headers: axum::http::HeaderMap,
 ) -> MfResult<Json<Vec<MfTag>>> {
-    let auth = mf_auth(&st, &headers)
-        .await
-        .map_err(from_api_error)?;
+    let auth = mf_auth(&st, &headers).await.map_err(from_api_error)?;
     let labels = Label::find()
         .filter(label::Column::UserId.eq(auth.user_id))
         .order_by_asc(label::Column::Name)
@@ -71,9 +69,7 @@ pub(crate) async fn create(
     headers: axum::http::HeaderMap,
     Json(body): Json<MfCreateTagReq>,
 ) -> MfResult<Json<MfTag>> {
-    let auth = mf_auth(&st, &headers)
-        .await
-        .map_err(from_api_error)?;
+    let auth = mf_auth(&st, &headers).await.map_err(from_api_error)?;
     let name = body.title.trim();
     if name.is_empty() {
         return Err(bad_request("title required").into());
@@ -136,9 +132,7 @@ pub(crate) async fn delete(
     headers: axum::http::HeaderMap,
     Path(name): Path<String>,
 ) -> MfResult<&'static str> {
-    let auth = mf_auth(&st, &headers)
-        .await
-        .map_err(from_api_error)?;
+    let auth = mf_auth(&st, &headers).await.map_err(from_api_error)?;
     let Some(l) = Label::find()
         .filter(label::Column::UserId.eq(auth.user_id))
         .filter(label::Column::Name.eq(name.as_str()))
@@ -170,9 +164,7 @@ pub(crate) async fn rename(
     Path(name): Path<String>,
     Json(body): Json<MfRenameTagReq>,
 ) -> MfResult<Json<MfTag>> {
-    let auth = mf_auth(&st, &headers)
-        .await
-        .map_err(from_api_error)?;
+    let auth = mf_auth(&st, &headers).await.map_err(from_api_error)?;
     let new_name = body.title.trim();
     if new_name.is_empty() {
         return Err(bad_request("title required").into());

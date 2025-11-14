@@ -4,7 +4,7 @@
 use captura_common::{Error, NormalizedEntry, Result};
 use captura_crawler::{self as crawler, CrawlOptions};
 use captura_fetcher::{FetchOptions, HttpFetcher};
-use captura_rules::v1::{RuleSpecV1, SourceType, ContentMode, ContentMergeMode};
+use captura_rules::v1::{ContentMergeMode, ContentMode, RuleSpecV1, SourceType};
 use captura_storage::entity::feed;
 use regex::Regex;
 use reqwest::header::HeaderMap;
@@ -17,6 +17,9 @@ use url::Url;
 mod handlers;
 mod hub_bridge;
 mod hub_utils;
+mod rules_engine;
+
+pub use rules_engine::{refresh_rule_v1, refresh_rule_v1_with_yaml, refresh_rule_with_yaml};
 
 #[derive(Debug, Clone)]
 pub struct RefreshMeta {
@@ -310,7 +313,7 @@ fn apply_rewrite_rules(input: &str, rules: &str) -> String {
 }
 
 #[instrument(skip(feed, yaml))]
-pub async fn refresh_rule_with_yaml(
+pub async fn refresh_rule_with_yaml_legacy(
     feed: &feed::Model,
     yaml: &str,
 ) -> Result<Vec<NormalizedEntry>> {
@@ -324,7 +327,7 @@ pub async fn refresh_rule_with_yaml(
 /// Currently supports `source.type = list_detail` with CSS/readability content
 /// extraction. Other source types are rejected until implemented.
 #[instrument(skip(feed, yaml))]
-pub async fn refresh_rule_v1_with_yaml(
+pub async fn refresh_rule_v1_with_yaml_legacy(
     feed: &feed::Model,
     yaml: &str,
 ) -> Result<Vec<NormalizedEntry>> {
@@ -334,7 +337,7 @@ pub async fn refresh_rule_v1_with_yaml(
 }
 
 #[instrument(skip(feed, spec))]
-pub async fn refresh_rule_v1(
+pub async fn refresh_rule_v1_legacy(
     feed: &feed::Model,
     spec: &RuleSpecV1,
 ) -> Result<Vec<NormalizedEntry>> {
@@ -364,7 +367,6 @@ pub async fn refresh_rule_v1(
 
     Ok(entries)
 }
-
 
 /// Merge rule param defaults with feed-level params (rule_params_json).
 ///
@@ -586,8 +588,7 @@ async fn execute_single_page_v1(
 
     let content_html: Option<String> = match content.mode {
         ContentMode::Readability => {
-            readability_like_strategy_async(&client, Some(&final_url), &fetch_cfg, Some(feed))
-                .await
+            readability_like_strategy_async(&client, Some(&final_url), &fetch_cfg, Some(feed)).await
         }
         ContentMode::Css | ContentMode::JsonFragment => {
             if let Some(sel) = &content.selector {
@@ -616,211 +617,13 @@ async fn execute_single_page_v1(
     Ok(vec![entry])
 }
 
-/// Execute a v1 rule with `source.type = json` (basic support).
-///
-/// This implementation supports:
-/// - direct JSON responses via `source.request`, or
-/// - JSON embedded in HTML via `source.from_html`.
-///
-/// Advanced timestamp and enclosure mapping can be extended later.
-async fn execute_json_v1(
-    feed: &feed::Model,
-    spec: &RuleSpecV1,
-) -> Result<Vec<NormalizedEntry>> {
-    let root_path = spec
-        .source
-        .root
-        .as_ref()
-        .ok_or_else(|| Error::Config("source.root is required for json".into()))?;
-    let mapping = spec
-        .source
-        .mapping
-        .as_ref()
-        .ok_or_else(|| Error::Config("source.mapping is required for json".into()))?;
-
-    let ua = spec
-        .fetch
-        .user_agent
-        .clone()
-        .or_else(|| feed.user_agent.clone())
-        .unwrap_or_else(|| "captura/0.1".to_string());
-
-    let client = Client::builder()
-        .user_agent(ua)
-        .build()
-        .map_err(|e| Error::Network(e.to_string()))?;
-
-    let params = merge_rule_params_v1(spec, feed.rule_params_json.as_ref());
-
-    // Determine upstream JSON root depending on source/from_html.
-    let json_root: JsonValue = if let Some(from_html) = &spec.source.from_html {
-        // HTML → JSON fragments via CSS selector.
-        let html_req = if let Some(req) = from_html.request.as_ref() {
-            req
-        } else if let Some(req) = spec.source.request.as_ref() {
-            req
-        } else {
-            return Err(Error::Config(
-                "either source.request or from_html.request is required when using from_html"
-                    .into(),
-            ));
-        };
-
-        // Reuse fetch_html_strategy so smart/proxy/timeout are applied consistently.
-        let fetch_cfg = FetchCfg {
-            user_agent: spec
-                .fetch
-                .user_agent
-                .clone()
-                .or_else(|| feed.user_agent.clone()),
-            headers: None,
-            smart: spec.fetch.smart,
-            timeout_ms: spec
-                .fetch
-                .timeout_ms
-                .or(html_req.timeout_ms),
-            respect_robots: spec.fetch.respect_robots,
-            delay_ms: None,
-            limit: None,
-            proxy_url: None,
-        };
-        let final_html_url = render_with_params(&html_req.url, params.as_ref());
-        let html =
-            fetch_html_strategy(&client, &final_html_url, &fetch_cfg, Some(feed)).await?;
-
-        let doc = Html::parse_document(&html);
-        let sel = Selector::parse(&from_html.selector)
-            .map_err(|e| Error::Parse(format!("invalid from_html selector: {e}")))?;
-        let mut fragments: Vec<JsonValue> = Vec::new();
-        for el in doc.select(&sel) {
-            let text = el.text().collect::<Vec<_>>().join("").trim().to_string();
-            if text.is_empty() {
-                continue;
-            }
-            if let Ok(v) = serde_json::from_str::<JsonValue>(&text) {
-                fragments.push(v);
-                if !from_html.multiple.unwrap_or(false) {
-                    break;
-                }
-            }
-        }
-        if fragments.is_empty() {
-            return Err(Error::Parse(
-                "no JSON fragments extracted from HTML".into(),
-            ));
-        }
-        if from_html.multiple.unwrap_or(false) {
-            JsonValue::Array(fragments)
-        } else {
-            fragments.into_iter().next().unwrap()
-        }
-    } else {
-        // Direct JSON source via HTTP.
-        let req = spec
-            .source
-            .request
-            .as_ref()
-            .ok_or_else(|| Error::Config("source.request is required for json".into()))?;
-        let final_url = render_with_params(&req.url, params.as_ref());
-        let resp = client
-            .get(&final_url)
-            .send()
-            .await
-            .map_err(|e| Error::Network(e.to_string()))?;
-        let text = resp
-            .text()
-            .await
-            .map_err(|e| Error::Network(e.to_string()))?;
-        serde_json::from_str(&text)
-            .map_err(|e| Error::Parse(format!("invalid json: {e}")))?
-    };
-
-    let root = json_get_path(&json_root, root_path)
-        .and_then(|v| v.as_array())
-        .ok_or_else(|| Error::Parse("json root is not an array".into()))?;
-
-    let mut entries = Vec::new();
-    for item in root {
-        let title = mapping
-            .title
-            .as_deref()
-            .and_then(|p| json_get_path(item, p))
-            .and_then(|v| v.as_str().map(|s| s.to_string()));
-        let url = mapping
-            .url
-            .as_deref()
-            .and_then(|p| json_get_path(item, p))
-            .and_then(|v| v.as_str().map(|s| s.to_string()));
-        let summary = mapping
-            .summary
-            .as_deref()
-            .and_then(|p| json_get_path(item, p))
-            .and_then(|v| v.as_str().map(|s| s.to_string()));
-        let content_html = mapping
-            .content_html
-            .as_deref()
-            .and_then(|p| json_get_path(item, p))
-            .and_then(|v| v.as_str().map(|s| s.to_string()));
-        let author = mapping
-            .author
-            .as_deref()
-            .and_then(|p| json_get_path(item, p))
-            .and_then(|v| v.as_str().map(|s| s.to_string()));
-
-        let mut enclosures = Vec::new();
-        if let Some(enc_map) = &mapping.enclosure {
-            let enc_url = enc_map
-                .url
-                .as_deref()
-                .and_then(|p| json_get_path(item, p))
-                .and_then(|v| v.as_str().map(|s| s.to_string()));
-            if let Some(enc_url) = enc_url {
-                let enc_type = enc_map
-                    .r#type
-                    .as_deref()
-                    .and_then(|p| json_get_path(item, p))
-                    .and_then(|v| v.as_str().map(|s| s.to_string()));
-                let enc_len = enc_map
-                    .length
-                    .as_deref()
-                    .and_then(|p| json_get_path(item, p))
-                    .and_then(|v| v.as_i64());
-                enclosures.push(captura_common::Enclosure {
-                    url: enc_url,
-                    r#type: enc_type,
-                    length: enc_len,
-                    kind: None,
-                });
-            }
-        }
-
-        let entry_url = url.clone();
-
-        entries.push(NormalizedEntry {
-            guid: entry_url.clone(),
-            url: entry_url,
-            title,
-            summary,
-            content_html,
-            author,
-            published_at: None,
-            enclosures,
-            extras: serde_json::json!({}),
-        });
-    }
-
-    Ok(entries)
-}
 
 /// Execute a v1 rule with `source.type = xpath`.
 ///
 /// 当前实现并未提供完整 XPath 解析器，而是针对常见模式（如
 /// `//ul/li`, `.//h2/text()`, `.//a/@href`, `.//div[@class='entry']`）
 /// 做一个轻量级的 XPath → CSS 近似转换，然后复用现有 CSS 解析逻辑。
-async fn execute_xpath_v1(
-    feed: &feed::Model,
-    spec: &RuleSpecV1,
-) -> Result<Vec<NormalizedEntry>> {
+async fn execute_xpath_v1(feed: &feed::Model, spec: &RuleSpecV1) -> Result<Vec<NormalizedEntry>> {
     let req = spec
         .source
         .request
@@ -893,9 +696,7 @@ async fn execute_xpath_v1(
                 extract_text(&el, &css)
             }
         });
-        let url = raw_url
-            .as_deref()
-            .map(|u| absolutize(&final_url, u));
+        let url = raw_url.as_deref().map(|u| absolutize(&final_url, u));
 
         // 正文 HTML 片段
         let content_html = xpath
@@ -924,37 +725,6 @@ async fn execute_xpath_v1(
     Ok(entries)
 }
 
-/// Navigate a JSON value using simple dot-notation (e.g. "items", "data.items").
-fn json_get_path<'a>(v: &'a JsonValue, path: &str) -> Option<&'a JsonValue> {
-    if path.is_empty() {
-        return Some(v);
-    }
-    let mut cur = v;
-    for part in path.split('.') {
-        match cur {
-            JsonValue::Object(map) => {
-                cur = map.get(part)?;
-            }
-            _ => return None,
-        }
-    }
-    Some(cur)
-}
-
-/// Local fetch configuration used by helper functions to avoid depending on
-/// legacy rule types.
-#[derive(Debug, Clone)]
-pub(crate) struct FetchCfg {
-    pub user_agent: Option<String>,
-    pub headers: Option<serde_json::Map<String, JsonValue>>,
-    pub smart: Option<bool>,
-    pub timeout_ms: Option<u64>,
-    pub respect_robots: Option<bool>,
-    pub delay_ms: Option<u64>,
-    pub limit: Option<usize>,
-    pub proxy_url: Option<String>,
-}
-
 pub(crate) fn extract_attr(parent: &scraper::ElementRef, expr: &str) -> Option<String> {
     if let Some((sel, attr)) = expr.split_once('@') {
         if let Ok(s) = Selector::parse(sel) {
@@ -979,10 +749,10 @@ async fn fetch_and_select_strategy(
     client: &Client,
     url: &str,
     sel: &str,
-    fetch: &FetchCfg,
+    fetch: &rules_engine::FetchCfg,
     feed: Option<&feed::Model>,
 ) -> Result<String> {
-    let html = fetch_html_strategy(client, url, fetch, feed).await?;
+    let html = rules_engine::fetch_html_strategy(client, url, fetch, feed).await?;
     let doc = Html::parse_document(&html);
     let s = Selector::parse(sel).map_err(|e| anyhow::anyhow!("invalid selector: {e}"))?;
     let mut out = String::new();
@@ -995,14 +765,14 @@ async fn fetch_and_select_strategy(
 async fn readability_like_strategy_async(
     client: &Client,
     url: Option<&str>,
-    fetch: &FetchCfg,
+    fetch: &rules_engine::FetchCfg,
     feed: Option<&feed::Model>,
 ) -> Option<String> {
     let url = match url {
         Some(u) => u,
         None => return None,
     };
-    let html = match fetch_html_strategy(client, url, fetch, feed).await {
+    let html = match rules_engine::fetch_html_strategy(client, url, fetch, feed).await {
         Ok(h) => h,
         Err(_) => return None,
     };
@@ -1020,107 +790,6 @@ async fn readability_like_strategy_async(
     crate::extractor::readability_pick_raw(&doc)
         .map(|raw| sanitize_html(&raw))
         .or_else(|| Some(sanitize_html(&html)))
-}
-
-pub(crate) async fn fetch_html_strategy(
-    _client: &Client,
-    url: &str,
-    fetch: &FetchCfg,
-    feed: Option<&feed::Model>,
-) -> Result<String> {
-    let smart_allowed = fetch.smart.unwrap_or(false)
-        && fetch.proxy_url.is_none()
-        && feed
-            .and_then(|f| {
-                if f.fetch_via_proxy {
-                    f.proxy_url.clone()
-                } else {
-                    None
-                }
-            })
-            .is_none();
-    if smart_allowed {
-        let opts = CrawlOptions {
-            user_agent: fetch.user_agent.clone(),
-            respect_robots: fetch.respect_robots.unwrap_or(true),
-            smart: true,
-            delay_ms: fetch.delay_ms.unwrap_or(250),
-            limit: fetch.limit,
-            proxy_url: None,
-        };
-        // Apply an explicit timeout to spider-based crawling to avoid
-        // long-running tasks blocking the pipeline.
-        let spider_timeout_ms: u64 = fetch
-            .timeout_ms
-            .or_else(|| {
-                feed.and_then(|f| f.request_timeout_ms.map(|ms| ms as u64))
-            })
-            .unwrap_or(15_000);
-        if let Ok(res) = tokio::time::timeout(
-            std::time::Duration::from_millis(spider_timeout_ms),
-            crawler::fetch_html(url, &opts),
-        )
-        .await
-        {
-            if let Ok(html) = res {
-                return Ok(html);
-            }
-        }
-        // fall back to HTTP path below on timeout or spider error
-    }
-    // Build client with proxy/invalid cert if needed
-    let mut builder = reqwest::Client::builder();
-    if let Some(ref ua) = fetch.user_agent {
-        builder = builder.user_agent(ua.clone());
-    }
-    if let Some(ms) = fetch.timeout_ms {
-        builder = builder.timeout(std::time::Duration::from_millis(ms));
-    }
-    if let Some(f) = feed {
-        if f.allow_invalid_certs {
-            builder = builder.danger_accept_invalid_certs(true);
-        }
-        if f.fetch_via_proxy {
-            if let Some(ref p) = f.proxy_url {
-                if !p.is_empty() {
-                    if let Ok(proxy) = reqwest::Proxy::all(p) {
-                        builder = builder.proxy(proxy);
-                    }
-                }
-            }
-        }
-    }
-    if let Some(ref p) = fetch.proxy_url {
-        if !p.is_empty() {
-            if let Ok(proxy) = reqwest::Proxy::all(p) {
-                builder = builder.proxy(proxy);
-            }
-        }
-    }
-    let http = builder.build().map_err(|e| Error::Network(e.to_string()))?;
-    let mut req = http.get(url);
-    // headers
-    if let Some(ref hdrs) = fetch.headers {
-        let mut hm = reqwest::header::HeaderMap::new();
-        for (k, v) in hdrs.iter() {
-            if let Some(s) = v.as_str() {
-                if let Ok(name) = reqwest::header::HeaderName::from_bytes(k.as_bytes()) {
-                    if let Ok(val) = reqwest::header::HeaderValue::from_str(s) {
-                        hm.insert(name, val);
-                    }
-                }
-            }
-        }
-        req = req.headers(hm);
-    }
-    let html = req
-        .send()
-        .await
-        .map_err(|e| Error::Network(e.to_string()))?
-        .text()
-        .await
-        .map_err(|e| Error::Network(e.to_string()))?;
-    Ok(html)
 }
 
 fn extract_html(parent: &scraper::ElementRef, sel: &str) -> Option<String> {

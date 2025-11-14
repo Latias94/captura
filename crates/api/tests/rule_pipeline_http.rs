@@ -261,7 +261,10 @@ source:
         .all(&db)
         .await
         .expect("query entries");
-    assert!(!entries.is_empty(), "no entries persisted for json-from-html feed");
+    assert!(
+        !entries.is_empty(),
+        "no entries persisted for json-from-html feed"
+    );
     let has_expected = entries.iter().any(|e| {
         e.title
             .as_deref()

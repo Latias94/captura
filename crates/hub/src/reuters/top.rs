@@ -24,4 +24,3 @@ pub const META_REUTERS_TOP: RouteMeta = RouteMeta {
     url: "https://www.reuters.com/world/",
     description: "Reuters top news stories.",
 };
-

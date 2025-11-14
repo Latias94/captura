@@ -12,8 +12,8 @@ use sea_orm::{
 use tracing::debug;
 
 pub mod integration;
-pub mod webhook;
 pub mod rules_sync;
+pub mod webhook;
 
 /// Refresh a feed by id and persist new entries, update feed metadata.
 /// Returns number of inserted entries.
@@ -160,9 +160,8 @@ pub async fn refresh_and_persist(db: &DatabaseConnection, f: &feed::Model) -> Re
                 new_entry_ids = gid_to_id.values().copied().collect();
 
                 if !new_enclosures.is_empty() {
-                    let mut emodels: Vec<
-                        captura_storage::entity::enclosure::ActiveModel,
-                    > = Vec::new();
+                    let mut emodels: Vec<captura_storage::entity::enclosure::ActiveModel> =
+                        Vec::new();
                     for (g, list) in new_enclosures.into_iter() {
                         if let Some(&eid) = gid_to_id.get(&g) {
                             for e in list {
@@ -180,15 +179,10 @@ pub async fn refresh_and_persist(db: &DatabaseConnection, f: &feed::Model) -> Re
                         }
                     }
                     if !emodels.is_empty() {
-                        let _ =
-                            captura_storage::entity::enclosure::Entity::insert_many(
-                                emodels,
-                            )
+                        let _ = captura_storage::entity::enclosure::Entity::insert_many(emodels)
                             .exec(&txn)
                             .await
-                            .map_err(|e| {
-                                captura_common::Error::Storage(e.to_string())
-                            })?;
+                            .map_err(|e| captura_common::Error::Storage(e.to_string()))?;
                     }
                 }
             }
@@ -219,8 +213,7 @@ pub async fn refresh_and_persist(db: &DatabaseConnection, f: &feed::Model) -> Re
                     .ok()
                     .and_then(|s| s.parse().ok())
                     .unwrap_or(900);
-                fm.next_run_at =
-                    Set(Some(now + chrono::Duration::seconds(ok_secs.max(60))));
+                fm.next_run_at = Set(Some(now + chrono::Duration::seconds(ok_secs.max(60))));
                 let _ = fm
                     .update(&txn)
                     .await
@@ -276,9 +269,7 @@ pub async fn refresh_and_persist(db: &DatabaseConnection, f: &feed::Model) -> Re
             // Fire webhooks outside the transaction; webhook failures should not
             // affect database state.
             if visible_inserted > 0 && !new_entry_ids.is_empty() {
-                let _ =
-                    crate::webhook::emit_new_entries(db, f.user_id, f, &new_entry_ids)
-                        .await;
+                let _ = crate::webhook::emit_new_entries(db, f.user_id, f, &new_entry_ids).await;
             }
             Ok(visible_inserted)
         }

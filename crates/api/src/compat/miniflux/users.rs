@@ -197,9 +197,7 @@ pub(crate) async fn me(
     State(st): State<AppState>,
     headers: axum::http::HeaderMap,
 ) -> MfResult<Json<MfUserFullDto>> {
-    let auth = mf_auth(&st, &headers)
-        .await
-        .map_err(from_api_error)?;
+    let auth = mf_auth(&st, &headers).await.map_err(from_api_error)?;
     let u = User::find_by_id(auth.user_id)
         .one(&st.db)
         .await
@@ -213,9 +211,7 @@ pub(crate) async fn list(
     State(st): State<AppState>,
     headers: axum::http::HeaderMap,
 ) -> MfResult<Json<Vec<MfUserFullDto>>> {
-    let auth = mf_auth(&st, &headers)
-        .await
-        .map_err(from_api_error)?;
+    let auth = mf_auth(&st, &headers).await.map_err(from_api_error)?;
     ensure_admin(&st, auth.user_id).await?;
     let users = User::find()
         .order_by_asc(user_entity::Column::Id)
@@ -234,9 +230,7 @@ pub(crate) async fn get(
     headers: axum::http::HeaderMap,
     Path(id_or_name): Path<String>,
 ) -> MfResult<Json<MfUserFullDto>> {
-    let auth = mf_auth(&st, &headers)
-        .await
-        .map_err(from_api_error)?;
+    let auth = mf_auth(&st, &headers).await.map_err(from_api_error)?;
     ensure_admin(&st, auth.user_id).await?;
     let by_id = id_or_name.parse::<i64>().ok();
     let user = if let Some(id) = by_id {
@@ -257,9 +251,7 @@ pub(crate) async fn create(
     headers: axum::http::HeaderMap,
     Json(body): Json<MfCreateUserReq>,
 ) -> MfResult<Json<MfUserFullDto>> {
-    let auth = mf_auth(&st, &headers)
-        .await
-        .map_err(from_api_error)?;
+    let auth = mf_auth(&st, &headers).await.map_err(from_api_error)?;
     ensure_admin(&st, auth.user_id).await?;
     if body.username.trim().is_empty() || body.password.is_empty() {
         return Err(bad_request("username/password required").into());
@@ -301,9 +293,7 @@ pub(crate) async fn update(
     Path(id): Path<i64>,
     Json(body): Json<MfUpdateUserReq>,
 ) -> MfResult<Json<MfUserFullDto>> {
-    let auth = mf_auth(&st, &headers)
-        .await
-        .map_err(from_api_error)?;
+    let auth = mf_auth(&st, &headers).await.map_err(from_api_error)?;
     ensure_admin(&st, auth.user_id).await?;
     let Some(model) = User::find_by_id(id).one(&st.db).await.map_err(internal)? else {
         return Err(not_found("user").into());
@@ -429,9 +419,7 @@ pub(crate) async fn delete(
     headers: axum::http::HeaderMap,
     Path(id): Path<i64>,
 ) -> MfResult<axum::response::Response> {
-    let auth = mf_auth(&st, &headers)
-        .await
-        .map_err(from_api_error)?;
+    let auth = mf_auth(&st, &headers).await.map_err(from_api_error)?;
     ensure_admin(&st, auth.user_id).await?;
     if id == auth.user_id {
         return Err(bad_request("cannot delete self").into());
@@ -454,9 +442,7 @@ pub(crate) async fn mark_all_read(
     headers: axum::http::HeaderMap,
     Path(id): Path<i64>,
 ) -> MfResult<&'static str> {
-    let auth = mf_auth(&st, &headers)
-        .await
-        .map_err(from_api_error)?;
+    let auth = mf_auth(&st, &headers).await.map_err(from_api_error)?;
     if auth.user_id != id {
         return Err(not_found("user").into());
     }

@@ -273,9 +273,7 @@ pub fn validate_v1(spec: &RuleSpecV1) -> Result<()> {
         }
         SourceType::Json => {
             if spec.source.root.is_none() {
-                return Err(Error::Parse(
-                    "source.root is required for type=json".into(),
-                ));
+                return Err(Error::Parse("source.root is required for type=json".into()));
             }
             if spec.source.mapping.is_none() {
                 return Err(Error::Parse(
@@ -327,9 +325,7 @@ pub fn validate_v1(spec: &RuleSpecV1) -> Result<()> {
                     }
                 }
                 Regex::new(&c.regex).map_err(|e| {
-                    Error::Parse(format!(
-                        "invalid regex in fetch_full_content_when: {e}"
-                    ))
+                    Error::Parse(format!("invalid regex in fetch_full_content_when: {e}"))
                 })?;
             }
         }

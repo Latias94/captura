@@ -24,4 +24,3 @@ pub const META_MEDIUM_TAG: RouteMeta = RouteMeta {
     url: "https://medium.com/",
     description: "Medium posts by tag.",
 };
-

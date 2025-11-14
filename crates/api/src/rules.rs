@@ -494,7 +494,9 @@ pub(crate) async fn try_rule(
 
     let mut spec = parse_rule_v1(&yaml).map_err(internal)?;
     if !matches!(spec.source.kind, SourceType::ListDetail) {
-        return Err(bad_request("try_rule currently only supports list_detail source type"));
+        return Err(bad_request(
+            "try_rule currently only supports list_detail source type",
+        ));
     }
     let list = spec
         .source

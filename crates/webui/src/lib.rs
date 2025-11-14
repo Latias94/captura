@@ -456,11 +456,7 @@ async fn ui_hub_routes(headers: HeaderMap, Query(q): Query<UiHubQuery>) -> impl 
     };
     match tpl.render() {
         Ok(s) => Html(s).into_response(),
-        Err(_) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "template error",
-        )
-            .into_response(),
+        Err(_) => (StatusCode::INTERNAL_SERVER_ERROR, "template error").into_response(),
     }
 }
 

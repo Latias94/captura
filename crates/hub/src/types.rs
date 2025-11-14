@@ -84,9 +84,7 @@ pub struct HandlerCtx<'a> {
 
 impl<'a> HandlerCtx<'a> {
     pub fn param_str(&self, key: &str) -> Option<&str> {
-        self.params
-            .get(key)
-            .and_then(|v| v.as_str())
+        self.params.get(key).and_then(|v| v.as_str())
     }
 }
 

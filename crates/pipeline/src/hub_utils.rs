@@ -4,7 +4,7 @@ use reqwest::Client;
 use scraper::{ElementRef, Html, Selector};
 use url::Url;
 
-use crate::{fetch_html_strategy, FetchCfg, sanitize_html, extract_attr, extract_text};
+use crate::{extract_attr, extract_text, fetch_html_strategy, sanitize_html, FetchCfg};
 
 /// Hub 级 HTTP 选项封装，便于在 handler 中复用。
 #[derive(Debug, Clone)]
@@ -61,8 +61,8 @@ where
     F: FnMut(ElementRef<'_>),
 {
     let doc = Html::parse_document(html);
-    let sel = Selector::parse(selector)
-        .map_err(|e| Error::Parse(format!("invalid selector: {e}")))?;
+    let sel =
+        Selector::parse(selector).map_err(|e| Error::Parse(format!("invalid selector: {e}")))?;
     for el in doc.select(&sel) {
         f(el);
     }
@@ -105,4 +105,3 @@ pub(crate) fn absolutize(base: &str, href: &str) -> String {
     }
     href.to_string()
 }
-

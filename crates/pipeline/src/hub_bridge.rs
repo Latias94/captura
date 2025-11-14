@@ -59,7 +59,11 @@ impl HubHandler for GithubTrendingHubHandler {
             allow_empty: false,
         };
 
-        debug!(hub_id = ctx.hub_id, items = data.items.len(), "github_trending hub handler");
+        debug!(
+            hub_id = ctx.hub_id,
+            items = data.items.len(),
+            "github_trending hub handler"
+        );
 
         Ok(HubResult::Data(data))
     }
@@ -85,7 +89,9 @@ impl HubHandler for HnFrontHubHandler {
             let title = crate::extract_text(&el, "span.titleline a");
             let desc_html = hub_utils::element_html_sanitized(&el);
             items.push(HubItem {
-                title: title.clone().unwrap_or_else(|| link.clone().unwrap_or_default()),
+                title: title
+                    .clone()
+                    .unwrap_or_else(|| link.clone().unwrap_or_default()),
                 description: Some(desc_html),
                 link,
                 author: None,
@@ -104,7 +110,11 @@ impl HubHandler for HnFrontHubHandler {
             allow_empty: false,
         };
 
-        debug!(hub_id = ctx.hub_id, items = data.items.len(), "hn_front hub handler");
+        debug!(
+            hub_id = ctx.hub_id,
+            items = data.items.len(),
+            "hn_front hub handler"
+        );
 
         Ok(HubResult::Data(data))
     }
@@ -149,7 +159,11 @@ impl HubHandler for LobstersFrontHubHandler {
             allow_empty: false,
         };
 
-        debug!(hub_id = ctx.hub_id, items = data.items.len(), "lobsters_front hub handler");
+        debug!(
+            hub_id = ctx.hub_id,
+            items = data.items.len(),
+            "lobsters_front hub handler"
+        );
 
         Ok(HubResult::Data(data))
     }
@@ -196,7 +210,11 @@ impl HubHandler for ZhihuHotlistHubHandler {
             allow_empty: false,
         };
 
-        debug!(hub_id = ctx.hub_id, items = data.items.len(), "zhihu_hotlist hub handler");
+        debug!(
+            hub_id = ctx.hub_id,
+            items = data.items.len(),
+            "zhihu_hotlist hub handler"
+        );
 
         Ok(HubResult::Data(data))
     }
@@ -217,10 +235,9 @@ impl HubHandler for ReutersTopHubHandler {
         let html = hub_utils::get_html(&url, &opts, None).await?;
 
         hub_utils::for_each_element(&html, "article.story-card, article.story", |el| {
-            let link = crate::extract_attr(&el, "a@href")
-                .map(|href| hub_utils::absolutize(&url, &href));
-            let title = crate::extract_text(&el, "h3")
-                .or_else(|| crate::extract_text(&el, "h2"));
+            let link =
+                crate::extract_attr(&el, "a@href").map(|href| hub_utils::absolutize(&url, &href));
+            let title = crate::extract_text(&el, "h3").or_else(|| crate::extract_text(&el, "h2"));
             let desc_html = hub_utils::element_html_sanitized(&el);
             items.push(HubItem {
                 title: title.unwrap_or_else(|| link.clone().unwrap_or_default()),
@@ -242,7 +259,11 @@ impl HubHandler for ReutersTopHubHandler {
             allow_empty: false,
         };
 
-        debug!(hub_id = ctx.hub_id, items = data.items.len(), "reuters_top hub handler");
+        debug!(
+            hub_id = ctx.hub_id,
+            items = data.items.len(),
+            "reuters_top hub handler"
+        );
 
         Ok(HubResult::Data(data))
     }
@@ -267,8 +288,7 @@ impl HubHandler for MediumTagHubHandler {
             let link = crate::extract_attr(&el, "a.ds-link@href")
                 .or_else(|| crate::extract_attr(&el, "a.link--primary@href"))
                 .map(|href| hub_utils::absolutize(&url, &href));
-            let title = crate::extract_text(&el, "h3")
-                .or_else(|| crate::extract_text(&el, "h2"));
+            let title = crate::extract_text(&el, "h3").or_else(|| crate::extract_text(&el, "h2"));
             let desc_html = hub_utils::element_html_sanitized(&el);
             items.push(HubItem {
                 title: title.unwrap_or_else(|| link.clone().unwrap_or_default()),
@@ -290,7 +310,11 @@ impl HubHandler for MediumTagHubHandler {
             allow_empty: false,
         };
 
-        debug!(hub_id = ctx.hub_id, items = data.items.len(), "medium_tag hub handler");
+        debug!(
+            hub_id = ctx.hub_id,
+            items = data.items.len(),
+            "medium_tag hub handler"
+        );
 
         Ok(HubResult::Data(data))
     }
