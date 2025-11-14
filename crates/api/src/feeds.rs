@@ -299,15 +299,7 @@ pub(crate) async fn create_feed(
             .split_once('?')
             .map(|(p, q)| (p.to_string(), q.to_string()))
             .unwrap_or((rest.to_string(), String::new()));
-        let rid = match path.as_str() {
-            "github/trending" => Some("captura.route.github.trending".to_string()),
-            "hn/front" => Some("captura.route.hn.front".to_string()),
-            "lobsters/front" => Some("captura.route.lobsters.front".to_string()),
-            "zhihu/hotlist" => Some("captura.route.zhihu.hotlist".to_string()),
-            "reuters/top" => Some("captura.route.reuters.top".to_string()),
-            "medium/tag" => Some("captura.route.medium.tag".to_string()),
-            _ => None,
-        };
+        let rid = crate::hub::map_hub_route_to_rule_id(&path);
         let mut map = serde_json::Map::new();
         if !params.is_empty() {
             for pair in params.split('&') {

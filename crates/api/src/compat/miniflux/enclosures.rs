@@ -1,6 +1,6 @@
-use super::error::MfResult;
+use super::error::{from_api_error, internal, MfResult};
 use crate::auth::mf_auth;
-use crate::error::{internal, not_found};
+use crate::error::not_found;
 use crate::AppState;
 use axum::extract::{Path, State};
 use axum::response::IntoResponse;
@@ -32,7 +32,7 @@ pub(crate) async fn get(
     headers: axum::http::HeaderMap,
     Path(id): Path<i64>,
 ) -> MfResult<Json<MfEnclosureDtoFull>> {
-    let auth = mf_auth(&st, &headers).await?;
+    let auth = mf_auth(&st, &headers).await.map_err(from_api_error)?;
     let Some(en) = Enclosure::find_by_id(id)
         .one(&st.db)
         .await
@@ -73,7 +73,7 @@ pub(crate) async fn update(
     Path(id): Path<i64>,
     Json(body): Json<MfEnclosureUpdate>,
 ) -> MfResult<axum::response::Response> {
-    let auth = mf_auth(&st, &headers).await?;
+    let auth = mf_auth(&st, &headers).await.map_err(from_api_error)?;
     let Some(en) = Enclosure::find_by_id(id)
         .one(&st.db)
         .await

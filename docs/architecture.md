@@ -6,7 +6,8 @@ This document describes the initial architecture and workspace layout for Captur
 
 - Self-hosted RSS service combining: feed aggregation (Miniflux/FreshRSS-like),
   advanced scraping (RSSHub-like), and flexible outputs/APIs.
-- Extensible rule directory powered by a simple DSL for community contributions.
+- Extensible route layer powered by Rust-defined Hub routes (RSSHub-style) and
+  a reusable scraping model (DSL concepts) for community contributions.
 - Modular components, easy to evolve and to scale.
 
 ## Design Principles
@@ -29,18 +30,23 @@ This document describes the initial architecture and workspace layout for Captur
     - Google Reader：`/reader/api/0/*`
 - `crates/fetcher`: standard feed fetching (HTTP + ETag/IMS) and parsing.
 - `crates/crawler`: spider-based adapter for dynamic pages and anti-bot bypass.
-- `crates/rules`: Rules DSL v1 schema, validator/linter.
+- `crates/rules`: Rules DSL v1 schema and validator/linter (conceptual model +
+  legacy YAML support).
 - `crates/scheduler`: job scheduler and background workers.
 - `crates/pipeline`: Orchestrates `fetcher`/`crawler`/`rules` into normalized entries.
-- `rules/`: rule directory (YAML) for community.
+- `crates/hub`: Hub route definitions and metadata (RSSHub-style routes).
+- `rules/`: legacy/example DSL rule files (YAML); new official routes live in
+  `crates/hub`.
 - `docs/`: documentation.
 
 ## High-Level Architecture
 
-1. Scheduler enqueues jobs for feeds and rule-based sources with host-level budgets.
+1. Scheduler enqueues jobs for feeds and route-based sources with host-level budgets.
 2. Workers resolve source type:
    - Feed: `fetcher` uses reqwest + feed-rs, leveraging ETag/Last-Modified.
-   - Rule: `rules` executes DSL → fetch HTML (basic HTTP) or `crawler` (spider) when needed.
+   - Hub route / rule: the rules engine executes a Hub route handler or a DSL
+     v1 executor, which in turn fetches HTML/JSON (basic HTTP) or uses
+     `crawler` (spider) when needed.
 3. Pipeline applies transformations: URL cleaning, rewrite, sanitization, content extraction.
 4. Storage persists feeds, entries, rules, jobs via SeaORM. API serves clients.
 
@@ -58,37 +64,42 @@ Initial tables (to be refined):
 
 SeaORM provides entity-first or migration workflows. During early development we can use entity-first, then solidify migrations for releases.
 
-## Rules: DSL v1 + Handlers
+## Hub Routes and Rules Model
 
-Captura 的内容抓取层分为两级：
+Captura 的内容抓取层正在向“Hub routes + 规则模型”收敛，以更好对齐
+RSSHub 的路由处理方式，同时保留一个可复用的抓取 DSL 概念。
 
-- 声明层：Rules DSL v1（YAML），描述“数据源长什么样、如何提取列表与正文”。
-- 执行层：Rust handlers（包括通用的 DSL 执行器和少量专用 handler）。
+- 顶层路由层：使用 Rust 定义的 Hub routes（见 `crates/hub`），每条路由包含：
+  - 静态元信息 `RouteMeta`：`hub_id/path/categories/example/parameters/features/radar/name/maintainers/url/description`。
+  - 一个实现 `HubHandler` 的异步 handler，用于执行抓取逻辑，返回 `HubData`
+   （类似 RSSHub 的 `Data`）。
+- 抓取模型层：Rules DSL v1 概念（见 `docs/rules-dsl.md`），描述：
+  - HTML list/detail、single-page、JSON API、XPath 抽取、filters/transform 等。
+  - 这些概念在代码中通过 Rust 结构和 helper 函数体现，既可以在 Hub handler 内复用，也可以用作 legacy DSL 路径的执行器。
 
-详细 DSL 规范见 `docs/rules-dsl.md`。这里只概括运行时形态。
+### Rule / Route 类型
 
-### Rule 类型
+当前处于过渡阶段，规则/路由有两种来源：
 
-每条规则由一个逻辑记录表示（存于 DB 的 `rule` 表中，并可从 `rules/` 目录导入），核心字段：
+- **Hub routes（推荐）**：
+  - 源码中定义在 `crates/hub`，通过 `RouteMeta + HubHandler` 组合注册（后续使用宏简化）。
+  - 官方/社区规则建议以 Hub route 形式贡献，类似 RSSHub 的
+    `lib/routes/*/*.ts`。
+  - Hub handler 通过 `HubData` 暴露完整 feed 级与条目级信息。
 
-- `rule.rule_id`：逻辑 ID，例如 `captura.route.github.trending`。
-- `rule.version`：目前固定为 `1`（Rules DSL v1）。
-- `rule.yaml`：DSL v1 文本（YAML）。
-- 运行时元数据（namespace、maintainer、examples 等）。
+- **DB 规则（legacy / UI 自定义）**：
+  - 逻辑记录存于 DB 的 `rule` 表，用于：
+    - 早期的 DSL v1 YAML 规则，
+    - Web UI/API 创建的用户自定义规则。
+  - 核心字段：
+    - `rule.rule_id`：逻辑 ID，例如 `captura.route.github.trending`。
+    - `rule.version`：模板版本（与 DSL 版本无关）。
+    - `rule.yaml`：当前仍是 DSL v1 文本（YAML），由
+      `captura_rules::v1::RuleSpecV1` 解释。
+    - 运行时元数据（namespace、maintainer、examples 等）。
+  - 这些规则通过通用 DSL v1 执行器在 pipeline 中运行，主要用于兼容和用户实验场景。
 
-在运行时，我们抽象为三类 handler：
-
-- **DSL v1 handler（默认）**：
-  - 解析 `rule.yaml` 为 `RuleSpecV1`（见 `docs/rules-dsl.md`）。
-  - 由通用执行器解释 `source.type=list_detail|single_page|json|xpath`，使用现有 `fetcher` / `crawler` / `pipeline::extractor`。
-- **内置 Rust handler（custom）**：
-  - 针对极端复杂站点（例如需要登录/session、多步流程、复杂 DOM 改写）编写专用 Rust 代码。
-  - 与规则通过逻辑 ID 绑定：如 `captura.handlers.javdb_home`。
-- **外部 HTTP handler（预留）**：
-  - 未来可以允许部分规则委托给本机外部 HTTP 服务（例如用户私有爬虫），由 Captura 按约定的 JSON 协议调用。
-  - 目前仅在设计上预留，不实现。
-
-后续可以在单独文档中定义 handler 运行时协议和扩展点。
+Hub routes 和 DB 规则将逐步融合：官方/社区贡献使用 Hub route 模式，DB 规则则作为用户配置入口，并在必要时映射到相同的 Hub route/抓取模型之上。
 
 ## Crawler (spider)
 

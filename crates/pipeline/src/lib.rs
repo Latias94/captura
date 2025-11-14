@@ -4,7 +4,7 @@
 use captura_common::{Error, NormalizedEntry, Result};
 use captura_crawler::{self as crawler, CrawlOptions};
 use captura_fetcher::{FetchOptions, HttpFetcher};
-use captura_rules::v1::{RuleSpecV1, SourceType, ContentMode};
+use captura_rules::v1::{RuleSpecV1, SourceType, ContentMode, ContentMergeMode};
 use captura_storage::entity::feed;
 use regex::Regex;
 use reqwest::header::HeaderMap;
@@ -13,6 +13,10 @@ use scraper::{Html, Selector};
 use serde_json::Value as JsonValue;
 use tracing::{debug, instrument};
 use url::Url;
+
+mod handlers;
+mod hub_bridge;
+mod hub_utils;
 
 #[derive(Debug, Clone)]
 pub struct RefreshMeta {
@@ -157,7 +161,7 @@ async fn refresh_standard_feed_with_meta(
     }
 }
 
-fn sanitize_html(input: &str) -> String {
+pub(crate) fn sanitize_html(input: &str) -> String {
     let mut builder = ammonia::Builder::default();
     // 允许常用媒体/链接标签
     builder.add_tags([
@@ -334,14 +338,31 @@ pub async fn refresh_rule_v1(
     feed: &feed::Model,
     spec: &RuleSpecV1,
 ) -> Result<Vec<NormalizedEntry>> {
-    match spec.source.kind {
+    // 1) 优先尝试 Rust handler（对标 RSSHub 路由的代码级抓取能力）。
+    if let Some(res) = handlers::execute_rust_handler_if_any(feed, spec).await {
+        let mut entries = res?;
+        // handler 负责构造完整 entries，这里仅统一应用 feed 级过滤规则。
+        apply_entry_filters(feed, &mut entries);
+        return Ok(entries);
+    }
+
+    // 2) 回退到 DSL v1 执行路径。
+    let mut entries = match spec.source.kind {
         SourceType::ListDetail => execute_list_detail_v1(feed, spec).await,
         SourceType::SinglePage => execute_single_page_v1(feed, spec).await,
         SourceType::Json => execute_json_v1(feed, spec).await,
-        SourceType::XPath => Err(Error::Config(
-            "source type=xpath not yet supported for v1 executor".into(),
-        )),
-    }
+        SourceType::XPath => execute_xpath_v1(feed, spec).await,
+    }?;
+
+    // 先应用 DSL v1 规则级过滤（entry_include / entry_exclude）。
+    apply_rule_filters_v1(spec, &mut entries);
+    // 根据 DSL v1 filters.fetch_full_content_when + transform.content_merge
+    // 条件性地抓取全文并合并。
+    apply_full_content_when_v1(feed, spec, &mut entries).await?;
+    // 最后应用 feed 级过滤（兼容 Miniflux keep/block 语义）。
+    apply_entry_filters(feed, &mut entries);
+
+    Ok(entries)
 }
 
 
@@ -349,7 +370,7 @@ pub async fn refresh_rule_v1(
 ///
 /// - Defaults come from `spec.params.defaults`.
 /// - Feed params override defaults when keys collide.
-fn merge_rule_params_v1(
+pub(crate) fn merge_rule_params_v1(
     spec: &RuleSpecV1,
     feed_params: Option<&JsonValue>,
 ) -> Option<JsonValue> {
@@ -457,7 +478,7 @@ async fn execute_list_detail_v1(
         let url = link.as_deref().map(|u| absolutize(&final_list_url, u));
 
         // Content extraction strategy.
-        let mut content_html: Option<String> = match content.mode {
+        let content_html: Option<String> = match content.mode {
             ContentMode::Readability => {
                 readability_like_strategy_async(&client, url.as_deref(), &fetch_cfg, Some(feed))
                     .await
@@ -495,7 +516,6 @@ async fn execute_list_detail_v1(
         });
     }
 
-    apply_entry_filters(feed, &mut entries);
     Ok(entries)
 }
 
@@ -598,17 +618,15 @@ async fn execute_single_page_v1(
 
 /// Execute a v1 rule with `source.type = json` (basic support).
 ///
-/// This implementation supports direct JSON responses via `source.request`.
-/// `from_html` and advanced timestamp/enclosure mapping can be added later.
+/// This implementation supports:
+/// - direct JSON responses via `source.request`, or
+/// - JSON embedded in HTML via `source.from_html`.
+///
+/// Advanced timestamp and enclosure mapping can be extended later.
 async fn execute_json_v1(
     feed: &feed::Model,
     spec: &RuleSpecV1,
 ) -> Result<Vec<NormalizedEntry>> {
-    let req = spec
-        .source
-        .request
-        .as_ref()
-        .ok_or_else(|| Error::Config("source.request is required for json".into()))?;
     let root_path = spec
         .source
         .root
@@ -619,11 +637,6 @@ async fn execute_json_v1(
         .mapping
         .as_ref()
         .ok_or_else(|| Error::Config("source.mapping is required for json".into()))?;
-    if spec.source.from_html.is_some() {
-        return Err(Error::Config(
-            "source.from_html for json is not yet supported in v1 executor".into(),
-        ));
-    }
 
     let ua = spec
         .fetch
@@ -638,21 +651,91 @@ async fn execute_json_v1(
         .map_err(|e| Error::Network(e.to_string()))?;
 
     let params = merge_rule_params_v1(spec, feed.rule_params_json.as_ref());
-    let final_url = render_with_params(&req.url, params.as_ref());
 
-    let resp = client
-        .get(&final_url)
-        .send()
-        .await
-        .map_err(|e| Error::Network(e.to_string()))?;
-    let text = resp
-        .text()
-        .await
-        .map_err(|e| Error::Network(e.to_string()))?;
-    let json: JsonValue =
-        serde_json::from_str(&text).map_err(|e| Error::Parse(format!("invalid json: {e}")))?;
+    // Determine upstream JSON root depending on source/from_html.
+    let json_root: JsonValue = if let Some(from_html) = &spec.source.from_html {
+        // HTML → JSON fragments via CSS selector.
+        let html_req = if let Some(req) = from_html.request.as_ref() {
+            req
+        } else if let Some(req) = spec.source.request.as_ref() {
+            req
+        } else {
+            return Err(Error::Config(
+                "either source.request or from_html.request is required when using from_html"
+                    .into(),
+            ));
+        };
 
-    let root = json_get_path(&json, root_path)
+        // Reuse fetch_html_strategy so smart/proxy/timeout are applied consistently.
+        let fetch_cfg = FetchCfg {
+            user_agent: spec
+                .fetch
+                .user_agent
+                .clone()
+                .or_else(|| feed.user_agent.clone()),
+            headers: None,
+            smart: spec.fetch.smart,
+            timeout_ms: spec
+                .fetch
+                .timeout_ms
+                .or(html_req.timeout_ms),
+            respect_robots: spec.fetch.respect_robots,
+            delay_ms: None,
+            limit: None,
+            proxy_url: None,
+        };
+        let final_html_url = render_with_params(&html_req.url, params.as_ref());
+        let html =
+            fetch_html_strategy(&client, &final_html_url, &fetch_cfg, Some(feed)).await?;
+
+        let doc = Html::parse_document(&html);
+        let sel = Selector::parse(&from_html.selector)
+            .map_err(|e| Error::Parse(format!("invalid from_html selector: {e}")))?;
+        let mut fragments: Vec<JsonValue> = Vec::new();
+        for el in doc.select(&sel) {
+            let text = el.text().collect::<Vec<_>>().join("").trim().to_string();
+            if text.is_empty() {
+                continue;
+            }
+            if let Ok(v) = serde_json::from_str::<JsonValue>(&text) {
+                fragments.push(v);
+                if !from_html.multiple.unwrap_or(false) {
+                    break;
+                }
+            }
+        }
+        if fragments.is_empty() {
+            return Err(Error::Parse(
+                "no JSON fragments extracted from HTML".into(),
+            ));
+        }
+        if from_html.multiple.unwrap_or(false) {
+            JsonValue::Array(fragments)
+        } else {
+            fragments.into_iter().next().unwrap()
+        }
+    } else {
+        // Direct JSON source via HTTP.
+        let req = spec
+            .source
+            .request
+            .as_ref()
+            .ok_or_else(|| Error::Config("source.request is required for json".into()))?;
+        let final_url = render_with_params(&req.url, params.as_ref());
+        let resp = client
+            .get(&final_url)
+            .send()
+            .await
+            .map_err(|e| Error::Network(e.to_string()))?;
+        let text = resp
+            .text()
+            .await
+            .map_err(|e| Error::Network(e.to_string()))?;
+        serde_json::from_str(&text)
+            .map_err(|e| Error::Parse(format!("invalid json: {e}")))?
+    };
+
+    let root = json_get_path(&json_root, root_path)
         .and_then(|v| v.as_array())
         .ok_or_else(|| Error::Parse("json root is not an array".into()))?;
 
@@ -726,7 +809,118 @@ async fn execute_json_v1(
         });
     }
 
-    apply_entry_filters(feed, &mut entries);
+    Ok(entries)
+}
+
+/// Execute a v1 rule with `source.type = xpath`.
+///
+/// 当前实现并未提供完整 XPath 解析器，而是针对常见模式（如
+/// `//ul/li`, `.//h2/text()`, `.//a/@href`, `.//div[@class='entry']`）
+/// 做一个轻量级的 XPath → CSS 近似转换，然后复用现有 CSS 解析逻辑。
+async fn execute_xpath_v1(
+    feed: &feed::Model,
+    spec: &RuleSpecV1,
+) -> Result<Vec<NormalizedEntry>> {
+    let req = spec
+        .source
+        .request
+        .as_ref()
+        .ok_or_else(|| Error::Config("source.request is required for xpath".into()))?;
+    let xpath = spec
+        .source
+        .xpath
+        .as_ref()
+        .ok_or_else(|| Error::Config("source.xpath is required for xpath".into()))?;
+
+    let ua = spec
+        .fetch
+        .user_agent
+        .clone()
+        .or_else(|| feed.user_agent.clone())
+        .unwrap_or_else(|| "captura/0.1".to_string());
+
+    let client = Client::builder()
+        .user_agent(ua)
+        .build()
+        .map_err(|e| Error::Network(e.to_string()))?;
+
+    let fetch_cfg = FetchCfg {
+        user_agent: Some(
+            spec.fetch
+                .user_agent
+                .clone()
+                .or_else(|| feed.user_agent.clone())
+                .unwrap_or_else(|| "captura/0.1".to_string()),
+        ),
+        headers: req.headers.clone(),
+        smart: spec.fetch.smart.or(req.smart),
+        timeout_ms: spec.fetch.timeout_ms.or(req.timeout_ms),
+        respect_robots: spec.fetch.respect_robots.or(req.respect_robots),
+        delay_ms: None,
+        limit: None,
+        proxy_url: None,
+    };
+
+    let params = merge_rule_params_v1(spec, feed.rule_params_json.as_ref());
+    let final_url = render_with_params(&req.url, params.as_ref());
+
+    let html = fetch_html_strategy(&client, &final_url, &fetch_cfg, Some(feed)).await?;
+    let doc = Html::parse_document(&html);
+
+    // 选择 item 集合。
+    let item_sel_str = xpath_to_css_like(&xpath.item);
+    let item_sel = Selector::parse(&item_sel_str)
+        .map_err(|e| Error::Parse(format!("invalid xpath.item selector '{item_sel_str}': {e}")))?;
+
+    let mut entries = Vec::new();
+    for el in doc.select(&item_sel) {
+        // 标题
+        let title = xpath.title.as_deref().and_then(|expr| {
+            let css = xpath_to_css_like(expr);
+            if css.contains('@') {
+                extract_attr(&el, &css)
+            } else {
+                extract_text(&el, &css)
+            }
+        });
+
+        // 链接 URL
+        let raw_url = xpath.url.as_deref().and_then(|expr| {
+            let css = xpath_to_css_like(expr);
+            if css.contains('@') {
+                extract_attr(&el, &css)
+            } else {
+                extract_text(&el, &css)
+            }
+        });
+        let url = raw_url
+            .as_deref()
+            .map(|u| absolutize(&final_url, u));
+
+        // 正文 HTML 片段
+        let content_html = xpath
+            .content_html
+            .as_deref()
+            .and_then(|expr| {
+                let css = xpath_to_css_like(expr);
+                extract_html(&el, &css)
+            })
+            .map(|html| sanitize_html(&html));
+
+        entries.push(NormalizedEntry {
+            guid: url.clone(),
+            url,
+            title,
+            summary: None,
+            content_html,
+            author: None,
+            // TODO: 支持 xpath.published_at.expr / format
+            published_at: None,
+            enclosures: vec![],
+            extras: serde_json::json!({}),
+        });
+    }
+
     Ok(entries)
 }
 
@@ -750,7 +944,7 @@ fn json_get_path<'a>(v: &'a JsonValue, path: &str) -> Option<&'a JsonValue> {
 /// Local fetch configuration used by helper functions to avoid depending on
 /// legacy rule types.
 #[derive(Debug, Clone)]
-struct FetchCfg {
+pub(crate) struct FetchCfg {
     pub user_agent: Option<String>,
     pub headers: Option<serde_json::Map<String, JsonValue>>,
     pub smart: Option<bool>,
@@ -761,7 +955,7 @@ struct FetchCfg {
     pub proxy_url: Option<String>,
 }
 
-fn extract_attr(parent: &scraper::ElementRef, expr: &str) -> Option<String> {
+pub(crate) fn extract_attr(parent: &scraper::ElementRef, expr: &str) -> Option<String> {
     if let Some((sel, attr)) = expr.split_once('@') {
         if let Ok(s) = Selector::parse(sel) {
             if let Some(el) = parent.select(&s).next() {
@@ -772,7 +966,7 @@ fn extract_attr(parent: &scraper::ElementRef, expr: &str) -> Option<String> {
     None
 }
 
-fn extract_text(parent: &scraper::ElementRef, sel: &str) -> Option<String> {
+pub(crate) fn extract_text(parent: &scraper::ElementRef, sel: &str) -> Option<String> {
     if let Ok(s) = Selector::parse(sel) {
         if let Some(el) = parent.select(&s).next() {
             return Some(el.text().collect::<Vec<_>>().join("").trim().to_string());
@@ -812,13 +1006,23 @@ async fn readability_like_strategy_async(
         Ok(h) => h,
         Err(_) => return None,
     };
+    // 先尝试 dom_smoothie，可读性失败时记录日志并回退到简单 heuristics。
+    if let Some(article) = crate::extractor::extract_with_dom_smoothie(&html, Some(url)) {
+        return Some(sanitize_html(&article.content));
+    } else {
+        debug!(
+            url = url,
+            "dom_smoothie readability failed in rule pipeline, falling back to simple heuristics"
+        );
+    }
+
     let doc = Html::parse_document(&html);
     crate::extractor::readability_pick_raw(&doc)
         .map(|raw| sanitize_html(&raw))
         .or_else(|| Some(sanitize_html(&html)))
 }
 
-async fn fetch_html_strategy(
+pub(crate) async fn fetch_html_strategy(
     _client: &Client,
     url: &str,
     fetch: &FetchCfg,
@@ -917,6 +1121,283 @@ async fn fetch_html_strategy(
         .await
         .map_err(|e| Error::Network(e.to_string()))?;
     Ok(html)
+}
+
+fn extract_html(parent: &scraper::ElementRef, sel: &str) -> Option<String> {
+    if let Ok(s) = Selector::parse(sel) {
+        let mut out = String::new();
+        for el in parent.select(&s) {
+            out.push_str(&el.html());
+        }
+        if out.is_empty() {
+            None
+        } else {
+            Some(out)
+        }
+    } else {
+        None
+    }
+}
+
+/// 轻量级 XPath → CSS 近似转换，只覆盖 DSL 文档中典型示例。
+fn xpath_to_css_like(expr: &str) -> String {
+    let mut s = expr.trim();
+
+    // 去掉前缀 //、.//、./
+    if let Some(rest) = s.strip_prefix("//") {
+        s = rest;
+    } else if let Some(rest) = s.strip_prefix(".//") {
+        s = rest;
+    } else if let Some(rest) = s.strip_prefix("./") {
+        s = rest;
+    }
+
+    // attr 访问，例如 "a/@href"
+    if let Some(idx) = s.rfind("/@") {
+        let (node_path, attr) = s.split_at(idx);
+        let attr = &attr[2..];
+        let tag = node_path
+            .rsplit('/')
+            .find(|seg| !seg.is_empty())
+            .unwrap_or(node_path)
+            .trim();
+        if tag.is_empty() {
+            return format!("@{}", attr);
+        }
+        return format!("{}@{}", simple_xpath_node_to_css(tag), attr);
+    }
+
+    // text() 访问，例如 "h2/text()"
+    if let Some(idx) = s.rfind("/text()") {
+        let node_path = &s[..idx];
+        let tag = node_path
+            .rsplit('/')
+            .find(|seg| !seg.is_empty())
+            .unwrap_or(node_path)
+            .trim();
+        if tag.is_empty() {
+            return "*".to_string();
+        }
+        return simple_xpath_node_to_css(tag);
+    } else if s == "text()" {
+        return "*".to_string();
+    }
+
+    // 节点过滤，例如 "div[@class='entry-content']"
+    if let Some(start) = s.find('[') {
+        if let Some(end) = s.rfind(']') {
+            let base = s[..start].trim();
+            let cond = &s[start + 1..end];
+            if let Some(rest) = cond.trim().strip_prefix('@') {
+                if let Some((attr, val_raw)) = rest.split_once('=') {
+                    let attr = attr.trim();
+                    let val = val_raw.trim().trim_matches('\'').trim_matches('"');
+                    if attr.eq_ignore_ascii_case("class") {
+                        let mut css = base.to_string();
+                        for cls in val.split_whitespace() {
+                            if !cls.is_empty() {
+                                css.push('.');
+                                css.push_str(cls);
+                            }
+                        }
+                        return css;
+                    } else if attr.eq_ignore_ascii_case("id") {
+                        let mut css = base.to_string();
+                        css.push('#');
+                        css.push_str(val);
+                        return css;
+                    } else {
+                        return format!(r#"{}[{}="{}"]"#, base, attr, val);
+                    }
+                }
+            }
+        }
+    }
+
+    // 路径分段，例如 "ul/li" → "ul li"
+    if s.contains('/') {
+        let parts: Vec<&str> = s.split('/').filter(|seg| !seg.is_empty()).collect();
+        if !parts.is_empty() {
+            return parts.join(" ");
+        }
+    }
+
+    simple_xpath_node_to_css(s)
+}
+
+fn simple_xpath_node_to_css(node: &str) -> String {
+    node.trim().to_string()
+}
+
+/// 规则级 DSL v1 过滤：entry_include / entry_exclude。
+fn apply_rule_filters_v1(spec: &RuleSpecV1, entries: &mut Vec<NormalizedEntry>) {
+    let Some(filters) = &spec.filters else {
+        return;
+    };
+    let mut keep_regexes: Vec<Regex> = Vec::new();
+    let mut block_regexes: Vec<Regex> = Vec::new();
+
+    if let Some(list) = &filters.entry_include {
+        for line in list {
+            if line.trim().is_empty() {
+                continue;
+            }
+            if let Ok(rx) = Regex::new(line) {
+                keep_regexes.push(rx);
+            }
+        }
+    }
+    if let Some(list) = &filters.entry_exclude {
+        for line in list {
+            if line.trim().is_empty() {
+                continue;
+            }
+            if let Ok(rx) = Regex::new(line) {
+                block_regexes.push(rx);
+            }
+        }
+    }
+
+    if keep_regexes.is_empty() && block_regexes.is_empty() {
+        return;
+    }
+
+    entries.retain(|e| {
+        let mut hay = String::new();
+        if let Some(t) = &e.title {
+            hay.push_str(t);
+            hay.push('\n');
+        }
+        if let Some(s) = &e.summary {
+            hay.push_str(s);
+            hay.push('\n');
+        }
+        if let Some(c) = &e.content_html {
+            hay.push_str(c);
+        }
+
+        if !keep_regexes.is_empty() && !keep_regexes.iter().any(|rx| rx.is_match(&hay)) {
+            return false;
+        }
+
+        if block_regexes.iter().any(|rx| rx.is_match(&hay)) {
+            return false;
+        }
+
+        true
+    });
+}
+
+enum FullContentField {
+    Title,
+    Summary,
+    ContentHtml,
+}
+
+struct FullContentMatcher {
+    field: FullContentField,
+    regex: Regex,
+}
+
+/// 根据 DSL v1 filters.fetch_full_content_when + transform.content_merge
+/// 条件性地对条目进行全文抓取和内容合并。
+async fn apply_full_content_when_v1(
+    feed: &feed::Model,
+    spec: &RuleSpecV1,
+    entries: &mut Vec<NormalizedEntry>,
+) -> Result<()> {
+    let Some(filters) = &spec.filters else {
+        return Ok(());
+    };
+    let Some(conds) = &filters.fetch_full_content_when else {
+        return Ok(());
+    };
+    if conds.is_empty() {
+        return Ok(());
+    }
+
+    let mut matchers: Vec<FullContentMatcher> = Vec::new();
+    for c in conds {
+        let field = match c.field.as_str() {
+            "title" => FullContentField::Title,
+            "summary" => FullContentField::Summary,
+            "content_html" => FullContentField::ContentHtml,
+            _ => continue,
+        };
+        if let Ok(rx) = Regex::new(&c.regex) {
+            matchers.push(FullContentMatcher { field, regex: rx });
+        }
+    }
+    if matchers.is_empty() {
+        return Ok(());
+    }
+
+    // content_merge.mode 缺省为 replace。
+    let merge_mode = spec
+        .transform
+        .as_ref()
+        .and_then(|t| t.content_merge.as_ref())
+        .and_then(|m| m.mode.as_ref())
+        .cloned()
+        .unwrap_or(ContentMergeMode::Replace);
+
+    for entry in entries.iter_mut() {
+        let url = match &entry.url {
+            Some(u) if !u.is_empty() => u.clone(),
+            _ => continue,
+        };
+
+        let mut should_fetch = false;
+        for m in &matchers {
+            let val = match m.field {
+                FullContentField::Title => entry.title.as_deref().unwrap_or(""),
+                FullContentField::Summary => entry.summary.as_deref().unwrap_or(""),
+                FullContentField::ContentHtml => entry.content_html.as_deref().unwrap_or(""),
+            };
+            if m.regex.is_match(val) {
+                should_fetch = true;
+                break;
+            }
+        }
+        if !should_fetch {
+            continue;
+        }
+
+        match crate::extractor::fetch_and_extract_entry(&url, feed).await {
+            Ok(extracted) => {
+                let new_html = sanitize_html(&extracted.content_html);
+                let merged = match merge_mode {
+                    ContentMergeMode::Replace => new_html,
+                    ContentMergeMode::Prepend => {
+                        let mut buf = new_html;
+                        if let Some(old) = &entry.content_html {
+                            buf.push_str(old);
+                        }
+                        buf
+                    }
+                    ContentMergeMode::Append => {
+                        let mut buf = entry.content_html.clone().unwrap_or_default();
+                        buf.push_str(&new_html);
+                        buf
+                    }
+                };
+                entry.content_html = Some(merged);
+                if entry.title.is_none() && extracted.title.is_some() {
+                    entry.title = extracted.title;
+                }
+            }
+            Err(e) => {
+                debug!(
+                    %url,
+                    error = %e,
+                    "fetch_full_content_when: failed to fetch or extract full content"
+                );
+                continue;
+            }
+        }
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -1131,7 +1612,7 @@ mod live_tests {
         assert!(!entries.is_empty(), "theverge should return entries");
     }
 }
-fn render_with_params(input: &str, params: Option<&serde_json::Value>) -> String {
+pub(crate) fn render_with_params(input: &str, params: Option<&serde_json::Value>) -> String {
     let mut s = input.to_string();
     let Some(serde_json::Value::Object(map)) = params else {
         return s;

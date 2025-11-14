@@ -1,7 +1,7 @@
-use super::error::MfResult;
+use super::error::{from_api_error, internal, MfResult};
 use super::types::{map_feed, MfFeedDto};
 use crate::auth::mf_auth;
-use crate::error::{bad_request, internal, not_found};
+use crate::error::{bad_request, not_found};
 use crate::AppState;
 use axum::extract::{Path, Query, State};
 use axum::Json;
@@ -32,7 +32,9 @@ pub(crate) async fn list(
     headers: axum::http::HeaderMap,
     Query(q): Query<MfFeedsQuery>,
 ) -> MfResult<Json<Vec<MfFeedDto>>> {
-    let auth = mf_auth(&st, &headers).await?;
+    let auth = mf_auth(&st, &headers)
+        .await
+        .map_err(from_api_error)?;
     let mut sel = Feed::find()
         .filter(feed::Column::UserId.eq(auth.user_id))
         .find_also_related(Category);
@@ -142,7 +144,9 @@ pub(crate) async fn create(
     headers: axum::http::HeaderMap,
     Json(body): Json<MfCreateFeed>,
 ) -> MfResult<Json<MfFeedDto>> {
-    let auth = mf_auth(&st, &headers).await?;
+    let auth = mf_auth(&st, &headers)
+        .await
+        .map_err(from_api_error)?;
     if body.url.trim().is_empty() {
         return Err(bad_request("url required").into());
     }
@@ -193,7 +197,9 @@ pub(crate) async fn get(
     headers: axum::http::HeaderMap,
     Path(id): Path<i64>,
 ) -> MfResult<Json<MfFeedDto>> {
-    let auth = mf_auth(&st, &headers).await?;
+    let auth = mf_auth(&st, &headers)
+        .await
+        .map_err(from_api_error)?;
     let (f, c) = Feed::find_by_id(id)
         .filter(feed::Column::UserId.eq(auth.user_id))
         .find_also_related(Category)
@@ -239,7 +245,9 @@ pub(crate) async fn update(
     Path(id): Path<i64>,
     Json(body): Json<MfUpdateFeed>,
 ) -> MfResult<&'static str> {
-    let auth = mf_auth(&st, &headers).await?;
+    let auth = mf_auth(&st, &headers)
+        .await
+        .map_err(from_api_error)?;
     let Some(f) = Feed::find_by_id(id)
         .filter(feed::Column::UserId.eq(auth.user_id))
         .one(&st.db)
@@ -310,7 +318,9 @@ pub(crate) async fn mark_all_read(
     headers: axum::http::HeaderMap,
     Path(id): Path<i64>,
 ) -> MfResult<axum::response::Response> {
-    let auth = mf_auth(&st, &headers).await?;
+    let auth = mf_auth(&st, &headers)
+        .await
+        .map_err(from_api_error)?;
     let Some(_f) = Feed::find_by_id(id)
         .filter(feed::Column::UserId.eq(auth.user_id))
         .one(&st.db)
@@ -342,7 +352,9 @@ pub(crate) async fn refresh_all(
     headers: axum::http::HeaderMap,
     Query(q): Query<MfRefreshFeedsQuery>,
 ) -> MfResult<axum::response::Response> {
-    let auth = mf_auth(&st, &headers).await?;
+    let auth = mf_auth(&st, &headers)
+        .await
+        .map_err(from_api_error)?;
     let mut sel = Feed::find().filter(feed::Column::UserId.eq(auth.user_id));
     if let Some(cid) = q.category_id {
         sel = sel.filter(feed::Column::CategoryId.eq(cid));
@@ -401,7 +413,9 @@ pub(crate) async fn refresh_one(
     headers: axum::http::HeaderMap,
     Path(id): Path<i64>,
 ) -> MfResult<axum::response::Response> {
-    let _auth = mf_auth(&st, &headers).await?;
+    let _auth = mf_auth(&st, &headers)
+        .await
+        .map_err(from_api_error)?;
     let _n = service::refresh_and_persist_by_id(&st.db, id)
         .await
         .map_err(internal)?;
@@ -423,7 +437,9 @@ pub(crate) async fn counters(
     State(st): State<AppState>,
     headers: axum::http::HeaderMap,
 ) -> MfResult<Json<MfFeedCountersResp>> {
-    let auth = mf_auth(&st, &headers).await?;
+    let auth = mf_auth(&st, &headers)
+        .await
+        .map_err(from_api_error)?;
     let feed_ids: Vec<i64> = Feed::find()
         .filter(feed::Column::UserId.eq(auth.user_id))
         .select_only()

@@ -1,6 +1,5 @@
-use super::error::MfResult;
+use super::error::{bad_request, from_api_error, internal, not_found, MfResult};
 use crate::auth::mf_auth;
-use crate::error::{bad_request, internal, not_found};
 use crate::AppState;
 use axum::extract::{Query, State};
 use axum::Json;
@@ -33,7 +32,7 @@ pub(crate) async fn discover(
     Query(q): Query<MfDiscoverQuery>,
     Json(body): Json<MfDiscoverReq>,
 ) -> MfResult<Json<Vec<MfSubscriptionDto>>> {
-    let _auth = mf_auth(&st, &headers).await?;
+    let _auth = mf_auth(&st, &headers).await.map_err(from_api_error)?;
     let base = Url::parse(&body.url).map_err(|_| bad_request("invalid url"))?;
     let client = Client::builder()
         .user_agent("captura-discover/0.1")

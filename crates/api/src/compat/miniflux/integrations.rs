@@ -1,6 +1,5 @@
-use super::error::MfResult;
+use super::error::{from_api_error, internal, MfResult};
 use crate::auth::mf_auth;
-use crate::error::internal;
 use crate::AppState;
 use axum::extract::State;
 use axum::Json;
@@ -16,7 +15,9 @@ pub(crate) async fn status(
     State(st): State<AppState>,
     headers: axum::http::HeaderMap,
 ) -> MfResult<Json<MfIntegrationsStatus>> {
-    let auth = mf_auth(&st, &headers).await?;
+    let auth = mf_auth(&st, &headers)
+        .await
+        .map_err(from_api_error)?;
     use captura_storage::entity::{integration, prelude::*};
     let count = Integration::find()
         .filter(integration::Column::UserId.eq(auth.user_id))

@@ -295,11 +295,18 @@ async fn main() -> anyhow::Result<()> {
         .route("/rules/try", post(crate::rules::try_rule))
         .route("/rules/templates", get(crate::rules::list_templates))
         .route("/rules/templates/{id}", get(crate::rules::get_template))
+        .route("/rules/sync-from-fs", post(crate::rules::sync_rules_from_fs))
         .route(
             "/feeds/from-template",
             post(crate::rules::create_feed_from_template),
         )
-        .route("/feeds/validate-hub", post(crate::hub::validate_hub));
+        .route("/feeds/validate-hub", post(crate::hub::validate_hub))
+        .route("/hub/routes", get(crate::hub::list_routes))
+        .route(
+            "/hub/routes/{namespace}/{name}",
+            get(crate::hub::get_route),
+        )
+        .route("/hub/preview", post(crate::hub::preview_hub));
 
     let compat_root = Router::new()
         .route(

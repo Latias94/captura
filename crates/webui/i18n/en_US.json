@@ -1,6 +1,7 @@
 {
   "nav.home": "Home",
   "nav.feeds": "Feeds",
+  "nav.hub": "Hub routes",
   "nav.settings": "Settings",
   "nav.login": "Login",
   "title.feeds": "Subscriptions",
@@ -139,4 +140,11 @@
   "feed.blocklist_rules": "Blocklist rules",
   "feed.keeplist_rules": "Keeplist rules",
   "feeds.error_tooltip": "Errors:"
+  ,"title.hub_routes": "Hub Routes"
+  ,"hub.routes.desc": "Built-in Hub routes (RSSHub-style) provided by Captura."
+  ,"hub.preview.title": "Preview Hub URL"
+  ,"hub.preview.label_url": "Hub URL"
+  ,"hub.routes.list_title": "Available Hub routes"
+  ,"hub.routes.empty": "No Hub routes available yet."
+  ,"btn.preview": "Preview"
 }

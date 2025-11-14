@@ -20,6 +20,9 @@ captura-fetcher = { path = "../fetcher" }
 captura-crawler = { path = "../crawler" }
 captura-rules = { path = "../rules" }
 captura-storage = { path = "../storage" }
+captura-hub = { path = "../hub" }
+dom_smoothie = "0.13"
+html-escape = "0.2"
 
 [dev-dependencies]
 chrono.workspace = true

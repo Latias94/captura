@@ -6,6 +6,7 @@ pub mod entry_options;
 pub mod error;
 pub mod feed_options;
 pub mod feeds;
+pub mod hub;
 pub mod search;
 pub mod state;
 pub mod users;

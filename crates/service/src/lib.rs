@@ -13,6 +13,7 @@ use tracing::debug;
 
 pub mod integration;
 pub mod webhook;
+pub mod rules_sync;
 
 /// Refresh a feed by id and persist new entries, update feed metadata.
 /// Returns number of inserted entries.

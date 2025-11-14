@@ -26,6 +26,7 @@ captura-crawler = { path = "../crawler" }
 captura-scheduler = { path = "../scheduler" }
 captura-pipeline = { path = "../pipeline" }
 captura-service = { path = "../service" }
+captura-hub = { path = "../hub" }
 sha2.workspace = true
 argon2.workspace = true
 rand_core.workspace = true

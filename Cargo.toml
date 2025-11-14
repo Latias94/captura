@@ -9,6 +9,7 @@ members = [
   "crates/rules",
   "crates/scheduler",
   "crates/pipeline",
+  "crates/hub",
   "crates/service",
   "crates/testkit",
   "crates/webui",

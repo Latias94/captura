@@ -1,8 +1,7 @@
 use super::entries::MfEntriesQuery;
-use super::error::MfResult;
+use super::error::{bad_request, from_api_error, internal, not_found, MfResult};
 use super::types::{map_feed, MfCategoryDto, MfEntryResultSet, MfFeedDto};
 use crate::auth::mf_auth;
-use crate::error::{bad_request, internal, not_found};
 use crate::AppState;
 use axum::extract::{Path, Query, State};
 use axum::Json;
@@ -24,7 +23,7 @@ pub(crate) async fn list(
     headers: axum::http::HeaderMap,
     Query(q): Query<MfCatListQuery>,
 ) -> MfResult<Json<Vec<MfCategoryDto>>> {
-    let auth = mf_auth(&st, &headers).await?;
+    let auth = mf_auth(&st, &headers).await.map_err(from_api_error)?;
     let cats = Category::find()
         .filter(category::Column::UserId.eq(auth.user_id))
         .order_by_asc(category::Column::Id)
@@ -110,7 +109,7 @@ pub(crate) async fn create(
     headers: axum::http::HeaderMap,
     Json(body): Json<MfCreateCategory>,
 ) -> MfResult<Json<MfCategoryDto>> {
-    let auth = mf_auth(&st, &headers).await?;
+    let auth = mf_auth(&st, &headers).await.map_err(from_api_error)?;
     if body.title.trim().is_empty() {
         return Err(bad_request("title required").into());
     }
@@ -141,7 +140,7 @@ pub(crate) async fn counters(
     State(st): State<AppState>,
     headers: axum::http::HeaderMap,
 ) -> MfResult<Json<Vec<MfCatCounter>>> {
-    let auth = mf_auth(&st, &headers).await?;
+    let auth = mf_auth(&st, &headers).await.map_err(from_api_error)?;
     let feeds = Feed::find()
         .filter(feed::Column::UserId.eq(auth.user_id))
         .all(&st.db)
@@ -195,7 +194,7 @@ pub(crate) async fn feeds(
     headers: axum::http::HeaderMap,
     Path(id): Path<i64>,
 ) -> MfResult<Json<Vec<MfFeedDto>>> {
-    let auth = mf_auth(&st, &headers).await?;
+    let auth = mf_auth(&st, &headers).await.map_err(from_api_error)?;
     let list = Feed::find()
         .filter(feed::Column::UserId.eq(auth.user_id))
         .filter(feed::Column::CategoryId.eq(id))
@@ -213,7 +212,7 @@ pub(crate) async fn refresh(
     headers: axum::http::HeaderMap,
     Path(id): Path<i64>,
 ) -> MfResult<&'static str> {
-    let auth = mf_auth(&st, &headers).await?;
+    let auth = mf_auth(&st, &headers).await.map_err(from_api_error)?;
     let feeds = Feed::find()
         .filter(feed::Column::UserId.eq(auth.user_id))
         .filter(feed::Column::CategoryId.eq(id))
@@ -237,7 +236,7 @@ pub(crate) async fn update(
     Path(id): Path<i64>,
     Json(body): Json<MfUpdateCategory>,
 ) -> MfResult<&'static str> {
-    let auth = mf_auth(&st, &headers).await?;
+    let auth = mf_auth(&st, &headers).await.map_err(from_api_error)?;
     if body.title.trim().is_empty() {
         return Err(bad_request("title required").into());
     }

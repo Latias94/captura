@@ -23,6 +23,8 @@ use crate::AppState;
 use captura_api::IdResp;
 use regex::Regex;
 
+use captura_service::rules_sync::{self as rules_sync_svc, RulesSyncReport};
+
 #[derive(Serialize)]
 pub(crate) struct RuleDto {
     pub id: i64,
@@ -182,6 +184,38 @@ pub(crate) async fn delete_rule(
     let am: rule::ActiveModel = r.into();
     am.delete(&st.db).await.map_err(internal)?;
     Ok("ok")
+}
+
+#[derive(Serialize)]
+pub(crate) struct SyncRulesResp {
+    pub scanned_files: usize,
+    pub created: usize,
+    pub updated: usize,
+    pub failed: usize,
+}
+
+/// 从 `rules/` 目录同步 YAML 规则到数据库。
+///
+/// 当前实现：
+/// - 扫描进程工作目录下的 `rules/`（含子目录，例如 `rules/contrib`）；
+/// - 使用 Rule DSL v1 校验 YAML；
+/// - 以 rule_id 为主键 upsert。
+pub(crate) async fn sync_rules_from_fs(
+    State(st): State<AppState>,
+    TypedHeader(Authorization(bearer)): TypedHeader<Authorization<Bearer>>,
+) -> ApiResult<Json<SyncRulesResp>> {
+    // 目前只要求通过 token 鉴权，后续可以根据用户角色限制为管理员。
+    let _user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
+    let root = std::path::Path::new("rules");
+    let report: RulesSyncReport = rules_sync_svc::sync_rules_from_fs(&st.db, root)
+        .await
+        .map_err(internal)?;
+    Ok(Json(SyncRulesResp {
+        scanned_files: report.scanned_files,
+        created: report.created,
+        updated: report.updated,
+        failed: report.failed,
+    }))
 }
 
 // ---------------- Templates (rule presets) ----------------

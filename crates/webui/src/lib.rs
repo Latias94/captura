@@ -115,6 +115,20 @@ struct IndexTemplate<'a> {
 }
 
 #[derive(Template)]
+#[template(path = "hub_routes.html")]
+struct HubRoutesPage<'a> {
+    title: &'a str,
+    routes: &'a [UiHubRoute],
+    preview: Option<UiHubPreview>,
+    preview_url: &'a str,
+    dict: &'a std::collections::HashMap<String, String>,
+    csp_nonce: &'a str,
+    custom_css: &'a str,
+    custom_js: &'a str,
+    external_font_hosts: &'a str,
+}
+
+#[derive(Template)]
 #[template(path = "login.html")]
 struct LoginTemplate<'a> {
     title: &'a str,
@@ -186,6 +200,7 @@ where
         .route("/", get(index))
         .route("/login", get(login))
         .route("/settings", get(ui_settings))
+        .route("/hub", get(ui_hub_routes))
         // static files: /ui/static/{*path}
         .route("/ui/static/{*path}", get(static_handler))
         // minimal SSR pages using API + token cookie
@@ -320,6 +335,133 @@ async fn resolve_lang(headers: &HeaderMap) -> String {
         }
     }
     "en_US".into()
+}
+
+#[derive(Deserialize, Clone)]
+struct UiHubRoute {
+    hub_id: String,
+    path: String,
+    categories: Vec<String>,
+    example: String,
+    #[serde(default)]
+    parameters: Vec<(String, String)>,
+    name: String,
+    url: String,
+    description: String,
+}
+
+#[derive(Deserialize, Clone)]
+struct UiHubItem {
+    title: String,
+    #[serde(default)]
+    description: Option<String>,
+    #[serde(default)]
+    link: Option<String>,
+    #[serde(default)]
+    author: Option<String>,
+}
+
+#[derive(Deserialize, Clone)]
+struct UiHubPreview {
+    title: String,
+    #[serde(default)]
+    description: Option<String>,
+    #[serde(default)]
+    link: Option<String>,
+    #[serde(default)]
+    image: Option<String>,
+    #[serde(default)]
+    language: Option<String>,
+    items: Vec<UiHubItem>,
+}
+
+#[derive(Deserialize, Default)]
+struct UiHubQuery {
+    url: Option<String>,
+}
+
+async fn ui_hub_routes(headers: HeaderMap, Query(q): Query<UiHubQuery>) -> impl IntoResponse {
+    let Some(token) = read_token_cookie(&headers) else {
+        return Redirect::to("/login").into_response();
+    };
+    let lang = resolve_lang(&headers).await;
+    let dict = i18n::load(&lang);
+    let snippets = load_snippets(&headers).await;
+    let nonce = gen_csp_nonce();
+
+    let cli = match reqwest::Client::builder()
+        .timeout(Duration::from_secs(3))
+        .build()
+    {
+        Ok(c) => c,
+        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "http client error").into_response(),
+    };
+
+    #[derive(Deserialize)]
+    struct HubRoutesResp {
+        routes: Vec<UiHubRoute>,
+    }
+
+    // Fetch hub routes list.
+    let routes_url = format!("{}/api/v1/hub/routes", api_base());
+    let routes: Vec<UiHubRoute> = match cli
+        .get(routes_url)
+        .header("Authorization", format!("Bearer {}", token))
+        .send()
+        .await
+        .and_then(|r| r.error_for_status())
+    {
+        Ok(resp) => resp
+            .json::<HubRoutesResp>()
+            .await
+            .map(|r| r.routes)
+            .unwrap_or_default(),
+        Err(_) => Vec::new(),
+    };
+
+    // Optional preview.
+    let mut preview: Option<UiHubPreview> = None;
+    let mut preview_url = q.url.unwrap_or_default();
+    if !preview_url.is_empty() {
+        #[derive(Deserialize)]
+        struct PreviewResp {
+            data: UiHubPreview,
+        }
+        let preview_endpoint = format!("{}/api/v1/hub/preview", api_base());
+        let body = serde_json::json!({ "url": preview_url });
+        if let Ok(resp) = cli
+            .post(preview_endpoint)
+            .header("Authorization", format!("Bearer {}", token))
+            .json(&body)
+            .send()
+            .await
+            .and_then(|r| r.error_for_status())
+        {
+            if let Ok(pr) = resp.json::<PreviewResp>().await {
+                preview = Some(pr.data);
+            }
+        }
+    }
+
+    let tpl = HubRoutesPage {
+        title: "Hub Routes",
+        routes: &routes,
+        preview,
+        preview_url: &preview_url,
+        dict: &dict,
+        csp_nonce: &nonce,
+        custom_css: &snippets.custom_css,
+        custom_js: &snippets.custom_js,
+        external_font_hosts: &snippets.external_font_hosts,
+    };
+    match tpl.render() {
+        Ok(s) => Html(s).into_response(),
+        Err(_) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "template error",
+        )
+            .into_response(),
+    }
 }
 
 #[derive(Deserialize, Clone)]

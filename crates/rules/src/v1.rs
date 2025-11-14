@@ -67,6 +67,7 @@ pub enum SourceType {
     ListDetail,
     SinglePage,
     Json,
+    #[serde(rename = "xpath")]
     XPath,
 }
 

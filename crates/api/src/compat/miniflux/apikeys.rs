@@ -1,6 +1,5 @@
-use super::error::MfResult;
+use super::error::{from_api_error, internal, MfResult};
 use crate::auth::mf_auth;
-use crate::error::internal;
 use crate::AppState;
 use axum::extract::{Path, State};
 use axum::Json;
@@ -35,7 +34,7 @@ pub(crate) async fn list(
     State(st): State<AppState>,
     headers: axum::http::HeaderMap,
 ) -> MfResult<Json<Vec<MfApiKeyDto>>> {
-    let auth = mf_auth(&st, &headers).await?;
+    let auth = mf_auth(&st, &headers).await.map_err(from_api_error)?;
     let keys = Token::find()
         .filter(token::Column::UserId.eq(auth.user_id))
         .all(&st.db)
@@ -60,7 +59,7 @@ pub(crate) async fn create(
     headers: axum::http::HeaderMap,
     Json(body): Json<MfCreateApiKeyReq>,
 ) -> MfResult<Json<MfApiKeyDto>> {
-    let auth = mf_auth(&st, &headers).await?;
+    let auth = mf_auth(&st, &headers).await.map_err(from_api_error)?;
     let mut rand_bytes = [0u8; 32];
     OsRng.fill_bytes(&mut rand_bytes);
     let token_str = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(rand_bytes);
@@ -92,7 +91,7 @@ pub(crate) async fn delete(
     headers: axum::http::HeaderMap,
     Path(id): Path<i64>,
 ) -> MfResult<&'static str> {
-    let auth = mf_auth(&st, &headers).await?;
+    let auth = mf_auth(&st, &headers).await.map_err(from_api_error)?;
     if let Some(k) = Token::find_by_id(id)
         .filter(token::Column::UserId.eq(auth.user_id))
         .one(&st.db)
