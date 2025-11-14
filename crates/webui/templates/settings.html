@@ -1,0 +1,221 @@
+{% extends "layout.html" %}
+{% block body %}
+<div class="view view--settings">
+  <h1 class="title">{{ dict["title.settings"] }}</h1>
+
+  <section class="panel">
+    <h2 class="title">{{ dict["title.language"] }}</h2>
+    <form method="post" action="/ui/prefs/language">
+      <div class="field">
+        <label class="label" for="lang">{{ dict["label.language"] }}</label>
+        <select id="lang" name="lang" class="input">
+          <option value="en_US" {% if lang == "en_US" %}selected{% endif %}>English (US)</option>
+          <option value="zh_CN" {% if lang == "zh_CN" %}selected{% endif %}>中文（简体）</option>
+        </select>
+      </div>
+      <div class="actions"><button class="button" type="submit">{{ dict["btn.save"] }}</button></div>
+    </form>
+  </section>
+
+  <section class="panel mt-4">
+    <h2 class="title">{{ dict["prefs.default_filter"] }}</h2>
+    <form method="post" action="/ui/prefs/default-filter">
+      <div class="field">
+        <label class="label" for="def_filter">{{ dict["prefs.default_filter"] }}</label>
+        <select id="def_filter" name="filter" class="input">
+          <option value="all" {% if default_filter == "all" %}selected{% endif %}>{{ dict["filter.all"] }}</option>
+          <option value="unread" {% if default_filter == "unread" %}selected{% endif %}>{{ dict["filter.unread"] }}</option>
+          <option value="starred" {% if default_filter == "starred" %}selected{% endif %}>{{ dict["filter.starred"] }}</option>
+        </select>
+      </div>
+      <div class="actions"><button class="button" type="submit">{{ dict["btn.save"] }}</button></div>
+    </form>
+  </section>
+
+  <section class="panel mt-4">
+    <h2 class="title">{{ dict["prefs.entries_per_page"] }}</h2>
+    <form method="post" action="/ui/prefs/entries-per-page">
+      <div class="field">
+        <label class="label" for="epp">{{ dict["prefs.entries_per_page"] }}</label>
+        <input id="epp" class="input" name="entries_per_page" type="number" min="1" max="200" value="{{ entries_per_page }}" />
+      </div>
+      <div class="actions"><button class="button" type="submit">{{ dict["btn.save"] }}</button></div>
+    </form>
+  </section>
+
+  <section class="panel mt-4">
+    <h2 class="title">{{ dict["prefs.reading"] }}</h2>
+    <form method="post" action="/ui/prefs/compact-ui">
+      <label><input type="checkbox" name="compact_ui" /> {{ dict["prefs.compact_ui"] }}</label>
+      <div class="actions"><button class="button" type="submit">{{ dict["btn.save"] }}</button></div>
+    </form>
+    <form method="post" action="/ui/prefs/minimal-ui" class="mt-2">
+      <label><input type="checkbox" name="minimal_ui" /> {{ dict["prefs.minimal_ui"] }}</label>
+      <div class="actions"><button class="button" type="submit">{{ dict["btn.save"] }}</button></div>
+    </form>
+    <form method="post" action="/ui/prefs/auto-mark-read" class="mt-2">
+      <label><input type="checkbox" name="auto_mark_read" /> {{ dict["prefs.auto_mark_read"] }}</label>
+      <div class="actions"><button class="button" type="submit">{{ dict["btn.save"] }}</button></div>
+    </form>
+    <form method="post" action="/ui/prefs/theme">
+      <div class="field">
+        <label class="label" for="theme">{{ dict["prefs.theme"] }}</label>
+        <select id="theme" name="theme" class="input">
+          <option value="system">{{ dict["prefs.theme_system"] }}</option>
+          <option value="light">{{ dict["prefs.theme_light"] }}</option>
+          <option value="dark">{{ dict["prefs.theme_dark"] }}</option>
+        </select>
+      </div>
+      <div class="actions"><button class="button" type="submit">{{ dict["btn.save"] }}</button></div>
+    </form>
+    <form method="post" action="/ui/prefs/sort-direction">
+      <div class="field">
+        <label class="label" for="sort_dir">{{ dict["prefs.sort_direction"] }}</label>
+        <select id="sort_dir" name="entry_sorting_direction" class="input">
+          <option value="desc">{{ dict["prefs.sort_desc"] }}</option>
+          <option value="asc">{{ dict["prefs.sort_asc"] }}</option>
+        </select>
+      </div>
+      <div class="actions"><button class="button" type="submit">{{ dict["btn.save"] }}</button></div>
+    </form>
+    <form method="post" action="/ui/prefs/keyboard-shortcuts" class="mt-2">
+      <label><input type="checkbox" name="keyboard_shortcuts" checked /> {{ dict["prefs.keyboard_shortcuts"] }}</label>
+      <div class="actions"><button class="button" type="submit">{{ dict["btn.save"] }}</button></div>
+    </form>
+    <form method="post" action="/ui/prefs/show-reading-time" class="mt-2">
+      <label><input type="checkbox" name="show_reading_time" /> {{ dict["prefs.show_reading_time"] }}</label>
+      <div class="actions"><button class="button" type="submit">{{ dict["btn.save"] }}</button></div>
+    </form>
+    <form method="post" action="/ui/prefs/open-ext-newtab" class="mt-2">
+      <label><input type="checkbox" name="open_newtab" /> {{ dict["prefs.open_ext_newtab"] }}</label>
+      <div class="actions"><button class="button" type="submit">{{ dict["btn.save"] }}</button></div>
+    </form>
+  </section>
+
+  <section class="panel mt-4">
+    <h2 class="title">{{ dict["prefs.custom_assets"] }}</h2>
+    <form method="post" action="/ui/prefs/custom-css">
+      <div class="field">
+        <label class="label" for="custom_css">{{ dict["prefs.custom_css"] }}</label>
+        <textarea id="custom_css" name="custom_css" class="input h-8em">{{ custom_css }}</textarea>
+        <p class="muted small">{{ dict["prefs.custom_css_hint"] }}</p>
+      </div>
+      <div class="actions"><button class="button" type="submit">{{ dict["btn.save"] }}</button></div>
+    </form>
+    <form method="post" action="/ui/prefs/custom-js" class="mt-2">
+      <div class="field">
+        <label class="label" for="custom_js">{{ dict["prefs.custom_js"] }}</label>
+        <textarea id="custom_js" name="custom_js" class="input h-8em">{{ custom_js }}</textarea>
+        <p class="muted small">{{ dict["prefs.custom_js_hint"] }}</p>
+      </div>
+      <div class="actions"><button class="button" type="submit">{{ dict["btn.save"] }}</button></div>
+    </form>
+    <div class="field mt-2">
+      <label class="label" for="font_hosts">{{ dict["prefs.external_font_hosts"] }}</label>
+      <input id="font_hosts" class="input" name="external_font_hosts" form="formExternalFonts" value="{{ external_font_hosts }}" />
+      <p class="muted small">{{ dict["prefs.external_font_hosts_hint"] }}</p>
+    </div>
+    <form id="formExternalFonts" method="post" action="/ui/prefs/custom-css" class="hidden"></form>
+  </section>
+
+  <section class="panel">
+    <h2 class="title">{{ dict["opml.title"] }}</h2>
+    <div class="actions">
+      <a class="button" href="/ui/opml/export">{{ dict["opml.export"] }}</a>
+    </div>
+    <form method="post" action="/ui/opml/import" class="mt-2">
+      <label class="label" for="opml">{{ dict["opml.import_paste"] }}</label>
+      <textarea id="opml" name="content" class="input h-8em"></textarea>
+      <div class="actions"><button class="button" type="submit">{{ dict["btn.import"] }}</button></div>
+    </form>
+    <div class="mt-2">
+      <label class="label" for="opmlFile">{{ dict["opml.import_file"] }}</label>
+      <input id="opmlFile" type="file" accept=".opml,.xml" class="input" />
+      <button id="opmlFileBtn" class="button ml-2" type="button">{{ dict["btn.import"] }}</button>
+    </div>
+    <script src="/ui/static/js/opml_file.js" defer></script>
+  </section>
+
+  <section class="panel mt-4">
+    <h2 class="title">{{ dict["api_keys.title"] }}</h2>
+    <form method="post" action="/ui/api-keys/create" class="actions">
+      <input class="input" name="description" placeholder="{{ dict["api_keys.description_placeholder"] }}" />
+      <button class="button" type="submit">{{ dict["btn.create"] }}</button>
+    </form>
+    <ul class="list mt-2">
+      {% for k in apikeys %}
+      <li class="list__item">
+        <code>{{ k.token }}</code>
+        {% if k.description.is_some() %}<span class="muted">— {{ k.description.as_ref().unwrap() }}</span>{% endif %}
+        <form method="post" action="/ui/api-keys/{{ k.id }}/delete" class="inline-block ml-2">
+          <button class="button" type="submit">{{ dict["btn.delete"] }}</button>
+        </form>
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
+
+  <section class="panel mt-4">
+    <h2 class="title">{{ dict["integrations.title"] }}</h2>
+    <form method="post" action="/ui/integrations/create">
+      <div class="field">
+        <label class="label" for="kind">{{ dict["integrations.kind"] }}</label>
+        <input id="kind" class="input" name="kind" />
+      </div>
+      <div class="field">
+        <label class="label" for="cfg">{{ dict["integrations.config_json"] }}</label>
+        <textarea id="cfg" name="config_json" class="input h-6em">{}</textarea>
+      </div>
+      <div class="field"><label><input type="checkbox" name="enabled" checked /> {{ dict["integrations.enabled"] }}</label></div>
+      <div class="actions"><button class="button" type="submit">{{ dict["btn.create"] }}</button></div>
+    </form>
+    <ul class="list mt-2">
+      {% for it in integrations %}
+      <li class="list__item">
+        <strong>{{ it.kind }}</strong>
+        <form method="post" action="/ui/integrations/{{ it.id }}/delete" class="inline-block ml-2">
+          <button class="button" type="submit">{{ dict["btn.delete"] }}</button>
+        </form>
+        <details class="mt-1">
+          <summary>{{ dict["btn.edit"] }}</summary>
+          <form method="post" action="/ui/integrations/{{ it.id }}/update">
+            <div class="field"><label><input type="checkbox" name="enabled" {% if it.enabled %}checked{% endif %} /> {{ dict["integrations.enabled"] }}</label></div>
+            <div class="field">
+              <label class="label">{{ dict["integrations.config_json"] }}</label>
+              <textarea name="config_json" class="input h-6em">{% if it.config_json.is_some() %}{{ it.config_json.as_ref().unwrap()|json }}{% else %}{}{% endif %}</textarea>
+            </div>
+            <div class="actions"><button class="button" type="submit">{{ dict["btn.save"] }}</button></div>
+          </form>
+        </details>
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
+
+  <section class="panel mt-4">
+    <h2 class="title">{{ dict["webhooks.title"] }}</h2>
+    <form method="post" action="/ui/webhooks/create">
+      <div class="field">
+        <label class="label" for="hook_url">{{ dict["webhooks.url"] }}</label>
+        <input id="hook_url" class="input" name="url" placeholder="{{ dict["webhooks.url_placeholder"] }}" />
+      </div>
+      <div class="field">
+        <label class="label" for="hook_events">{{ dict["webhooks.events"] }}</label>
+        <input id="hook_events" class="input" name="events" placeholder="new_entries,save_entry" />
+      </div>
+      <div class="actions"><button class="button" type="submit">{{ dict["btn.create"] }}</button></div>
+    </form>
+    <ul class="list mt-2">
+      {% for h in webhooks %}
+      <li class="list__item">
+        <span>{{ h.url }}</span>
+        {% if h.events.is_some() %}<span class="muted">— {{ h.events.as_ref().unwrap() }}</span>{% endif %}
+        <form method="post" action="/ui/webhooks/{{ h.id }}/delete" class="inline-block ml-2">
+          <button class="button" type="submit">{{ dict["btn.delete"] }}</button>
+        </form>
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
+</div>
+{% endblock %}

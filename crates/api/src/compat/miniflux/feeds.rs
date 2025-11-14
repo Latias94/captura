@@ -11,6 +11,7 @@ use sea_orm::{
     QuerySelect, Set,
 };
 
+use axum::response::IntoResponse;
 use captura_service as service;
 use captura_storage::entity::prelude::*;
 use captura_storage::entity::{entry, feed, job};
@@ -122,6 +123,18 @@ pub(crate) struct MfCreateFeed {
     pub url: String,
     pub category_id: Option<i64>,
     pub title: Option<String>,
+    // 认证：可选用户名、密码（用于私有源 Basic Auth）
+    pub username: Option<String>,
+    pub password: Option<String>,
+    // 抓取参数（可选）
+    pub user_agent: Option<String>,
+    pub cookie: Option<String>,
+    pub proxy_url: Option<String>,
+    pub fetch_via_proxy: Option<bool>,
+    pub disable_http2: Option<bool>,
+    #[serde(rename = "allow_self_signed_certificates")]
+    pub allow_invalid_certs: Option<bool>,
+    pub request_timeout_ms: Option<i32>,
 }
 
 pub(crate) async fn create(
@@ -142,14 +155,16 @@ pub(crate) async fn create(
         site_url: Set(None),
         feed_url: Set(body.url.clone()),
         rule_id: Set(None),
-        user_agent: Set(None),
+        user_agent: Set(body.user_agent.filter(|s| !s.is_empty())),
+        username: Set(body.username.filter(|s| !s.is_empty())),
+        password: Set(body.password.filter(|s| !s.is_empty())),
         headers_json: Set(None),
-        cookies: Set(None),
-        proxy_url: Set(None),
-        fetch_via_proxy: Set(false),
-        disable_http2: Set(false),
-        allow_invalid_certs: Set(false),
-        request_timeout_ms: Set(None),
+        cookies: Set(body.cookie.filter(|s| !s.is_empty())),
+        proxy_url: Set(body.proxy_url.filter(|s| !s.is_empty())),
+        fetch_via_proxy: Set(body.fetch_via_proxy.unwrap_or(false)),
+        disable_http2: Set(body.disable_http2.unwrap_or(false)),
+        allow_invalid_certs: Set(body.allow_invalid_certs.unwrap_or(false)),
+        request_timeout_ms: Set(body.request_timeout_ms),
         checked_at: Set(None),
         next_run_at: Set(None),
         etag: Set(None),
@@ -194,6 +209,28 @@ pub(crate) struct MfUpdateFeed {
     pub category_id: Option<i64>,
     pub title: Option<String>,
     pub disabled: Option<bool>,
+    // 兼容 Miniflux 字段（按现有模型可映射者）
+    pub user_agent: Option<String>,
+    pub cookie: Option<String>,
+    pub proxy_url: Option<String>,
+    pub fetch_via_proxy: Option<bool>,
+    pub disable_http2: Option<bool>,
+    #[serde(rename = "allow_self_signed_certificates")]
+    pub allow_invalid_certs: Option<bool>,
+    pub request_timeout_ms: Option<i32>,
+    pub scraper_rules: Option<String>,
+    pub rewrite_rules: Option<String>,
+    pub blocklist_rules: Option<String>,
+    pub keeplist_rules: Option<String>,
+    #[serde(rename = "urlrewrite_rules")]
+    pub url_rewrite_rules: Option<String>,
+    pub username: Option<String>,
+    pub password: Option<String>,
+    // 接收但当前忽略（为保持与 Miniflux API 兼容）
+    #[allow(dead_code)]
+    pub ignore_http_cache: Option<bool>,
+    pub feed_url: Option<String>,
+    pub site_url: Option<String>,
 }
 
 pub(crate) async fn update(
@@ -221,6 +258,30 @@ pub(crate) async fn update(
     if let Some(v) = body.disabled {
         am.disabled = Set(v);
     }
+    crate::feed_options::apply_feed_update_options(
+        &mut am,
+        crate::feed_options::FeedUpdateOptions {
+            user_agent: body.user_agent,
+            headers_json: None,
+            cookies: body.cookie,
+            proxy_url: body.proxy_url,
+            fetch_via_proxy: body.fetch_via_proxy,
+            disable_http2: body.disable_http2,
+            allow_invalid_certs: body.allow_invalid_certs,
+            request_timeout_ms: body.request_timeout_ms,
+            integrations_json: None,
+            rule_params_json: None,
+            username: body.username,
+            password: body.password,
+            scraper_rules: body.scraper_rules,
+            rewrite_rules: body.rewrite_rules,
+            blocklist_rules: body.blocklist_rules,
+            keeplist_rules: body.keeplist_rules,
+            url_rewrite_rules: body.url_rewrite_rules,
+            feed_url: body.feed_url,
+            site_url: body.site_url,
+        },
+    )?;
     am.update(&st.db).await.map_err(internal)?;
     Ok("ok")
 }
@@ -248,7 +309,7 @@ pub(crate) async fn mark_all_read(
     State(st): State<AppState>,
     headers: axum::http::HeaderMap,
     Path(id): Path<i64>,
-) -> MfResult<&'static str> {
+) -> MfResult<axum::response::Response> {
     let auth = mf_auth(&st, &headers).await?;
     let Some(_f) = Feed::find_by_id(id)
         .filter(feed::Column::UserId.eq(auth.user_id))
@@ -264,7 +325,11 @@ pub(crate) async fn mark_all_read(
         .exec(&st.db)
         .await
         .map_err(internal)?;
-    Ok("ok")
+    Ok((
+        axum::http::StatusCode::NO_CONTENT,
+        axum::body::Body::empty(),
+    )
+        .into_response())
 }
 
 #[derive(serde::Deserialize)]
@@ -276,7 +341,7 @@ pub(crate) async fn refresh_all(
     State(st): State<AppState>,
     headers: axum::http::HeaderMap,
     Query(q): Query<MfRefreshFeedsQuery>,
-) -> MfResult<Json<serde_json::Value>> {
+) -> MfResult<axum::response::Response> {
     let auth = mf_auth(&st, &headers).await?;
     let mut sel = Feed::find().filter(feed::Column::UserId.eq(auth.user_id));
     if let Some(cid) = q.category_id {
@@ -321,7 +386,13 @@ pub(crate) async fn refresh_all(
         let _ = am.insert(&st.db).await.map_err(internal)?;
         enqueued += 1;
     }
-    Ok(Json(serde_json::json!({"enqueued": enqueued})))
+    // 按 Miniflux 语义返回 204，无响应体
+    let _ = enqueued; // 保留逻辑以便后续统计/日志
+    Ok((
+        axum::http::StatusCode::NO_CONTENT,
+        axum::body::Body::empty(),
+    )
+        .into_response())
 }
 
 // 单个订阅立即刷新（直连 service，返回插入条数）
@@ -329,12 +400,16 @@ pub(crate) async fn refresh_one(
     State(st): State<AppState>,
     headers: axum::http::HeaderMap,
     Path(id): Path<i64>,
-) -> MfResult<Json<serde_json::Value>> {
+) -> MfResult<axum::response::Response> {
     let _auth = mf_auth(&st, &headers).await?;
-    let n = service::refresh_and_persist_by_id(&st.db, id)
+    let _n = service::refresh_and_persist_by_id(&st.db, id)
         .await
         .map_err(internal)?;
-    Ok(Json(serde_json::json!({"inserted": n})))
+    Ok((
+        axum::http::StatusCode::NO_CONTENT,
+        axum::body::Body::empty(),
+    )
+        .into_response())
 }
 
 #[derive(serde::Serialize)]

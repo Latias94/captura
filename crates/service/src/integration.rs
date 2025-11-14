@@ -404,9 +404,9 @@ impl Integration for Pushover {
             .await
             .map_err(|e| anyhow::anyhow!(e.to_string()))?;
         for e in entries {
-            let mut body = format!("{}", e.title.clone().unwrap_or_default());
+            let mut body = e.title.clone().unwrap_or_default();
             if let Some(u) = &e.url {
-                body.push_str("\n");
+                body.push('\n');
                 body.push_str(u);
             }
             let _ = ctx

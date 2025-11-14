@@ -74,5 +74,5 @@ pub fn reading_time_minutes_from_html(html: &str, wpm: usize) -> i32 {
     let text = strip_html_simple(html);
     let wpm = wpm.max(50);
     let words = text.split_whitespace().count();
-    std::cmp::max(1, (words + wpm - 1) / wpm) as i32
+    std::cmp::max(1, words.div_ceil(wpm)) as i32
 }

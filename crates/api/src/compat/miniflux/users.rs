@@ -29,12 +29,17 @@ pub(crate) struct MfUserFullDto {
     pub timezone: String,
     pub entry_sorting_direction: String,
     pub stylesheet: String,
+    pub custom_js: String,
+    pub external_font_hosts: String,
     pub google_id: String,
     pub openid_connect_id: String,
     pub entries_per_page: i32,
     pub keyboard_shortcuts: bool,
     pub show_reading_time: bool,
     pub entry_swipe: bool,
+    pub always_open_external_links: bool,
+    pub open_external_links_in_new_tab: bool,
+    pub mark_read_on_view: bool,
     pub last_login_at: Option<String>,
 }
 
@@ -56,10 +61,15 @@ pub(crate) struct MfUpdateUserReq {
     pub timezone: Option<String>,
     pub entry_sorting_direction: Option<String>,
     pub stylesheet: Option<String>,
+    pub custom_js: Option<String>,
+    pub external_font_hosts: Option<String>,
     pub entries_per_page: Option<i32>,
     pub keyboard_shortcuts: Option<bool>,
     pub show_reading_time: Option<bool>,
     pub entry_swipe: Option<bool>,
+    pub always_open_external_links: Option<bool>,
+    pub open_external_links_in_new_tab: Option<bool>,
+    pub mark_read_on_view: Option<bool>,
 }
 
 // ---------- helpers ----------
@@ -90,12 +100,17 @@ fn default_user_full(u: &user_entity::Model) -> MfUserFullDto {
         timezone: "UTC".into(),
         entry_sorting_direction: "desc".into(),
         stylesheet: String::new(),
+        custom_js: String::new(),
+        external_font_hosts: String::new(),
         google_id: String::new(),
         openid_connect_id: String::new(),
         entries_per_page: 100,
         keyboard_shortcuts: true,
         show_reading_time: true,
         entry_swipe: true,
+        always_open_external_links: false,
+        open_external_links_in_new_tab: false,
+        mark_read_on_view: false,
         last_login_at: None,
     }
 }
@@ -148,6 +163,12 @@ async fn map_user_full_with_prefs(
     if let Some(s) = get_str("stylesheet") {
         dto.stylesheet = s;
     }
+    if let Some(s) = get_str("custom_js") {
+        dto.custom_js = s;
+    }
+    if let Some(s) = get_str("external_font_hosts") {
+        dto.external_font_hosts = s;
+    }
     if let Some(n) = get_i("entries_per_page") {
         dto.entries_per_page = n;
     }
@@ -159,6 +180,15 @@ async fn map_user_full_with_prefs(
     }
     if let Some(b) = get_bool("entry_swipe") {
         dto.entry_swipe = b;
+    }
+    if let Some(b) = get_bool("always_open_external_links") {
+        dto.always_open_external_links = b;
+    }
+    if let Some(b) = get_bool("open_external_links_in_new_tab") {
+        dto.open_external_links_in_new_tab = b;
+    }
+    if let Some(b) = get_bool("mark_read_on_view") {
+        dto.mark_read_on_view = b;
     }
     Ok(dto)
 }
@@ -342,6 +372,12 @@ pub(crate) async fn update(
     if let Some(s) = &body.stylesheet {
         upsert_pref(&st.db, u.id, "stylesheet", serde_json::json!(s)).await?;
     }
+    if let Some(s) = &body.custom_js {
+        upsert_pref(&st.db, u.id, "custom_js", serde_json::json!(s)).await?;
+    }
+    if let Some(s) = &body.external_font_hosts {
+        upsert_pref(&st.db, u.id, "external_font_hosts", serde_json::json!(s)).await?;
+    }
     if let Some(n) = body.entries_per_page {
         upsert_pref(&st.db, u.id, "entries_per_page", serde_json::json!(n)).await?;
     }
@@ -353,6 +389,27 @@ pub(crate) async fn update(
     }
     if let Some(b) = body.entry_swipe {
         upsert_pref(&st.db, u.id, "entry_swipe", serde_json::json!(b)).await?;
+    }
+    if let Some(b) = body.always_open_external_links {
+        upsert_pref(
+            &st.db,
+            u.id,
+            "always_open_external_links",
+            serde_json::json!(b),
+        )
+        .await?;
+    }
+    if let Some(b) = body.open_external_links_in_new_tab {
+        upsert_pref(
+            &st.db,
+            u.id,
+            "open_external_links_in_new_tab",
+            serde_json::json!(b),
+        )
+        .await?;
+    }
+    if let Some(b) = body.mark_read_on_view {
+        upsert_pref(&st.db, u.id, "mark_read_on_view", serde_json::json!(b)).await?;
     }
 
     Ok(Json(map_user_full_with_prefs(&st.db, u).await?))

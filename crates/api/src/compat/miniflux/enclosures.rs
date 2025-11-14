@@ -3,6 +3,7 @@ use crate::auth::mf_auth;
 use crate::error::{internal, not_found};
 use crate::AppState;
 use axum::extract::{Path, State};
+use axum::response::IntoResponse;
 use axum::Json;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, QuerySelect, RelationTrait, Set,
@@ -71,7 +72,7 @@ pub(crate) async fn update(
     headers: axum::http::HeaderMap,
     Path(id): Path<i64>,
     Json(body): Json<MfEnclosureUpdate>,
-) -> MfResult<&'static str> {
+) -> MfResult<axum::response::Response> {
     let auth = mf_auth(&st, &headers).await?;
     let Some(en) = Enclosure::find_by_id(id)
         .one(&st.db)
@@ -93,5 +94,9 @@ pub(crate) async fn update(
     let mut am: enclosure::ActiveModel = en.into();
     am.media_progression = Set(Some(body.media_progression));
     let _ = am.update(&st.db).await.map_err(internal)?;
-    Ok("ok")
+    Ok((
+        axum::http::StatusCode::NO_CONTENT,
+        axum::body::Body::empty(),
+    )
+        .into_response())
 }

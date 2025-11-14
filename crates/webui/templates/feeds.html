@@ -1,0 +1,163 @@
+{% extends "layout.html" %}
+{% block body %}
+<div class="view view--feeds">
+  <h1 class="title">{{ dict["title.feeds"] }}</h1>
+  <div class="toolbar">
+    <form id="formViewCategory" class="inline-block">
+      <label class="label" for="viewCategory">{{ dict["label.category"] }}</label>
+      <select id="viewCategory" class="input">
+        <option value="" data-title="{{ dict["filter.all"] }}" {% if selected_category.is_none() %}selected{% endif %}>{{ dict["filter.all"] }}</option>
+        {% for c in categories %}
+        <option value="{{ c.id }}" data-title="{{ c.title }}" data-feeds="{% if c.feed_count.is_some() %}{{ c.feed_count.as_ref().unwrap() }}{% else %}0{% endif %}" {% if c.id | eq64(selected_category) %}selected{% endif %}>{{ c.title }}</option>
+        {% endfor %}
+      </select>
+    </form>
+  </div>
+  <section class="panel mt-2">
+    <h2 class="title">{{ dict["feeds.add.title"] }}</h2>
+    <form method="post" action="/ui/feeds/create" class="actions">
+      <input class="input" name="feed_url" placeholder="https://example.com/feed.xml" />
+      <input class="input ml-2" name="title" placeholder="{{ dict["feeds.add.title_label"] }}" />
+      <button class="button ml-2" type="submit">{{ dict["btn.add"] }}</button>
+    </form>
+  </section>
+  <section class="panel mt-4">
+    <h2 class="title">{{ dict["saved.title"] }}</h2>
+    <ul class="list" id="feedsSavedSearches" data-dict-empty="{{ dict["saved.empty"] }}"></ul>
+    <script src="/ui/static/js/feeds_saved_searches.js" defer></script>
+  </section>
+  <div class="toolbar">
+    <button type="button" class="button" id="btnRefreshAll">{{ dict["btn.refresh_all"] }}</button>
+    <form id="formRefreshCategory" class="inline-block ml-2">
+      <label class="label" for="refreshCategory">{{ dict["label.category"] }}</label>
+      <select id="refreshCategory" class="input">
+        <option value="">{{ dict["filter.all"] }}</option>
+        {% for c in categories %}
+        <option value="{{ c.id }}">{{ c.title }}</option>
+        {% endfor %}
+      </select>
+      <button class="button ml-2" type="submit">{{ dict["btn.refresh"] }}</button>
+    </form>
+  </div>
+  <div id="feedsList">
+    {% for c in categories %}
+    {% if selected_category.is_none() %}
+    <details class="panel" open data-cat-id="{{ c.id }}">
+      <summary>
+        {{ c.title }}
+        <span class="badge ml-2" id="catBadge-{{ c.id }}">{% if c.total_unread.is_some() %}{{ c.total_unread.as_ref().unwrap() }}{% else %}0{% endif %}</span>
+        <button type="button" class="button button--xs ml-2 cat-refresh" data-cat-id="{{ c.id }}">{{ dict["btn.refresh"] }}</button>
+        <button type="button" class="button button--xs ml-2 cat-markall" data-cat-id="{{ c.id }}">{{ dict["btn.mark_all_read"] }}</button>
+      </summary>
+      <ul class="list">
+      {% for f in feeds %}
+        {% if f.category.is_some() %}
+        {% if f.category.as_ref().unwrap().id == c.id %}
+        <li class="list__item" data-feed-id="{{ f.id }}" data-cat-id="{{ c.id }}">
+          <img src="/v1/feeds/{{ f.id }}/icon" alt="" width="16" height="16" style="vertical-align:middle;margin-right:.5rem" onerror="this.style.display='none'" />
+          <a class="link" href="/feeds/{{ f.id }}">{% if f.title.is_some() %}{{ f.title.as_ref().unwrap() }}{% else %}{{ dict["misc.untitled"] }}{% endif %}</a>
+          <span class="badge" id="feedBadge-{{ f.id }}">{{ f.unread_count.unwrap_or(0) }}</span>
+          {% if f.parsing_error_count | gt0_i32 %}
+          <span class="badge badge--error ml-2" title="{% if f.parsing_error_message.is_some() %}{{ f.parsing_error_message.as_ref().unwrap() }}{% else %}{{ dict["feeds.error_tooltip"] }} {{ f.parsing_error_count.as_ref().unwrap() }}{% endif %}">{{ f.parsing_error_count.as_ref().unwrap() }}</span>
+          {% endif %}
+          <form method="post" action="/ui/feeds/{{ f.id }}/refresh" class="inline-block ml-2">
+            <button class="button" type="submit">{{ dict["btn.refresh"] }}</button>
+          </form>
+          <a class="button ml-2 inline-block" href="/feeds/{{ f.id }}/edit">{{ dict["btn.edit"] }}</a>
+        </li>
+        {% endif %}
+        {% endif %}
+      {% endfor %}
+      </ul>
+    </details>
+    {% else %}
+    {% if c.id | eq64(selected_category) %}
+    <details class="panel" open data-cat-id="{{ c.id }}">
+      <summary>
+        {{ c.title }}
+        <span class="badge ml-2" id="catBadge-{{ c.id }}">{% if c.total_unread.is_some() %}{{ c.total_unread.as_ref().unwrap() }}{% else %}0{% endif %}</span>
+        <button type="button" class="button button--xs ml-2 cat-refresh" data-cat-id="{{ c.id }}">{{ dict["btn.refresh"] }}</button>
+        <button type="button" class="button button--xs ml-2 cat-markall" data-cat-id="{{ c.id }}">{{ dict["btn.mark_all_read"] }}</button>
+      </summary>
+      <ul class="list">
+      {% for f in feeds %}
+        {% if f.category.is_some() %}
+        {% if f.category.as_ref().unwrap().id == c.id %}
+        <li class="list__item" data-feed-id="{{ f.id }}" data-cat-id="{{ c.id }}">
+          <a class="link" href="/feeds/{{ f.id }}">{% if f.title.is_some() %}{{ f.title.as_ref().unwrap() }}{% else %}{{ dict["misc.untitled"] }}{% endif %}</a>
+          <span class="badge" id="feedBadge-{{ f.id }}">{{ f.unread_count.unwrap_or(0) }}</span>
+          <form method="post" action="/ui/feeds/{{ f.id }}/refresh" class="inline-block ml-2">
+            <button class="button" type="submit">{{ dict["btn.refresh"] }}</button>
+          </form>
+        </li>
+        {% endif %}
+        {% endif %}
+      {% endfor %}
+      </ul>
+    </details>
+    {% endif %}
+    {% endif %}
+    {% endfor %}
+    {% if has_uncategorized %}
+    {% if selected_category.is_none() %}
+    <details class="panel" open data-cat-id="uncat">
+      <summary>
+        {{ dict["category.uncategorized"] }}
+        <span class="badge ml-2" id="catBadge-uncat"></span>
+      </summary>
+      <ul class="list">
+      {% for f in feeds %}
+        {% if f.category.is_none() %}
+        <li class="list__item" data-feed-id="{{ f.id }}" data-cat-id="uncat">
+          <img src="/v1/feeds/{{ f.id }}/icon" alt="" width="16" height="16" style="vertical-align:middle;margin-right:.5rem" onerror="this.style.display='none'" />
+          <a class="link" href="/feeds/{{ f.id }}">{% if f.title.is_some() %}{{ f.title.as_ref().unwrap() }}{% else %}{{ dict["misc.untitled"] }}{% endif %}</a>
+          <span class="badge" id="feedBadge-{{ f.id }}">{{ f.unread_count.unwrap_or(0) }}</span>
+          {% if f.parsing_error_count | gt0_i32 %}
+          <span class="badge badge--error ml-2" title="{% if f.parsing_error_message.is_some() %}{{ f.parsing_error_message.as_ref().unwrap() }}{% else %}{{ dict["feeds.error_tooltip"] }} {{ f.parsing_error_count.as_ref().unwrap() }}{% endif %}">{{ f.parsing_error_count.as_ref().unwrap() }}</span>
+          {% endif %}
+          <form method="post" action="/ui/feeds/{{ f.id }}/refresh" class="inline-block ml-2">
+            <button class="button" type="submit">{{ dict["btn.refresh"] }}</button>
+          </form>
+          <a class="button ml-2 inline-block" href="/feeds/{{ f.id }}/edit">{{ dict["btn.edit"] }}</a>
+        </li>
+        {% endif %}
+      {% endfor %}
+      </ul>
+    </details>
+    {% endif %}
+    {% endif %}
+  </div>
+  <script src="/ui/static/js/feeds_actions.js" defer></script>
+  <script src="/ui/static/js/feeds_groups.js" defer></script>
+  {% if feeds | length == 0 %}
+  <p class="muted">{{ dict["empty.feeds"] }}</p>
+  <p class="muted"><a class="link" href="/settings">{{ dict["empty.feeds_hint"] }}</a></p>
+  <section class="panel mt-4">
+    <h2 class="title">{{ dict["feeds.add.title"] }}</h2>
+    <form method="post" action="/ui/feeds/create">
+      <div class="field">
+        <label class="label" for="feed_url">{{ dict["feeds.add.url"] }}</label>
+        <input id="feed_url" class="input" name="feed_url" placeholder="https://example.com/feed.xml" />
+      </div>
+      <div class="field">
+        <label class="label" for="feed_title">{{ dict["feeds.add.title_label"] }}</label>
+        <input id="feed_title" class="input" name="title" />
+      </div>
+      <div class="actions"><button class="button" type="submit">{{ dict["btn.add"] }}</button></div>
+    </form>
+  </section>
+  <section class="panel mt-4">
+    <h2 class="title">{{ dict["opml.quick_import"] }}</h2>
+    <form method="post" action="/ui/opml/import">
+      <label class="label" for="opml_quick">{{ dict["opml.import_paste"] }}</label>
+      <textarea id="opml_quick" name="content" class="input h-8em"></textarea>
+      <div class="actions"><button class="button" type="submit">{{ dict["btn.import"] }}</button></div>
+    </form>
+  </section>
+  {% endif %}
+  <div class="actions">
+    <a class="button" href="/login">{{ dict["btn.switch_account"] }}</a>
+  </div>
+  <p class="help">{{ dict["hint.cookie_token"] }}</p>
+  <p><a class="link" href="/">{{ dict["nav.home"] }}</a></p>
+{% endblock %}

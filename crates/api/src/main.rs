@@ -6,8 +6,6 @@ use axum::{
     Json, Router,
 };
 // use axum::debug_handler;
-#[cfg(test)]
-// (tests moved to crates/api/tests)
 use axum_extra::typed_header::TypedHeader;
 // use captura_crawler::{self as crawler, CrawlOptions};
 // pipeline used elsewhere (try_rule path uses parsing/execution), direct refresh handled by service
@@ -16,7 +14,7 @@ use axum_extra::typed_header::TypedHeader;
 use captura_scheduler as scheduler;
 use captura_storage::connect as db_connect;
 use captura_storage::entity::job;
-use chrono::{FixedOffset, Utc};
+use captura_storage::entity::prelude::Job;
 use headers::authorization::Bearer;
 use headers::Authorization;
 // md5 compatibility removed
@@ -39,6 +37,8 @@ use crate::error::{internal, ApiResult};
 // use axum::middleware;
 // use axum::middleware::Next;
 mod auth;
+mod entry_options;
+mod feed_options;
 mod util;
 use crate::auth::AuthUser;
 use crate::util::validate_limit_offset;
@@ -53,6 +53,7 @@ mod state;
 mod users;
 pub use state::{AppConfig, AppState};
 mod auth_endpoints;
+use crate::auth_endpoints::{auth_login, auth_proxy_token};
 mod favicon;
 mod hub;
 mod integrations;
@@ -352,9 +353,13 @@ async fn main() -> anyhow::Result<()> {
     // 保持与现有启动一致的装配（tests 将使用 router::build）
     let mut app = Router::new()
         .route("/healthz", get(liveness))
+        .route("/liveness", get(liveness))
+        .route("/healthcheck", get(readiness))
         .route("/readyz", get(readiness))
         .route("/readiness", get(readiness))
         .merge(compat_root)
+        // Web UI (SSR): mounted at root and /ui/static/*
+        .merge(captura_webui::router())
         .nest("/api/v1", api_v1)
         .nest("/v1", crate::compat::miniflux::router())
         .with_state(app_state.clone());
@@ -889,6 +894,8 @@ mod tests {
             disable_http2: None,
             allow_invalid_certs: None,
             request_timeout_ms: Some(1000),
+            username: None,
+            password: None,
             disabled: None,
         };
         let err = create_feed(
@@ -1038,6 +1045,398 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn create_feed_with_basic_auth_fields() {
+        use captura_storage::entity::prelude::*;
+        use sea_orm::EntityTrait;
+
+        let db = setup_db().await;
+        let st = AppState::new(db.clone());
+        // user + token
+        let _ = create_user(
+            State(st.clone()),
+            Json(CreateUserReq {
+                username: "basic".into(),
+                password: "p".into(),
+            }),
+        )
+        .await
+        .unwrap();
+        let login = auth_login(
+            State(st.clone()),
+            Json(AuthLoginReq {
+                username: "basic".into(),
+                password: "p".into(),
+                name: None,
+            }),
+        )
+        .await
+        .unwrap();
+        let token = login.0.token;
+
+        let body = CreateFeedReq {
+            category_id: None,
+            r#type: "rss".into(),
+            title: Some("ba".into()),
+            site_url: None,
+            feed_url: "https://example.com/ba".into(),
+            rule_id: None,
+            rule_params_json: None,
+            user_agent: Some("captura-tests/0.1".into()),
+            headers_json: None,
+            cookies: None,
+            proxy_url: None,
+            fetch_via_proxy: Some(false),
+            disable_http2: Some(false),
+            allow_invalid_certs: Some(false),
+            request_timeout_ms: Some(1000),
+            username: Some("authu".into()),
+            password: Some("authp".into()),
+            disabled: Some(false),
+        };
+        let created = create_feed(
+            State(st.clone()),
+            TypedHeader(Authorization::bearer(&token).unwrap()),
+            Json(body),
+        )
+        .await
+        .unwrap();
+        let fid = created.0.id;
+        let f = Feed::find_by_id(fid).one(&st.db).await.unwrap().unwrap();
+        assert_eq!(f.username.as_deref(), Some("authu"));
+        assert_eq!(f.password.as_deref(), Some("authp"));
+    }
+
+    #[tokio::test]
+    async fn update_feed_basic_auth_fields() {
+        use captura_storage::entity::prelude::*;
+        use sea_orm::EntityTrait;
+
+        let db = setup_db().await;
+        let st = AppState::new(db.clone());
+        // user + token
+        let _ = create_user(
+            State(st.clone()),
+            Json(CreateUserReq {
+                username: "basic2".into(),
+                password: "p".into(),
+            }),
+        )
+        .await
+        .unwrap();
+        let login = auth_login(
+            State(st.clone()),
+            Json(AuthLoginReq {
+                username: "basic2".into(),
+                password: "p".into(),
+                name: None,
+            }),
+        )
+        .await
+        .unwrap();
+        let token = login.0.token;
+
+        // create
+        let created = create_feed(
+            State(st.clone()),
+            TypedHeader(Authorization::bearer(&token).unwrap()),
+            Json(CreateFeedReq {
+                category_id: None,
+                r#type: "rss".into(),
+                title: Some("ba2".into()),
+                site_url: None,
+                feed_url: "https://example.com/ba2".into(),
+                rule_id: None,
+                rule_params_json: None,
+                user_agent: Some("captura-tests/0.1".into()),
+                headers_json: None,
+                cookies: None,
+                proxy_url: None,
+                fetch_via_proxy: Some(false),
+                disable_http2: Some(false),
+                allow_invalid_certs: Some(false),
+                request_timeout_ms: Some(1000),
+                username: Some("u1".into()),
+                password: Some("p1".into()),
+                disabled: Some(false),
+            }),
+        )
+        .await
+        .unwrap();
+        let fid = created.0.id;
+
+        // update
+        let _ = crate::feeds::update_feed(
+            State(st.clone()),
+            TypedHeader(Authorization::bearer(&token).unwrap()),
+            Path(fid),
+            Json(UpdateFeedReq {
+                title: None,
+                category_id: None,
+                disabled: None,
+                user_agent: None,
+                headers_json: None,
+                cookies: None,
+                proxy_url: None,
+                fetch_via_proxy: None,
+                disable_http2: None,
+                allow_invalid_certs: None,
+                request_timeout_ms: None,
+                integrations_json: None,
+                rule_params_json: None,
+                username: Some("u2".into()),
+                password: Some("p2".into()),
+            }),
+        )
+        .await
+        .unwrap();
+
+        // verify
+        let f = Feed::find_by_id(fid).one(&st.db).await.unwrap().unwrap();
+        assert_eq!(f.username.as_deref(), Some("u2"));
+        assert_eq!(f.password.as_deref(), Some("p2"));
+    }
+
+    #[tokio::test]
+    async fn update_feed_clear_cookie_proxy_on_empty() {
+        use captura_storage::entity::prelude::*;
+        use sea_orm::EntityTrait;
+
+        let db = setup_db().await;
+        let st = AppState::new(db.clone());
+        // user + token
+        let _ = create_user(
+            State(st.clone()),
+            Json(CreateUserReq {
+                username: "cookies".into(),
+                password: "p".into(),
+            }),
+        )
+        .await
+        .unwrap();
+        let login = auth_login(
+            State(st.clone()),
+            Json(AuthLoginReq {
+                username: "cookies".into(),
+                password: "p".into(),
+                name: None,
+            }),
+        )
+        .await
+        .unwrap();
+        let token = login.0.token;
+
+        // create with cookie/proxy
+        let created = create_feed(
+            State(st.clone()),
+            TypedHeader(Authorization::bearer(&token).unwrap()),
+            Json(CreateFeedReq {
+                category_id: None,
+                r#type: "rss".into(),
+                title: Some("ck".into()),
+                site_url: None,
+                feed_url: "https://example.com/ck".into(),
+                rule_id: None,
+                rule_params_json: None,
+                user_agent: None,
+                headers_json: None,
+                cookies: Some("a=b".into()),
+                proxy_url: Some("http://proxy".into()),
+                fetch_via_proxy: Some(false),
+                disable_http2: Some(false),
+                allow_invalid_certs: Some(false),
+                request_timeout_ms: Some(1000),
+                username: None,
+                password: None,
+                disabled: Some(false),
+            }),
+        )
+        .await
+        .unwrap();
+        let fid = created.0.id;
+
+        // update to empty values -> clear
+        let _ = crate::feeds::update_feed(
+            State(st.clone()),
+            TypedHeader(Authorization::bearer(&token).unwrap()),
+            Path(fid),
+            Json(UpdateFeedReq {
+                title: None,
+                category_id: None,
+                disabled: None,
+                user_agent: None,
+                headers_json: None,
+                cookies: Some("".into()),
+                proxy_url: Some("".into()),
+                fetch_via_proxy: None,
+                disable_http2: None,
+                allow_invalid_certs: None,
+                request_timeout_ms: None,
+                integrations_json: None,
+                rule_params_json: None,
+                username: None,
+                password: None,
+            }),
+        )
+        .await
+        .unwrap();
+
+        let f = Feed::find_by_id(fid).one(&st.db).await.unwrap().unwrap();
+        assert!(f.cookies.is_none());
+        assert!(f.proxy_url.is_none());
+    }
+
+    #[tokio::test]
+    async fn update_feed_clear_user_agent_on_empty() {
+        use captura_storage::entity::prelude::*;
+        use sea_orm::EntityTrait;
+
+        let db = setup_db().await;
+        let st = AppState::new(db.clone());
+        // user + token
+        let _ = create_user(
+            State(st.clone()),
+            Json(CreateUserReq {
+                username: "uag".into(),
+                password: "p".into(),
+            }),
+        )
+        .await
+        .unwrap();
+        let login = auth_login(
+            State(st.clone()),
+            Json(AuthLoginReq {
+                username: "uag".into(),
+                password: "p".into(),
+                name: None,
+            }),
+        )
+        .await
+        .unwrap();
+        let token = login.0.token;
+
+        // create with user_agent
+        let created = create_feed(
+            State(st.clone()),
+            TypedHeader(Authorization::bearer(&token).unwrap()),
+            Json(CreateFeedReq {
+                category_id: None,
+                r#type: "rss".into(),
+                title: Some("ua".into()),
+                site_url: None,
+                feed_url: "https://example.com/ua".into(),
+                rule_id: None,
+                rule_params_json: None,
+                user_agent: Some("UA".into()),
+                headers_json: None,
+                cookies: None,
+                proxy_url: None,
+                fetch_via_proxy: Some(false),
+                disable_http2: Some(false),
+                allow_invalid_certs: Some(false),
+                request_timeout_ms: Some(1000),
+                username: None,
+                password: None,
+                disabled: Some(false),
+            }),
+        )
+        .await
+        .unwrap();
+        let fid = created.0.id;
+
+        // update to empty -> clear
+        let _ = crate::feeds::update_feed(
+            State(st.clone()),
+            TypedHeader(Authorization::bearer(&token).unwrap()),
+            Path(fid),
+            Json(UpdateFeedReq {
+                title: None,
+                category_id: None,
+                disabled: None,
+                user_agent: Some("".into()),
+                headers_json: None,
+                cookies: None,
+                proxy_url: None,
+                fetch_via_proxy: None,
+                disable_http2: None,
+                allow_invalid_certs: None,
+                request_timeout_ms: None,
+                integrations_json: None,
+                rule_params_json: None,
+                username: None,
+                password: None,
+            }),
+        )
+        .await
+        .unwrap();
+
+        let f = Feed::find_by_id(fid).one(&st.db).await.unwrap().unwrap();
+        assert!(f.user_agent.is_none());
+    }
+
+    #[tokio::test]
+    async fn create_feed_clear_ua_cookie_proxy_on_empty() {
+        use captura_storage::entity::prelude::*;
+        use sea_orm::EntityTrait;
+
+        let db = setup_db().await;
+        let st = AppState::new(db.clone());
+        // user + token
+        let _ = create_user(
+            State(st.clone()),
+            Json(CreateUserReq {
+                username: "create-empty".into(),
+                password: "p".into(),
+            }),
+        )
+        .await
+        .unwrap();
+        let login = auth_login(
+            State(st.clone()),
+            Json(AuthLoginReq {
+                username: "create-empty".into(),
+                password: "p".into(),
+                name: None,
+            }),
+        )
+        .await
+        .unwrap();
+        let token = login.0.token;
+
+        let created = create_feed(
+            State(st.clone()),
+            TypedHeader(Authorization::bearer(&token).unwrap()),
+            Json(CreateFeedReq {
+                category_id: None,
+                r#type: "rss".into(),
+                title: Some("cku".into()),
+                site_url: None,
+                feed_url: "https://example.com/create-empty".into(),
+                rule_id: None,
+                rule_params_json: None,
+                user_agent: Some("".into()),
+                headers_json: None,
+                cookies: Some("".into()),
+                proxy_url: Some("".into()),
+                fetch_via_proxy: Some(false),
+                disable_http2: Some(false),
+                allow_invalid_certs: Some(false),
+                request_timeout_ms: Some(1000),
+                username: None,
+                password: None,
+                disabled: Some(false),
+            }),
+        )
+        .await
+        .unwrap();
+        let fid = created.0.id;
+
+        let f = Feed::find_by_id(fid).one(&st.db).await.unwrap().unwrap();
+        assert!(f.user_agent.is_none());
+        assert!(f.cookies.is_none());
+        assert!(f.proxy_url.is_none());
+    }
+
+    #[tokio::test]
     #[ignore]
     async fn refresh_feed_live() {
         if std::env::var("CAPTURA_TEST_LIVE")
@@ -1089,6 +1488,8 @@ mod tests {
             disable_http2: Some(false),
             allow_invalid_certs: Some(false),
             request_timeout_ms: Some(15000),
+            username: None,
+            password: None,
             disabled: Some(false),
         };
         let created = create_feed(
@@ -1696,6 +2097,7 @@ mod tests {
 // legacy feed refresh/enqueue handlers removed (moved to crates/api/src/feeds.rs)
 
 #[derive(Deserialize)]
+#[allow(dead_code)]
 struct JobsQuery {
     status: Option<String>,
     limit: Option<u64>,
@@ -1703,6 +2105,7 @@ struct JobsQuery {
 }
 
 #[derive(Serialize)]
+#[allow(dead_code)]
 struct JobDto {
     id: i64,
     job_type: String,
@@ -1712,6 +2115,7 @@ struct JobDto {
     last_error: Option<String>,
 }
 
+#[allow(dead_code)]
 async fn list_jobs(
     State(st): State<AppState>,
     TypedHeader(Authorization(bearer)): TypedHeader<Authorization<Bearer>>,
@@ -1763,6 +2167,7 @@ async fn list_jobs(
 }
 
 #[derive(Deserialize)]
+#[allow(dead_code)]
 struct IntegrationJobsQuery {
     status: Option<String>,
     limit: Option<u64>,
@@ -1770,6 +2175,7 @@ struct IntegrationJobsQuery {
 }
 
 #[derive(Serialize)]
+#[allow(dead_code)]
 struct IntegrationJobDto {
     id: i64,
     status: String,
@@ -1780,6 +2186,7 @@ struct IntegrationJobDto {
     payload: serde_json::Value,
 }
 
+#[allow(dead_code)]
 async fn list_integration_jobs(
     State(st): State<AppState>,
     TypedHeader(Authorization(bearer)): TypedHeader<Authorization<Bearer>>,
@@ -1827,6 +2234,7 @@ async fn list_integration_jobs(
     Ok(Json(list))
 }
 
+#[allow(dead_code)]
 async fn run_jobs_once(
     State(st): State<AppState>,
     TypedHeader(Authorization(bearer)): TypedHeader<Authorization<Bearer>>,
@@ -1836,6 +2244,7 @@ async fn run_jobs_once(
     Ok(Json(serde_json::json!({"processed": n})))
 }
 
+#[allow(dead_code)]
 async fn enqueue_due_feeds(
     State(st): State<AppState>,
     TypedHeader(Authorization(bearer)): TypedHeader<Authorization<Bearer>>,

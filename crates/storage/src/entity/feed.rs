@@ -31,6 +31,8 @@ pub struct Model {
 
     // Fetch options
     pub user_agent: Option<String>,
+    pub username: Option<String>,
+    pub password: Option<String>,
     pub headers_json: Option<Json>,
     pub cookies: Option<String>,
     pub proxy_url: Option<String>,
@@ -46,6 +48,7 @@ pub struct Model {
     pub last_modified: Option<String>,
     pub last_status: Option<i32>,
     pub error_count: i32,
+    pub last_error_message: Option<String>,
     pub disabled: bool,
 
     // Rewriting & filtering rules (text-based for portability)

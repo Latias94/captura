@@ -91,7 +91,6 @@ pub async fn run_once(db: &DatabaseConnection, max: u64) -> Result<usize> {
     let mut tasks = FuturesUnordered::new();
     for j in scheduled {
         let db = db.clone();
-        let now = now;
         tasks.push(async move {
             // mark running
             if let Some(model) = Job::find_by_id(j.id).one(&db).await.ok().flatten() {
@@ -118,11 +117,13 @@ pub async fn run_once(db: &DatabaseConnection, max: u64) -> Result<usize> {
                         am.last_error = Set(None);
                     }
                     Err(err) => {
+                        let msg = err.to_string();
                         am.status = Set(job::JobStatus::Failed);
-                        am.last_error = Set(Some(err.to_string()));
+                        am.last_error = Set(Some(msg.clone()));
                         if let Some(fid) = j.feed_id {
                             // attempts 在运行前已 +1，这里应传入最新的 attempts 值
-                            let _ = update_feed_on_failure(&db, fid, j.attempts + 1).await;
+                            let _ =
+                                update_feed_on_failure(&db, fid, j.attempts + 1, Some(msg)).await;
                         } else if matches!(j.job_type, job::JobType::Integration) {
                             // 对于集成任务，按通用回退规则设置下一次运行时间
                             let now2 = Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
@@ -151,7 +152,6 @@ pub async fn run_once(db: &DatabaseConnection, max: u64) -> Result<usize> {
                 am.updated_at = Set(Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap()));
                 let _ = am.update(&db).await;
             }
-            ()
         });
     }
     let mut processed = 0usize;
@@ -366,6 +366,7 @@ async fn update_feed_on_failure(
     db: &DatabaseConnection,
     feed_id: i64,
     attempts: i32,
+    err_msg: Option<String>,
 ) -> Result<()> {
     let Some(f) = Feed::find_by_id(feed_id)
         .one(db)
@@ -396,6 +397,9 @@ async fn update_feed_on_failure(
     }
     let mut fm: feed::ActiveModel = f.into();
     fm.error_count = Set(attempts);
+    if let Some(m) = err_msg {
+        fm.last_error_message = Set(Some(m));
+    }
     fm.next_run_at = Set(Some(now + chrono::Duration::seconds(delay.max(60))));
     fm.updated_at = Set(now);
     let _ = fm

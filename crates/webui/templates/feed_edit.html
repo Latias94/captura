@@ -1,0 +1,96 @@
+{% extends "layout.html" %}
+{% block body %}
+<div class="view view--feed-edit">
+  <h1 class="title">{{ dict["feed.edit.title"] }}</h1>
+  <p><a class="link" href="/feeds">← {{ dict["nav.feeds"] }}</a></p>
+
+  <section class="panel">
+    <h2 class="title">{{ dict["feed.edit.basic"] }}</h2>
+    <form method="post" action="/ui/feeds/{{ feed.id }}/update">
+      <div class="field">
+        <label class="label" for="f_title">{{ dict["feeds.add.title_label"] }}</label>
+        <input id="f_title" class="input" name="title" value="{% if feed.title.is_some() %}{{ feed.title.as_ref().unwrap() }}{% endif %}" />
+      </div>
+      <div class="field">
+        <label class="label" for="f_cat">{{ dict["label.category"] }}</label>
+        <select id="f_cat" name="category_id" class="input">
+          <option value="">{{ dict["category.uncategorized"] }}</option>
+          {% for c in categories %}
+          <option value="{{ c.id }}" {% if feed.category.is_some() %}{% if feed.category.as_ref().unwrap().id == c.id %}selected{% endif %}{% endif %}>{{ c.title }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label class="label" for="ua">{{ dict["feed.user_agent"] }}</label>
+        <input id="ua" class="input" name="user_agent" value="{% if feed.user_agent.is_some() %}{{ feed.user_agent.as_ref().unwrap() }}{% endif %}" />
+      </div>
+      <div class="field">
+        <label class="label" for="proxy">{{ dict["feed.proxy_url"] }}</label>
+        <input id="proxy" class="input" name="proxy_url" value="{% if feed.proxy_url.is_some() %}{{ feed.proxy_url.as_ref().unwrap() }}{% endif %}" />
+      </div>
+      <div class="field"><label><input type="checkbox" name="fetch_via_proxy" {% if feed.fetch_via_proxy.is_some() %}{% if feed.fetch_via_proxy.as_ref().unwrap() %}checked{% endif %}{% endif %}/> {{ dict["feed.fetch_via_proxy"] }}</label></div>
+      <div class="field"><label><input type="checkbox" name="disable_http2" {% if feed.disable_http2.is_some() %}{% if feed.disable_http2.as_ref().unwrap() %}checked{% endif %}{% endif %}/> {{ dict["feed.disable_http2"] }}</label></div>
+      <div class="field"><label><input type="checkbox" name="allow_invalid_certs" {% if feed.allow_invalid_certs.is_some() %}{% if feed.allow_invalid_certs.as_ref().unwrap() %}checked{% endif %}{% endif %}/> {{ dict["feed.allow_invalid_certs"] }}</label></div>
+      <div class="field">
+        <label class="label" for="timeout">{{ dict["feed.request_timeout_ms"] }}</label>
+        <input id="timeout" class="input" name="request_timeout_ms" type="number" min="0" value="{% if feed.request_timeout_ms.is_some() %}{{ feed.request_timeout_ms.as_ref().unwrap() }}{% else %}0{% endif %}" />
+      </div>
+      <div class="field">
+        <label class="label" for="cookie">{{ dict["feed.cookie"] }}</label>
+        <textarea id="cookie" name="cookie" class="input h-6em">{% if feed.cookie.is_some() %}{{ feed.cookie.as_ref().unwrap() }}{% endif %}</textarea>
+      </div>
+      <details class="mt-2"><summary>{{ dict["feed.rules"] }}</summary>
+        <div class="field">
+          <label class="label" for="scraper">{{ dict["feed.scraper_rules"] }}</label>
+          <textarea id="scraper" name="scraper_rules" class="input h-6em">{% if feed.scraper_rules.is_some() %}{{ feed.scraper_rules.as_ref().unwrap() }}{% endif %}</textarea>
+        </div>
+        <div class="field">
+          <label class="label" for="rewrite">{{ dict["feed.rewrite_rules"] }}</label>
+          <textarea id="rewrite" name="rewrite_rules" class="input h-6em">{% if feed.rewrite_rules.is_some() %}{{ feed.rewrite_rules.as_ref().unwrap() }}{% endif %}</textarea>
+        </div>
+        <div class="field">
+          <label class="label" for="urlrw">{{ dict["feed.url_rewrite_rules"] }}</label>
+          <textarea id="urlrw" name="url_rewrite_rules" class="input h-6em">{% if feed.url_rewrite_rules.is_some() %}{{ feed.url_rewrite_rules.as_ref().unwrap() }}{% endif %}</textarea>
+        </div>
+        <div class="field">
+          <label class="label" for="block">{{ dict["feed.blocklist_rules"] }}</label>
+          <textarea id="block" name="blocklist_rules" class="input h-6em">{% if feed.blocklist_rules.is_some() %}{{ feed.blocklist_rules.as_ref().unwrap() }}{% endif %}</textarea>
+        </div>
+        <div class="field">
+          <label class="label" for="keep">{{ dict["feed.keeplist_rules"] }}</label>
+          <textarea id="keep" name="keeplist_rules" class="input h-6em">{% if feed.keeplist_rules.is_some() %}{{ feed.keeplist_rules.as_ref().unwrap() }}{% endif %}</textarea>
+        </div>
+      </details>
+      <div class="actions"><button class="button" type="submit">{{ dict["btn.save"] }}</button></div>
+    </form>
+  </section>
+
+  <section class="panel mt-4">
+    <h2 class="title">{{ dict["feed.edit.danger"] }}</h2>
+    <form method="post" action="/ui/feeds/{{ feed.id }}/delete" onsubmit="return confirm('{{ dict["feed.edit.confirm_delete"] }}')">
+      <button class="button" type="submit">{{ dict["btn.delete"] }}</button>
+    </form>
+  </section>
+
+  <section class="panel mt-4">
+    <h2 class="title">{{ dict["categories.manage"] }}</h2>
+    <form method="post" action="/ui/categories/create" class="actions">
+      <input class="input" name="title" placeholder="{{ dict["categories.new_placeholder"] }}" />
+      <button class="button" type="submit">{{ dict["btn.create"] }}</button>
+    </form>
+    <ul class="list mt-2">
+      {% for c in categories %}
+      <li class="list__item">
+        <form method="post" action="/ui/categories/{{ c.id }}/update" class="inline">
+          <input class="input" name="title" value="{{ c.title }}" />
+          <button class="button ml-2" type="submit">{{ dict["btn.save"] }}</button>
+        </form>
+        <form method="post" action="/ui/categories/{{ c.id }}/delete" class="inline-block ml-2" onsubmit="return confirm('{{ dict["categories.confirm_delete"] }}')">
+          <button class="button" type="submit">{{ dict["btn.delete"] }}</button>
+        </form>
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
+</div>
+{% endblock %}

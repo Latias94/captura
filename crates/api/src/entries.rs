@@ -5,22 +5,24 @@ use axum::{
 use axum_extra::typed_header::TypedHeader;
 use headers::authorization::Bearer;
 use headers::Authorization;
+use sea_orm::Order;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, Condition, EntityTrait, QueryFilter, QueryOrder, RelationTrait,
-    Set,
+    ActiveModelTrait, ColumnTrait, Condition, EntityTrait, JoinType, QueryFilter, QueryOrder,
+    QuerySelect, RelationTrait,
 };
-use sea_orm::{Order, QuerySelect};
 use serde::{Deserialize, Serialize};
 
-use crate::search;
 use captura_storage::entity::{entry, feed, prelude::*};
 
 use crate::auth::AuthUser;
+use crate::entry_options::{apply_entry_flags, EntryUpdateFlags};
 use crate::error::{bad_request, internal, ApiResult};
+use crate::search;
 use crate::util::{validate_limit_offset, validate_sort};
 use crate::AppState;
 
 #[derive(Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub(crate) enum StatusFilter {
     Read,
     Unread,
@@ -70,13 +72,9 @@ pub(crate) async fn list_entries(
             return Err(bad_request("q too long"));
         }
     }
-    let sel0 = Entry::find();
-    let mut sel = sea_orm::QuerySelect::join(
-        sel0,
-        sea_orm::JoinType::InnerJoin,
-        entry::Relation::Feed.def(),
-    )
-    .filter(feed::Column::UserId.eq(user.user_id));
+    let mut sel = Entry::find()
+        .join(JoinType::InnerJoin, entry::Relation::Feed.def())
+        .filter(feed::Column::UserId.eq(user.user_id));
     if let Some(fid) = q.feed_id {
         sel = sel.filter(entry::Column::FeedId.eq(fid));
     }
@@ -173,9 +171,9 @@ pub(crate) async fn list_entries(
         }
     }
     let l = q.limit.unwrap_or(100);
-    sel = sea_orm::QuerySelect::limit(sel, l);
+    sel = sel.limit(l);
     if let Some(o) = q.offset {
-        sel = sea_orm::QuerySelect::offset(sel, o);
+        sel = sel.offset(o);
     }
     let list = sel.all(&st.db).await.map_err(internal)?;
     Ok(Json(
@@ -219,7 +217,13 @@ pub(crate) async fn mark_read(
             return Err(crate::error::forbidden("not your entry"));
         }
         let mut am: entry::ActiveModel = e.into();
-        am.is_read = Set(body.value);
+        apply_entry_flags(
+            &mut am,
+            EntryUpdateFlags {
+                is_read: Some(body.value),
+                is_starred: None,
+            },
+        );
         am.update(&st.db).await.map_err(internal)?;
     }
     Ok("ok")
@@ -243,7 +247,13 @@ pub(crate) async fn mark_star(
             return Err(crate::error::forbidden("not your entry"));
         }
         let mut am: entry::ActiveModel = e.into();
-        am.is_starred = Set(body.value);
+        apply_entry_flags(
+            &mut am,
+            EntryUpdateFlags {
+                is_read: None,
+                is_starred: Some(body.value),
+            },
+        );
         am.update(&st.db).await.map_err(internal)?;
     }
     Ok("ok")
@@ -264,13 +274,9 @@ pub(crate) async fn mark_all_read(
     if body.feed_id.is_none() && body.category_id.is_none() {
         return Err(bad_request("feed_id or category_id required"));
     }
-    let sel0 = Entry::find();
-    let mut sel = sea_orm::QuerySelect::join(
-        sel0,
-        sea_orm::JoinType::InnerJoin,
-        entry::Relation::Feed.def(),
-    )
-    .filter(feed::Column::UserId.eq(user.user_id));
+    let mut sel = Entry::find()
+        .join(JoinType::InnerJoin, entry::Relation::Feed.def())
+        .filter(feed::Column::UserId.eq(user.user_id));
     if let Some(fid) = body.feed_id {
         sel = sel.filter(entry::Column::FeedId.eq(fid));
     }

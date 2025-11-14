@@ -191,13 +191,11 @@ pub(crate) async fn discover(
         let mut verified: Vec<MfSubscriptionDto> = Vec::new();
         for cand in list.into_iter().take(10) {
             let resp = client.head(&cand.url).send().await;
-            let ok = match resp {
-                Ok(r) if r.status().is_success() => true,
-                _ => match client.get(&cand.url).send().await {
-                    Ok(r) if r.status().is_success() => true,
-                    _ => false,
-                },
-            };
+            let ok = matches!(resp, Ok(r) if r.status().is_success())
+                || matches!(
+                    client.get(&cand.url).send().await,
+                    Ok(r) if r.status().is_success()
+                );
             if ok {
                 verified.push(cand);
             }

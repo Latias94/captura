@@ -79,6 +79,11 @@ async fn refresh_standard_feed_with_meta(
         } else {
             None
         },
+        basic_auth: match (feed.username.clone(), feed.password.clone()) {
+            (Some(u), Some(p)) if !u.is_empty() => Some((u, p)),
+            (Some(u), None) if !u.is_empty() => Some((u, String::new())),
+            _ => None,
+        },
     };
     let client = HttpFetcher::new(opts)?;
     let out = client.fetch_feed_with_meta(&feed.feed_url).await?;
@@ -93,7 +98,7 @@ async fn refresh_standard_feed_with_meta(
             .into_iter()
             .map(|e| {
                 let summary_text = e.summary.as_ref().map(|s| s.content.clone());
-                let mut url = e.links.get(0).map(|l| clean_url(&l.href));
+                let mut url = e.links.first().map(|l| clean_url(&l.href));
                 // URL rewrite rules
                 if let Some(ref rules) = feed.url_rewrite_rules {
                     if let Some(u) = &url {
@@ -135,8 +140,8 @@ async fn refresh_standard_feed_with_meta(
                     title: e.title.map(|t| t.content),
                     summary: summary_text.clone(),
                     content_html,
-                    author: e.authors.get(0).map(|a| a.name.clone()),
-                    published_at: e.published.or(e.updated).map(|d| d.into()),
+                    author: e.authors.first().map(|a| a.name.clone()),
+                    published_at: e.published.or(e.updated),
                     enclosures,
                     extras: serde_json::json!({}),
                 }
@@ -256,10 +261,8 @@ fn apply_entry_filters(feed: &feed::Model, entries: &mut Vec<NormalizedEntry>) {
             hay.push_str(c);
         }
         // apply keep first: if any keep rules and none match, drop
-        if !keep_regexes.is_empty() {
-            if !keep_regexes.iter().any(|rx| rx.is_match(&hay)) {
-                return false;
-            }
+        if !keep_regexes.is_empty() && !keep_regexes.iter().any(|rx| rx.is_match(&hay)) {
+            return false;
         }
         // apply block: if any block matches, drop
         if block_regexes.iter().any(|rx| rx.is_match(&hay)) {
@@ -281,7 +284,7 @@ fn apply_rewrite_rules(input: &str, rules: &str) -> String {
             let delim = s.chars().nth(1).unwrap();
             let parts: Vec<&str> = s[2..].split(delim).collect();
             if parts.len() >= 2 {
-                let pat = parts.get(0).copied().unwrap_or("");
+                let pat = parts.first().copied().unwrap_or("");
                 let rep = parts.get(1).copied().unwrap_or("");
                 if let Ok(rx) = Regex::new(pat) {
                     out = rx.replace_all(&out, rep).to_string();
@@ -619,6 +622,8 @@ mod live_tests {
             rule_id: None,
             rule_params_json: None,
             user_agent: Some("captura-tests/0.1".into()),
+            username: None,
+            password: None,
             headers_json: None,
             cookies: None,
             proxy_url: None,

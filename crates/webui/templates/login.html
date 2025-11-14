@@ -1,0 +1,40 @@
+{% extends "layout.html" %}
+{% block body %}
+<section class="space-y-4">
+  <h1 class="text-2xl font-semibold">{{ dict["title.signin"] }}</h1>
+  <div class="login-grid">
+    <div>
+      <h2 class="title">{{ dict["login.local_account"] }}</h2>
+      <p class="muted">{{ dict["login.submit_hint"] }}</p>
+      <form id="loginForm" class="login-form" method="post" action="/api/v1/auth/login"
+        data-msg-failed="{{ dict["login.failed"] }}"
+        data-msg-network="{{ dict["login.network_error"] }}"
+        data-msg-issued="{{ dict["login.issued"] }}">
+        <div class="field">
+          <label class="label" for="username">{{ dict["label.username"] }}</label>
+          <input id="username" name="username" class="input" autocomplete="username" />
+        </div>
+        <div class="field">
+          <label class="label" for="password">{{ dict["label.password"] }}</label>
+          <input id="password" name="password" type="password" class="input" autocomplete="current-password" />
+        </div>
+        <div class="actions">
+          <button id="loginBtn" class="button" type="button">{{ dict["btn.login"] }}</button>
+          <button id="useBtn" class="button" type="button">{{ dict["btn.use_token"] }}</button>
+        </div>
+        <p id="loginMsg" class="muted"></p>
+      </form>
+    </div>
+    <div>
+      <h2 class="title">{{ dict["login.sso"] }}</h2>
+      {% if oidc_enabled %}
+      <a class="button" href="/api/v1/auth/oidc/start">{{ dict["login.continue_oidc"] }}</a>
+      {% else %}
+      <p class="muted">{{ dict["login.oidc_disabled_tip"] }}</p>
+      {% endif %}
+    </div>
+  </div>
+
+  <script src="/ui/static/js/login.js" defer></script>
+</section>
+{% endblock %}

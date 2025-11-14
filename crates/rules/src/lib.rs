@@ -89,3 +89,66 @@ pub fn validate(spec: &RuleSpec) -> Result<()> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use captura_common::Error;
+
+    #[test]
+    fn parse_basic_rule_yaml_ok() {
+        let yaml = r#"id: captura.route.github.trending
+description: GitHub Trending repositories
+examples:
+  - https://github.com/trending
+fetch:
+  user_agent: captura/0.1
+list:
+  url: "https://github.com/trending?since={since}"
+  item: "article.Box-row"
+content:
+  use: readability
+"#;
+        let spec = parse_rule(yaml).expect("parse rule");
+        assert_eq!(spec.id, "captura.route.github.trending");
+        assert_eq!(
+            spec.description.as_deref(),
+            Some("GitHub Trending repositories")
+        );
+        assert_eq!(spec.examples.len(), 1);
+        assert_eq!(spec.fetch.user_agent.as_deref(), Some("captura/0.1"));
+        assert!(spec.list.is_some());
+        assert_eq!(spec.content.r#use, "readability");
+    }
+
+    #[test]
+    fn invalid_regex_in_filters_fails_validation() {
+        let yaml = r#"id: captura.invalid.regex
+filters:
+  include:
+    - "("
+"#;
+        let err = parse_rule(yaml).unwrap_err();
+        match err {
+            Error::Parse(msg) => {
+                assert!(
+                    msg.contains("invalid regex"),
+                    "unexpected parse error message: {msg}"
+                );
+            }
+            other => panic!("expected Error::Parse, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn missing_optional_fields_use_defaults() {
+        let yaml = "id: simple.rule\n";
+        let spec = parse_rule(yaml).expect("parse rule");
+        assert_eq!(spec.id, "simple.rule");
+        assert!(spec.description.is_none());
+        assert!(spec.examples.is_empty());
+        assert!(spec.list.is_none());
+        // ContentSpec should default to css mode when not specified.
+        assert_eq!(spec.content.r#use, "css");
+    }
+}

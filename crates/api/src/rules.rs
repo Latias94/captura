@@ -13,7 +13,6 @@ use sea_orm::{
 use serde::{Deserialize, Serialize};
 
 use captura_crawler::{self as crawler, CrawlOptions};
-use captura_pipeline;
 use captura_rules::{parse_rule, RuleSpec};
 use captura_storage::entity::{feed, prelude::*, rule};
 
@@ -50,8 +49,8 @@ pub(crate) async fn create_rule(
     Json(body): Json<CreateRuleReq>,
 ) -> ApiResult<Json<IdResp>> {
     let _user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
-    let spec: RuleSpec = parse_rule(&body.yaml)
-        .map_err(|e| bad_request(format!("invalid rule yaml: {}", e.to_string())))?;
+    let spec: RuleSpec =
+        parse_rule(&body.yaml).map_err(|e| bad_request(format!("invalid rule yaml: {e}")))?;
     let now = Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
     let examples = serde_json::to_value(&spec.examples).map_err(internal)?;
     let am = rule::ActiveModel {
@@ -146,8 +145,8 @@ pub(crate) async fn update_rule(
     let Some(r) = Rule::find_by_id(id).one(&st.db).await.map_err(internal)? else {
         return Err(not_found("rule not found"));
     };
-    let spec: RuleSpec = parse_rule(&body.yaml)
-        .map_err(|e| bad_request(format!("invalid rule yaml: {}", e.to_string())))?;
+    let spec: RuleSpec =
+        parse_rule(&body.yaml).map_err(|e| bad_request(format!("invalid rule yaml: {e}")))?;
     let examples = serde_json::to_value(&spec.examples).map_err(internal)?;
     let mut am: rule::ActiveModel = r.into();
     am.rule_id = Set(spec.id.clone());
@@ -476,6 +475,8 @@ pub(crate) async fn try_rule(
         rule_id: None,
         rule_params_json: None,
         user_agent: spec.fetch.user_agent.clone(),
+        username: None,
+        password: None,
         headers_json: None,
         cookies: None,
         proxy_url: None,
@@ -489,6 +490,7 @@ pub(crate) async fn try_rule(
         last_modified: None,
         last_status: None,
         error_count: 0,
+        last_error_message: None,
         disabled: false,
         scraper_rules: None,
         rewrite_rules: None,

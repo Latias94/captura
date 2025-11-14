@@ -75,23 +75,25 @@ pub async fn refresh_and_persist(db: &DatabaseConnection, f: &feed::Model) -> Re
             if existing.contains(&guid) {
                 continue;
             }
-            let mut am: entry::ActiveModel = Default::default();
-            am.feed_id = Set(f.id);
-            am.guid = Set(Some(guid.clone()));
-            am.url = Set(n.url);
-            am.title = Set(n.title);
-            am.summary = Set(n.summary);
-            am.content_html = Set(n.content_html);
-            am.author = Set(n.author);
-            am.published_at = Set(n
-                .published_at
-                .map(|d| d.with_timezone(&FixedOffset::east_opt(0).unwrap())));
-            am.created_at = Set(now);
-            am.updated_at = Set(now);
-            am.hash = Set(None);
-            am.is_read = Set(false);
-            am.is_starred = Set(false);
-            am.extras_json = Set(Some(n.extras));
+            let am: entry::ActiveModel = entry::ActiveModel {
+                feed_id: Set(f.id),
+                guid: Set(Some(guid.clone())),
+                url: Set(n.url),
+                title: Set(n.title),
+                summary: Set(n.summary),
+                content_html: Set(n.content_html),
+                author: Set(n.author),
+                published_at: Set(n
+                    .published_at
+                    .map(|d| d.with_timezone(&FixedOffset::east_opt(0).unwrap()))),
+                created_at: Set(now),
+                updated_at: Set(now),
+                hash: Set(None),
+                is_read: Set(false),
+                is_starred: Set(false),
+                extras_json: Set(Some(n.extras)),
+                ..Default::default()
+            };
             models.push(am);
             if !n.enclosures.is_empty() {
                 new_enclosures.push((guid, n.enclosures));
@@ -138,12 +140,14 @@ pub async fn refresh_and_persist(db: &DatabaseConnection, f: &feed::Model) -> Re
                 if let Some(&eid) = gid_to_id.get(&g) {
                     for e in list {
                         use captura_storage::entity::enclosure as enc;
-                        let mut am: enc::ActiveModel = Default::default();
-                        am.entry_id = Set(eid);
-                        am.url = Set(e.url);
-                        am.mime = Set(e.r#type);
-                        am.length = Set(e.length);
-                        am.kind = Set(e.kind.map(|k| format!("{:?}", k)));
+                        let am: enc::ActiveModel = enc::ActiveModel {
+                            entry_id: Set(eid),
+                            url: Set(e.url),
+                            mime: Set(e.r#type),
+                            length: Set(e.length),
+                            kind: Set(e.kind.map(|k| format!("{:?}", k))),
+                            ..Default::default()
+                        };
                         emodels.push(am);
                     }
                 }
@@ -212,6 +216,7 @@ pub async fn refresh_and_persist(db: &DatabaseConnection, f: &feed::Model) -> Re
             let mut fm: feed::ActiveModel = model.into();
             fm.checked_at = Set(Some(now));
             fm.error_count = Set(0);
+            fm.last_error_message = Set(None);
             fm.last_status = Set(m.last_status.map(|s| s as i32));
             fm.etag = Set(m.etag);
             fm.last_modified = Set(m.last_modified);

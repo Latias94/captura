@@ -20,6 +20,7 @@ mod m20251112_000013_seed_rule_templates;
 mod m20251112_000014_seed_more_rule_templates;
 mod m20251112_000015_user_role;
 mod m20251112_000016_user_prefs;
+mod m20251112_000017_feed_basic_auth;
 
 pub struct Migrator;
 
@@ -43,6 +44,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20251112_000014_seed_more_rule_templates::Migration),
             Box::new(m20251112_000015_user_role::Migration),
             Box::new(m20251112_000016_user_prefs::Migration),
+            Box::new(m20251112_000017_feed_basic_auth::Migration),
         ]
     }
 }

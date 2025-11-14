@@ -1,7 +1,11 @@
 pub mod auth;
 pub mod auth_endpoints;
 pub mod compat;
+pub mod entries;
+pub mod entry_options;
 pub mod error;
+pub mod feed_options;
+pub mod feeds;
 pub mod search;
 pub mod state;
 pub mod users;
@@ -88,6 +92,11 @@ pub fn test_router(app_state: AppState) -> Router<AppState> {
     let v1 = Router::new()
         .route("/users", post(crate::users::create_user))
         .route("/auth/login", post(crate::auth_endpoints::auth_login))
+        .route(
+            "/feeds",
+            post(crate::feeds::create_feed).get(crate::feeds::list_feeds),
+        )
+        .route("/entries", get(crate::entries::list_entries))
         .route("/users/{id}/fever-key", post(crate::users::set_fever_key));
 
     Router::new()

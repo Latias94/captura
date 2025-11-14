@@ -44,6 +44,7 @@ hex = "0.4"
 tower-http.workspace = true
 hmac.workspace = true
 openidconnect = { version = "3", default-features = true, features = ["reqwest"] }
+captura-webui = { path = "../webui" }
 
 [dev-dependencies]
 http-body-util = "0.1"

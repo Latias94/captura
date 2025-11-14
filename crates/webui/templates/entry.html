@@ -1,0 +1,50 @@
+{% extends "layout.html" %}
+{% block body %}
+<article class="article" id="entryRoot" data-entry-id="{{ entry.id }}" data-feed-id="{{ entry.feed_id }}" data-status="{{ entry.status }}">
+  <div class="toolbar">
+    <a class="link" href="/feeds">← {{ dict["nav.feeds"] }}</a>
+  </div>
+  <h1 class="article__title">{% if entry.title.is_some() %}{{ entry.title.as_ref().unwrap() }}{% else %}{{ dict["misc.no_title"] }}{% endif %}</h1>
+  {% if entry.author.is_some() %}
+  <div class="article__meta">{{ dict["label.by"] }} {{ entry.author.as_ref().unwrap() }}</div>
+  {% endif %}
+  {% if entry.url.is_some() %}
+  <div class="article__meta"><a class="link ext" href="{{ entry.url.as_ref().unwrap() }}">{{ dict["link.original"] }}</a></div>
+  {% endif %}
+  <div class="toolbar">
+    <form method="post" action="/ui/entries/{{ entry.id }}/toggle-star" class="inline-block mr-2">
+      <button type="submit" class="button" id="btnStar" data-label-star="{{ dict["btn.star"] }}" data-label-unstar="{{ dict["btn.unstar"] }}">{% if entry.starred %}{{ dict["btn.unstar"] }}{% else %}{{ dict["btn.star"] }}{% endif %}</button>
+    </form>
+    <form method="post" action="/ui/entries/{{ entry.id }}/mark" class="inline-block">
+      <button type="submit" class="button" id="btnMark" data-label-read="{{ dict["btn.mark_read"] }}" data-label-unread="{{ dict["btn.mark_unread"] }}">{% if entry.status == "read" %}{{ dict["btn.mark_unread"] }}{% else %}{{ dict["btn.mark_read"] }}{% endif %}</button>
+    </form>
+    <button type="button" class="button ml-2" id="btnKeepUnread">{{ dict["btn.keep_unread"] }}</button>
+    <button type="button" class="button ml-2" id="btnSaveEntry">{{ dict["btn.save_entry"] }}</button>
+    <button type="button" class="button ml-2" id="btnLoadFull">{{ dict["btn.load_full"] }}</button>
+    {% if prev_id.is_some() %}
+      <a id="btnPrevNav" class="button ml-2" href="/entries/{{ prev_id.as_ref().unwrap() }}">{{ dict["btn.prev"] }}</a>
+    {% endif %}
+    {% if next_id.is_some() %}
+      <a id="btnNextNav" class="button ml-2" href="/entries/{{ next_id.as_ref().unwrap() }}">{{ dict["btn.next"] }}</a>
+    {% endif %}
+  </div>
+  <div class="article__content">{% if entry.content.is_some() %}{{ entry.content.as_ref().unwrap()|safe }}{% endif %}</div>
+
+  <section class="panel mt-4">
+    <h3 class="title">{{ dict["tags.title"] }}</h3>
+    <div id="tagsList">
+      {% if entry.tags.is_some() %}
+        {% for t in entry.tags.as_ref().unwrap() %}
+        <span class="tag" data-tag="{{ t }}"><a class="link" href="/feeds/{{ entry.feed_id }}?q=%23{{ t }}">{{ t }}</a> <button class="tag__remove" type="button" data-tag="{{ t }}">×</button></span>
+        {% endfor %}
+      {% endif %}
+    </div>
+    <div class="actions">
+      <input id="tagsAdd" class="input" placeholder="{{ dict["tags.add_placeholder"] }}" />
+      <button id="tagsAddBtn" class="button ml-2" type="button">{{ dict["btn.add"] }}</button>
+    </div>
+  </section>
+</article>
+<script src="/ui/static/js/hotkeys.js" defer></script>
+<script src="/ui/static/js/actions.js" defer></script>
+{% endblock %}

@@ -54,7 +54,7 @@ async fn reader_items_ids_empty_ok() {
         .await
         .unwrap();
     let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-    assert!(v.get("item_refs").is_some());
+    assert!(v.get("itemRefs").is_some());
 }
 
 #[tokio::test]

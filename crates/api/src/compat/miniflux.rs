@@ -52,8 +52,15 @@ pub fn router() -> Router<AppState> {
             "/feeds/{id}",
             get(feeds::get).put(feeds::update).delete(feeds::delete),
         )
+        // Miniflux 兼容：feed mark-all-as-read 使用 PUT + 名称为 mark-all-as-read
+        .route("/feeds/{id}/mark-all-as-read", put(feeds::mark_all_read))
+        // 兼容旧路径（向后兼容）
         .route("/feeds/{id}/mark-all-read", post(feeds::mark_all_read))
-        .route("/feeds/{id}/refresh", post(feeds::refresh_one))
+        // Miniflux 使用 PUT /feeds/{id}/refresh；保留 POST 以兼容现有客户端
+        .route(
+            "/feeds/{id}/refresh",
+            put(feeds::refresh_one).post(feeds::refresh_one),
+        )
         .route("/feeds/{id}/icon", get(icons::icon_by_feed))
         .route("/entries", get(entries::list).put(entries::update_bulk))
         .route("/entries/{id}", get(entries::get).put(entries::update))
@@ -67,7 +74,10 @@ pub fn router() -> Router<AppState> {
         .route("/entries/{id}/fetch-content", get(entries::fetch_content))
         .route("/feeds/{id}/entries", get(entries::feed_entries))
         .route("/categories/{id}/entries", get(categories::entries))
-        .route("/flush-history", put(entries::flush_history))
+        .route(
+            "/flush-history",
+            put(entries::flush_history).delete(entries::flush_history),
+        )
         .route("/users/{id}/mark-all-as-read", put(users::mark_all_read))
         .route("/api-keys", get(apikeys::list).post(apikeys::create))
         .route("/api-keys/{id}", delete(apikeys::delete))
@@ -820,6 +830,151 @@ mod it {
         assert_eq!(resp.status(), StatusCode::OK);
         let j = json_body(resp).await;
         assert!(j.get("unreadcounts").is_some());
+    }
+
+    #[tokio::test]
+    async fn miniflux_update_feed_clear_basic_auth_on_empty() {
+        use axum::{body::Body, http::Request};
+        use captura_storage::entity::prelude::*;
+        use sea_orm::{ActiveModelTrait, Set};
+
+        let db = setup_db().await;
+        let token = seed_user_and_token(&db).await;
+        let now = Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
+        // create a feed with basic auth set
+        let f = feed::ActiveModel {
+            user_id: Set(1),
+            category_id: Set(None),
+            r#type: Set(feed::FeedType::Rss),
+            title: Set(Some("t".into())),
+            site_url: Set(Some("https://example.com".into())),
+            feed_url: Set("https://example.com/ba".into()),
+            username: Set(Some("u".into())),
+            password: Set(Some("p".into())),
+            created_at: Set(now),
+            updated_at: Set(now),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+
+        let app = router().with_state(crate::AppState { db: db.clone() });
+        // PUT update with empty username/password should clear them
+        let body = serde_json::json!({"username":"","password":""}).to_string();
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::put(format!("/feeds/{}", f.id))
+                    .header("X-Auth-Token", token.as_str())
+                    .header("content-type", "application/json")
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        // verify
+        let model = Feed::find_by_id(f.id).one(&db).await.unwrap().unwrap();
+        assert!(model.username.is_none());
+        assert!(model.password.is_none());
+    }
+
+    #[tokio::test]
+    async fn miniflux_update_feed_clear_cookie_proxy_on_empty() {
+        use axum::{body::Body, http::Request};
+        use captura_storage::entity::prelude::*;
+        use sea_orm::{ActiveModelTrait, Set};
+
+        let db = setup_db().await;
+        let token = seed_user_and_token(&db).await;
+        let now = Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
+        // create a feed with cookie/proxy set
+        let f = feed::ActiveModel {
+            user_id: Set(1),
+            category_id: Set(None),
+            r#type: Set(feed::FeedType::Rss),
+            title: Set(Some("t".into())),
+            site_url: Set(Some("https://example.com".into())),
+            feed_url: Set("https://example.com/ck".into()),
+            cookies: Set(Some("a=b".into())),
+            proxy_url: Set(Some("http://proxy".into())),
+            created_at: Set(now),
+            updated_at: Set(now),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+
+        let app = router().with_state(crate::AppState { db: db.clone() });
+        // PUT update with empty cookie/proxy_url should clear them
+        let body = serde_json::json!({"cookie":"","proxy_url":""}).to_string();
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::put(format!("/feeds/{}", f.id))
+                    .header("X-Auth-Token", token.as_str())
+                    .header("content-type", "application/json")
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        // verify
+        let model = Feed::find_by_id(f.id).one(&db).await.unwrap().unwrap();
+        assert!(model.cookies.is_none());
+        assert!(model.proxy_url.is_none());
+    }
+
+    #[tokio::test]
+    async fn miniflux_update_feed_clear_user_agent_on_empty() {
+        use axum::{body::Body, http::Request};
+        use captura_storage::entity::prelude::*;
+        use sea_orm::{ActiveModelTrait, Set};
+
+        let db = setup_db().await;
+        let token = seed_user_and_token(&db).await;
+        let now = Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
+        // create a feed with user agent set
+        let f = feed::ActiveModel {
+            user_id: Set(1),
+            category_id: Set(None),
+            r#type: Set(feed::FeedType::Rss),
+            title: Set(Some("t".into())),
+            site_url: Set(Some("https://example.com".into())),
+            feed_url: Set("https://example.com/ua".into()),
+            user_agent: Set(Some("UA-X".into())),
+            created_at: Set(now),
+            updated_at: Set(now),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+
+        let app = router().with_state(crate::AppState { db: db.clone() });
+        // PUT update with empty user_agent should clear it
+        let body = serde_json::json!({"user_agent":""}).to_string();
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::put(format!("/feeds/{}", f.id))
+                    .header("X-Auth-Token", token.as_str())
+                    .header("content-type", "application/json")
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        // verify
+        let model = Feed::find_by_id(f.id).one(&db).await.unwrap().unwrap();
+        assert!(model.user_agent.is_none());
     }
 
     #[tokio::test]

@@ -238,20 +238,18 @@ pub(crate) fn parse_opml_quickxml(body: &str) -> Result<Vec<OutlineNode>, String
                 let mut text = None;
                 let mut xml_url = None;
                 let mut html_url = None;
-                for a in e.attributes().with_checks(false) {
-                    if let Ok(a) = a {
-                        let key = a.key.as_ref();
-                        let val = a
-                            .decode_and_unescape_value(&reader)
-                            .map_err(|e| e.to_string())?
-                            .to_string();
-                        match key {
-                            b"title" => title = Some(val),
-                            b"text" => text = Some(val),
-                            b"xmlUrl" => xml_url = Some(val),
-                            b"htmlUrl" => html_url = Some(val),
-                            _ => {}
-                        }
+                for a in e.attributes().with_checks(false).flatten() {
+                    let key = a.key.as_ref();
+                    let val = a
+                        .decode_and_unescape_value(&reader)
+                        .map_err(|e| e.to_string())?
+                        .to_string();
+                    match key {
+                        b"title" => title = Some(val),
+                        b"text" => text = Some(val),
+                        b"xmlUrl" => xml_url = Some(val),
+                        b"htmlUrl" => html_url = Some(val),
+                        _ => {}
                     }
                 }
                 if let Some(xu) = xml_url {

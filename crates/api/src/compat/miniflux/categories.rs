@@ -14,9 +14,15 @@ use sea_orm::{
 use captura_storage::entity::prelude::*;
 use captura_storage::entity::{category, entry, feed};
 
+#[derive(serde::Deserialize, Default)]
+pub(crate) struct MfCatListQuery {
+    pub counts: Option<bool>,
+}
+
 pub(crate) async fn list(
     State(st): State<AppState>,
     headers: axum::http::HeaderMap,
+    Query(q): Query<MfCatListQuery>,
 ) -> MfResult<Json<Vec<MfCategoryDto>>> {
     let auth = mf_auth(&st, &headers).await?;
     let cats = Category::find()
@@ -25,14 +31,73 @@ pub(crate) async fn list(
         .all(&st.db)
         .await
         .map_err(internal)?;
-    Ok(Json(
-        cats.into_iter()
+    let want_counts = q.counts.unwrap_or(false);
+    if !want_counts {
+        let out: Vec<MfCategoryDto> = cats
+            .into_iter()
             .map(|c| MfCategoryDto {
                 id: c.id,
                 title: c.name,
+                hide_globally: false,
+                feed_count: None,
+                total_unread: None,
             })
-            .collect(),
-    ))
+            .collect();
+        return Ok(Json(out));
+    }
+
+    // 统计 feed_count 与 total_unread
+    let cat_ids: Vec<i64> = cats.iter().map(|c| c.id).collect();
+    // 拉取该用户下的所有 feed（用于 unread 按分类汇总）
+    let feeds = Feed::find()
+        .filter(feed::Column::UserId.eq(auth.user_id))
+        .all(&st.db)
+        .await
+        .map_err(internal)?;
+    use std::collections::HashMap;
+    let mut feed_count_map: HashMap<i64, i64> = HashMap::new();
+    for f in feeds.iter() {
+        if let Some(cid) = f.category_id {
+            if cat_ids.contains(&cid) {
+                *feed_count_map.entry(cid).or_insert(0) += 1;
+            }
+        }
+    }
+    let feed_ids: Vec<i64> = feeds.iter().map(|f| f.id).collect();
+    let mut unread_map: HashMap<i64, i64> = HashMap::new(); // category_id -> unread
+    if !feed_ids.is_empty() {
+        let unread_pairs: Vec<(i64, i64)> = Entry::find()
+            .filter(entry::Column::FeedId.is_in(feed_ids.clone()))
+            .filter(entry::Column::IsRead.eq(false))
+            .select_only()
+            .column(entry::Column::FeedId)
+            .column_as(entry::Column::Id.count(), "cnt")
+            .group_by(entry::Column::FeedId)
+            .into_tuple()
+            .all(&st.db)
+            .await
+            .map_err(internal)?;
+        let feed_cat: HashMap<i64, Option<i64>> =
+            feeds.into_iter().map(|f| (f.id, f.category_id)).collect();
+        for (fid, cnt) in unread_pairs {
+            if let Some(Some(cid)) = feed_cat.get(&fid) {
+                if cat_ids.contains(cid) {
+                    *unread_map.entry(*cid).or_insert(0) += cnt;
+                }
+            }
+        }
+    }
+    let out: Vec<MfCategoryDto> = cats
+        .into_iter()
+        .map(|c| MfCategoryDto {
+            id: c.id,
+            title: c.name,
+            hide_globally: false,
+            feed_count: Some(*feed_count_map.get(&c.id).unwrap_or(&0)),
+            total_unread: Some(*unread_map.get(&c.id).unwrap_or(&0)),
+        })
+        .collect();
+    Ok(Json(out))
 }
 
 #[derive(serde::Deserialize)]
@@ -60,6 +125,9 @@ pub(crate) async fn create(
     Ok(Json(MfCategoryDto {
         id: c.id,
         title: c.name,
+        hide_globally: false,
+        feed_count: None,
+        total_unread: None,
     }))
 }
 

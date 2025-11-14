@@ -130,7 +130,7 @@ pub(crate) async fn endpoint(st: &AppState, q: &FeverQuery) -> Response {
         if let Some(since) = q.since_id {
             sel = sel.filter(entry::Column::Id.gt(since));
         }
-        let lim = q.limit.unwrap_or(50).min(200) as u64;
+        let lim = q.limit.unwrap_or(50).min(200);
         let items = sel
             .order_by_asc(entry::Column::Id)
             .limit(lim)
@@ -225,58 +225,55 @@ async fn fever_apply_write(
 ) -> Result<(), sea_orm::DbErr> {
     let now = Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
     let asv = asv.unwrap_or("");
-    match mark {
-        "item" => {
-            let ids: Vec<i64> = id
-                .unwrap_or("")
-                .split(',')
-                .filter_map(|s| s.trim().parse::<i64>().ok())
-                .collect();
-            if ids.is_empty() {
-                return Ok(());
-            }
-            // 仅限当前用户条目
-            let feed_ids: Vec<i64> = Feed::find()
-                .filter(feed::Column::UserId.eq(user_id))
-                .select_only()
-                .column(feed::Column::Id)
-                .into_tuple()
-                .all(db)
-                .await?;
-            match asv {
-                "read" | "unread" => {
-                    let val = asv == "read";
-                    let _ = Entry::update_many()
-                        .col_expr(entry::Column::IsRead, sea_orm::sea_query::Expr::value(val))
-                        .col_expr(
-                            entry::Column::UpdatedAt,
-                            sea_orm::sea_query::Expr::value(now),
-                        )
-                        .filter(entry::Column::Id.is_in(ids))
-                        .filter(entry::Column::FeedId.is_in(feed_ids))
-                        .exec(db)
-                        .await?;
-                }
-                "saved" | "unsaved" => {
-                    let val = asv == "saved";
-                    let _ = Entry::update_many()
-                        .col_expr(
-                            entry::Column::IsStarred,
-                            sea_orm::sea_query::Expr::value(val),
-                        )
-                        .col_expr(
-                            entry::Column::UpdatedAt,
-                            sea_orm::sea_query::Expr::value(now),
-                        )
-                        .filter(entry::Column::Id.is_in(ids))
-                        .filter(entry::Column::FeedId.is_in(feed_ids))
-                        .exec(db)
-                        .await?;
-                }
-                _ => {}
-            }
+    if mark == "item" {
+        let ids: Vec<i64> = id
+            .unwrap_or("")
+            .split(',')
+            .filter_map(|s| s.trim().parse::<i64>().ok())
+            .collect();
+        if ids.is_empty() {
+            return Ok(());
         }
-        _ => {}
+        // 仅限当前用户条目
+        let feed_ids: Vec<i64> = Feed::find()
+            .filter(feed::Column::UserId.eq(user_id))
+            .select_only()
+            .column(feed::Column::Id)
+            .into_tuple()
+            .all(db)
+            .await?;
+        match asv {
+            "read" | "unread" => {
+                let val = asv == "read";
+                let _ = Entry::update_many()
+                    .col_expr(entry::Column::IsRead, sea_orm::sea_query::Expr::value(val))
+                    .col_expr(
+                        entry::Column::UpdatedAt,
+                        sea_orm::sea_query::Expr::value(now),
+                    )
+                    .filter(entry::Column::Id.is_in(ids))
+                    .filter(entry::Column::FeedId.is_in(feed_ids))
+                    .exec(db)
+                    .await?;
+            }
+            "saved" | "unsaved" => {
+                let val = asv == "saved";
+                let _ = Entry::update_many()
+                    .col_expr(
+                        entry::Column::IsStarred,
+                        sea_orm::sea_query::Expr::value(val),
+                    )
+                    .col_expr(
+                        entry::Column::UpdatedAt,
+                        sea_orm::sea_query::Expr::value(now),
+                    )
+                    .filter(entry::Column::Id.is_in(ids))
+                    .filter(entry::Column::FeedId.is_in(feed_ids))
+                    .exec(db)
+                    .await?;
+            }
+            _ => {}
+        }
     }
     Ok(())
 }

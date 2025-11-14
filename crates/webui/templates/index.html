@@ -1,0 +1,11 @@
+{% extends "layout.html" %}
+{% block body %}
+<section class="space-y-3">
+  <h1 class="text-2xl font-semibold">{{ dict["title.welcome"] }}</h1>
+  <p class="text-neutral-700">{{ dict["intro.tagline"] }}</p>
+  <ul class="list-disc pl-5 text-neutral-700">
+    <li>{{ dict["intro.todo.signin"] }}</li>
+    <li>{{ dict["intro.todo.next"] }}</li>
+  </ul>
+</section>
+{% endblock %}

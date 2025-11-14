@@ -1,6 +1,7 @@
 use super::error::MfResult;
 use super::types::{map_feed, MfEnclosureDto, MfEntryDto, MfEntryResultSet};
 use crate::auth::mf_auth;
+use crate::entry_options::{apply_entry_flags, EntryUpdateFlags};
 use crate::error::{internal, not_found};
 use crate::AppState;
 use axum::extract::{Path, Query, State};
@@ -13,6 +14,7 @@ use sea_orm::{
     QuerySelect, RelationTrait, Set,
 };
 
+use axum::response::IntoResponse;
 use captura_storage::entity::prelude::*;
 use captura_storage::entity::{enclosure, entry, entry_label, feed, label};
 
@@ -25,6 +27,10 @@ pub(crate) struct MfEntriesQuery {
     pub search: Option<String>,
     pub before_id: Option<i64>,
     pub after_id: Option<i64>,
+    #[serde(rename = "before_entry_id")]
+    pub before_entry_id: Option<i64>,
+    #[serde(rename = "after_entry_id")]
+    pub after_entry_id: Option<i64>,
     pub order: Option<String>,     // published_at | id
     pub direction: Option<String>, // asc | desc
     pub content: Option<bool>,     // include content_html when true (default true)
@@ -151,11 +157,13 @@ pub(crate) async fn list(
             );
         }
     }
-    // id before/after filters
-    if let Some(b) = q.before_id {
+    // id before/after filters（兼容 before_id / before_entry_id 以及 after_id / after_entry_id）
+    let before = q.before_id.or(q.before_entry_id);
+    let after = q.after_id.or(q.after_entry_id);
+    if let Some(b) = before {
         sel = sel.filter(entry::Column::Id.lt(b));
     }
-    if let Some(a) = q.after_id {
+    if let Some(a) = after {
         sel = sel.filter(entry::Column::Id.gt(a));
     }
 
@@ -360,10 +368,14 @@ pub(crate) async fn update_bulk(
     State(st): State<AppState>,
     headers: axum::http::HeaderMap,
     Json(body): Json<MfUpdateEntriesBulk>,
-) -> MfResult<&'static str> {
+) -> MfResult<axum::response::Response> {
     let auth = mf_auth(&st, &headers).await?;
     if body.entry_ids.is_empty() {
-        return Ok("ok");
+        return Ok((
+            axum::http::StatusCode::NO_CONTENT,
+            axum::body::Body::empty(),
+        )
+            .into_response());
     }
     let feed_ids: Vec<i64> = Feed::find()
         .filter(feed::Column::UserId.eq(auth.user_id))
@@ -390,7 +402,11 @@ pub(crate) async fn update_bulk(
         .filter(entry::Column::Id.is_in(body.entry_ids.clone()))
         .filter(entry::Column::FeedId.is_in(feed_ids));
     let _ = upd.exec(&st.db).await.map_err(internal)?;
-    Ok("ok")
+    Ok((
+        axum::http::StatusCode::NO_CONTENT,
+        axum::body::Body::empty(),
+    )
+        .into_response())
 }
 
 #[derive(serde::Deserialize, Default)]
@@ -405,7 +421,7 @@ pub(crate) async fn update(
     headers: axum::http::HeaderMap,
     Path(id): Path<i64>,
     Json(body): Json<MfUpdateEntry>,
-) -> MfResult<&'static str> {
+) -> MfResult<Json<MfEntryDto>> {
     let auth = mf_auth(&st, &headers).await?;
     let Some(e) = Entry::find_by_id(id).one(&st.db).await.map_err(internal)? else {
         return Err(not_found("entry").into());
@@ -421,10 +437,19 @@ pub(crate) async fn update(
     }
     let mut am: entry::ActiveModel = e.into();
     if let Some(sts) = body.status.as_deref() {
-        match sts {
-            "read" => am.is_read = Set(true),
-            "unread" => am.is_read = Set(false),
-            _ => {}
+        let flag = match sts {
+            "read" => Some(true),
+            "unread" => Some(false),
+            _ => None,
+        };
+        if let Some(v) = flag {
+            apply_entry_flags(
+                &mut am,
+                EntryUpdateFlags {
+                    is_read: Some(v),
+                    is_starred: None,
+                },
+            );
         }
     }
     if let Some(t) = body.title {
@@ -434,14 +459,77 @@ pub(crate) async fn update(
         am.content_html = Set(Some(c));
     }
     let _ = am.update(&st.db).await.map_err(internal)?;
-    Ok("ok")
+    // 返回更新后的条目（与 GET /v1/entries/:id 一致）
+    let Some(e) = Entry::find_by_id(id).one(&st.db).await.map_err(internal)? else {
+        return Err(not_found("entry").into());
+    };
+    let Some(f) = Feed::find_by_id(e.feed_id)
+        .filter(feed::Column::UserId.eq(auth.user_id))
+        .one(&st.db)
+        .await
+        .map_err(internal)?
+    else {
+        return Err(not_found("entry").into());
+    };
+    let pairs: Vec<(i64, String)> = EntryLabel::find()
+        .join(
+            sea_orm::JoinType::InnerJoin,
+            entry_label::Relation::Label.def(),
+        )
+        .filter(entry_label::Column::EntryId.eq(id))
+        .filter(label::Column::UserId.eq(auth.user_id))
+        .select_only()
+        .column(entry_label::Column::EntryId)
+        .column(label::Column::Name)
+        .into_tuple()
+        .all(&st.db)
+        .await
+        .map_err(internal)?;
+    let tags: Vec<String> = pairs.into_iter().map(|(_, n)| n).collect();
+    let wpm: usize = std::env::var("READ_SPEED_WPM")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(200)
+        .max(50) as usize;
+    let body_html = e
+        .content_html
+        .clone()
+        .or(e.summary.clone())
+        .unwrap_or_default();
+    let reading_time = captura_common::reading_time_minutes_from_html(&body_html, wpm);
+    let dto = MfEntryDto {
+        id: e.id,
+        date: e.published_at.map(|d| d.to_rfc3339()),
+        changed_at: Some(e.updated_at.to_rfc3339()),
+        created_at: e.created_at.to_rfc3339(),
+        feed: Some(map_feed(f, None)),
+        hash: e.hash,
+        url: e.url,
+        comments_url: None,
+        title: e.title,
+        status: if e.is_read {
+            "read".into()
+        } else {
+            "unread".into()
+        },
+        content: e.content_html,
+        author: e.author,
+        share_code: None,
+        enclosures: None,
+        tags,
+        reading_time,
+        user_id: auth.user_id,
+        feed_id: e.feed_id,
+        starred: e.is_starred,
+    };
+    Ok(Json(dto))
 }
 
 pub(crate) async fn toggle_star(
     State(st): State<AppState>,
     headers: axum::http::HeaderMap,
     Path(id): Path<i64>,
-) -> MfResult<&'static str> {
+) -> MfResult<axum::response::Response> {
     let auth = mf_auth(&st, &headers).await?;
     let Some(e) = Entry::find_by_id(id).one(&st.db).await.map_err(internal)? else {
         return Err(not_found("entry").into());
@@ -457,16 +545,26 @@ pub(crate) async fn toggle_star(
     }
     let current = e.is_starred;
     let mut am: entry::ActiveModel = e.into();
-    am.is_starred = Set(!current);
+    apply_entry_flags(
+        &mut am,
+        EntryUpdateFlags {
+            is_read: None,
+            is_starred: Some(!current),
+        },
+    );
     am.update(&st.db).await.map_err(internal)?;
-    Ok("ok")
+    Ok((
+        axum::http::StatusCode::NO_CONTENT,
+        axum::body::Body::empty(),
+    )
+        .into_response())
 }
 
 // 清理历史：删除当前用户已读且未加星、超出阈值的条目
 pub(crate) async fn flush_history(
     State(st): State<AppState>,
     headers: axum::http::HeaderMap,
-) -> MfResult<&'static str> {
+) -> MfResult<axum::response::Response> {
     let auth = mf_auth(&st, &headers).await?;
     let days: i64 = std::env::var("FLUSH_HISTORY_DAYS")
         .ok()
@@ -484,7 +582,7 @@ pub(crate) async fn flush_history(
         .await
         .map_err(internal)?;
     if feed_ids.is_empty() {
-        return Ok("ok");
+        return Ok((axum::http::StatusCode::ACCEPTED, axum::body::Body::empty()).into_response());
     }
     let _ = Entry::delete_many()
         .filter(entry::Column::FeedId.is_in(feed_ids))
@@ -494,7 +592,7 @@ pub(crate) async fn flush_history(
         .exec(&st.db)
         .await
         .map_err(internal)?;
-    Ok("ok")
+    Ok((axum::http::StatusCode::ACCEPTED, axum::body::Body::empty()).into_response())
 }
 
 #[derive(serde::Serialize)]
@@ -554,6 +652,9 @@ pub(crate) async fn fetch_content(
     if f.allow_invalid_certs {
         http = http.danger_accept_invalid_certs(true);
     }
+    if f.disable_http2 {
+        http = http.http1_only();
+    }
     if f.fetch_via_proxy {
         if let Some(p) = f.proxy_url.clone() {
             if !p.is_empty() {
@@ -565,8 +666,17 @@ pub(crate) async fn fetch_content(
     }
     let http: HttpClient = http.build().map_err(internal)?;
     // 抓取并抽取正文
-    let html = http
-        .get(page_url)
+    let mut req = http.get(page_url);
+    if let Some(ref c) = f.cookies {
+        if !c.is_empty() {
+            req = req.header(reqwest::header::COOKIE, c.clone());
+        }
+    }
+    if let Some(ref u) = f.username {
+        // 若设置了用户名，则附加 Basic Auth（密码可为空字符串）
+        req = req.basic_auth(u, f.password.clone());
+    }
+    let html = req
         .send()
         .await
         .map_err(internal)?

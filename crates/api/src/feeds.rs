@@ -19,6 +19,7 @@ use captura_storage::entity::{feed, job, prelude::*, rule};
 
 use crate::auth::AuthUser;
 use crate::error::{bad_request, internal, not_found, ApiResult};
+use crate::feed_options::{apply_feed_update_options, FeedUpdateOptions};
 use crate::util::{validate_limit_offset, validate_sort};
 use crate::AppState;
 
@@ -31,6 +32,7 @@ pub(crate) struct CreateFeedReq {
     pub feed_url: String,
     pub rule_id: Option<i64>,
     pub rule_params_json: Option<serde_json::Value>,
+    // 抓取选项
     pub user_agent: Option<String>,
     pub headers_json: Option<serde_json::Value>,
     pub cookies: Option<String>,
@@ -39,6 +41,9 @@ pub(crate) struct CreateFeedReq {
     pub disable_http2: Option<bool>,
     pub allow_invalid_certs: Option<bool>,
     pub request_timeout_ms: Option<i32>,
+    // 基本认证（用于私有源）
+    pub username: Option<String>,
+    pub password: Option<String>,
     pub disabled: Option<bool>,
 }
 
@@ -176,6 +181,7 @@ pub(crate) struct UpdateFeedReq {
     pub title: Option<String>,
     pub category_id: Option<i64>,
     pub disabled: Option<bool>,
+    // 抓取选项
     pub user_agent: Option<String>,
     pub headers_json: Option<serde_json::Value>,
     pub cookies: Option<String>,
@@ -186,6 +192,9 @@ pub(crate) struct UpdateFeedReq {
     pub request_timeout_ms: Option<i32>,
     pub integrations_json: Option<serde_json::Value>,
     pub rule_params_json: Option<serde_json::Value>,
+    // 基本认证（用于私有源）
+    pub username: Option<String>,
+    pub password: Option<String>,
 }
 
 pub(crate) async fn update_feed(
@@ -217,42 +226,30 @@ pub(crate) async fn update_feed(
     if let Some(d) = body.disabled {
         am.disabled = Set(d);
     }
-    if let Some(ua) = body.user_agent {
-        am.user_agent = Set(Some(ua));
-    }
-    if let Some(h) = body.headers_json {
-        am.headers_json = Set(Some(h));
-    }
-    if let Some(c) = body.cookies {
-        am.cookies = Set(Some(c));
-    }
-    if let Some(p) = body.proxy_url {
-        am.proxy_url = Set(Some(p));
-    }
-    if let Some(v) = body.fetch_via_proxy {
-        am.fetch_via_proxy = Set(v);
-    }
-    if let Some(v) = body.disable_http2 {
-        am.disable_http2 = Set(v);
-    }
-    if let Some(v) = body.allow_invalid_certs {
-        am.allow_invalid_certs = Set(v);
-    }
-    if let Some(v) = body.request_timeout_ms {
-        am.request_timeout_ms = Set(Some(v));
-    }
-    if let Some(v) = body.integrations_json {
-        if !v.is_object() {
-            return Err(bad_request("integrations_json must be an object"));
-        }
-        am.integrations_json = Set(Some(v));
-    }
-    if let Some(v) = body.rule_params_json {
-        if !v.is_object() {
-            return Err(bad_request("rule_params_json must be an object"));
-        }
-        am.rule_params_json = Set(Some(v));
-    }
+    apply_feed_update_options(
+        &mut am,
+        FeedUpdateOptions {
+            user_agent: body.user_agent,
+            headers_json: body.headers_json,
+            cookies: body.cookies,
+            proxy_url: body.proxy_url,
+            fetch_via_proxy: body.fetch_via_proxy,
+            disable_http2: body.disable_http2,
+            allow_invalid_certs: body.allow_invalid_certs,
+            request_timeout_ms: body.request_timeout_ms,
+            integrations_json: body.integrations_json,
+            rule_params_json: body.rule_params_json,
+            username: body.username,
+            password: body.password,
+            scraper_rules: None,
+            rewrite_rules: None,
+            blocklist_rules: None,
+            keeplist_rules: None,
+            url_rewrite_rules: None,
+            feed_url: None,
+            site_url: None,
+        },
+    )?;
     am.update(&st.db).await.map_err(internal)?;
     Ok("ok")
 }
@@ -377,10 +374,42 @@ pub(crate) async fn create_feed(
             feed_url: Set(body.feed_url.clone()),
             rule_id: Set(Some(tpl.id)),
             rule_params_json: Set(Some(params)),
-            user_agent: Set(body.user_agent.clone()),
+            user_agent: Set(body.user_agent.clone().and_then(|s| {
+                if s.trim().is_empty() {
+                    None
+                } else {
+                    Some(s)
+                }
+            })),
+            username: Set(body.username.clone().and_then(|s| {
+                if s.trim().is_empty() {
+                    None
+                } else {
+                    Some(s)
+                }
+            })),
+            password: Set(body.password.clone().and_then(|s| {
+                if s.trim().is_empty() {
+                    None
+                } else {
+                    Some(s)
+                }
+            })),
             headers_json: Set(body.headers_json),
-            cookies: Set(body.cookies.clone()),
-            proxy_url: Set(body.proxy_url.clone()),
+            cookies: Set(body.cookies.clone().and_then(|s| {
+                if s.trim().is_empty() {
+                    None
+                } else {
+                    Some(s)
+                }
+            })),
+            proxy_url: Set(body.proxy_url.clone().and_then(|s| {
+                if s.trim().is_empty() {
+                    None
+                } else {
+                    Some(s)
+                }
+            })),
             fetch_via_proxy: Set(body.fetch_via_proxy.unwrap_or(false)),
             disable_http2: Set(body.disable_http2.unwrap_or(false)),
             allow_invalid_certs: Set(body.allow_invalid_certs.unwrap_or(false)),
@@ -417,10 +446,42 @@ pub(crate) async fn create_feed(
         feed_url: Set(normalized_feed_url.clone()),
         rule_id: Set(body.rule_id),
         rule_params_json: Set(body.rule_params_json),
-        user_agent: Set(body.user_agent.clone()),
+        user_agent: Set(body.user_agent.clone().and_then(|s| {
+            if s.trim().is_empty() {
+                None
+            } else {
+                Some(s)
+            }
+        })),
+        username: Set(body.username.clone().and_then(|s| {
+            if s.trim().is_empty() {
+                None
+            } else {
+                Some(s)
+            }
+        })),
+        password: Set(body.password.clone().and_then(|s| {
+            if s.trim().is_empty() {
+                None
+            } else {
+                Some(s)
+            }
+        })),
         headers_json: Set(body.headers_json),
-        cookies: Set(body.cookies.clone()),
-        proxy_url: Set(body.proxy_url.clone()),
+        cookies: Set(body.cookies.clone().and_then(|s| {
+            if s.trim().is_empty() {
+                None
+            } else {
+                Some(s)
+            }
+        })),
+        proxy_url: Set(body.proxy_url.clone().and_then(|s| {
+            if s.trim().is_empty() {
+                None
+            } else {
+                Some(s)
+            }
+        })),
         fetch_via_proxy: Set(body.fetch_via_proxy.unwrap_or(false)),
         disable_http2: Set(body.disable_http2.unwrap_or(false)),
         allow_invalid_certs: Set(body.allow_invalid_certs.unwrap_or(false)),

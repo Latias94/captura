@@ -35,12 +35,14 @@ pub async fn auth_login(
         return Err(bad_request("username/password required"));
     }
     let key = body.username.to_lowercase();
-    if let Err(_) = crate::util::login_check_and_mark(
+    if crate::util::login_check_and_mark(
         &key,
         st.cfg.login_max_attempts,
         st.cfg.login_window_secs,
         false,
-    ) {
+    )
+    .is_err()
+    {
         return Err(crate::error::too_many_requests("too many attempts"));
     }
     let u = User::find()

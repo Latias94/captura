@@ -3,7 +3,7 @@ use crate::auth::mf_auth;
 use crate::error::{bad_request, internal};
 use crate::AppState;
 use axum::extract::State;
-use axum::Json;
+// JSON helpers kept in error module; no direct Json import needed here
 use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, Set};
 
 use captura_storage::entity::feed;
@@ -46,10 +46,31 @@ pub(crate) struct MfImportReq {
 pub(crate) async fn import(
     State(st): State<AppState>,
     headers: axum::http::HeaderMap,
-    Json(body): Json<MfImportReq>,
+    body: axum::body::Bytes,
 ) -> MfResult<&'static str> {
     let auth = mf_auth(&st, &headers).await?;
-    let xml = body.content.trim();
+    // 支持 Miniflux 风格：Content-Type: application/xml 直接提交 OPML；也兼容原有 JSON {content}
+    let content_type = headers
+        .get(axum::http::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    let body_str = String::from_utf8(body.to_vec()).unwrap_or_default();
+    let xml_owned: String;
+    let xml = if content_type.contains("xml") {
+        xml_owned = body_str;
+        xml_owned.trim()
+    } else {
+        // 兼容旧 JSON 形式
+        if let Ok(req) = serde_json::from_str::<MfImportReq>(&body_str) {
+            xml_owned = req.content;
+            xml_owned.trim()
+        } else {
+            // 退化：尝试直接当作 XML
+            xml_owned = body_str;
+            xml_owned.trim()
+        }
+    };
     if xml.is_empty() {
         return Err(bad_request("empty opml").into());
     }

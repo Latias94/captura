@@ -38,9 +38,6 @@ fn hmac_verify(secret: &str, payload_b64: &str, sig: &str) -> bool {
     expected == sig
 }
 
-#[derive(Deserialize)]
-pub(crate) struct StartQuery {}
-
 pub(crate) async fn start(State(st): State<AppState>) -> ApiResult<impl IntoResponse> {
     let cfg = &st.cfg;
     if !cfg.oidc_enabled {

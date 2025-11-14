@@ -5,6 +5,12 @@ use serde::Serialize;
 pub struct MfCategoryDto {
     pub id: i64,
     pub title: String,
+    #[serde(rename = "hide_globally")]
+    pub hide_globally: bool,
+    #[serde(rename = "feed_count", skip_serializing_if = "Option::is_none")]
+    pub feed_count: Option<i64>,
+    #[serde(rename = "total_unread", skip_serializing_if = "Option::is_none")]
+    pub total_unread: Option<i64>,
 }
 
 #[derive(Serialize)]
@@ -78,6 +84,8 @@ pub struct MfFeedDto {
     pub proxy_url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub unread_count: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub icon: Option<MfIconRef>,
 }
 
 pub fn map_feed(f: feed::Model, cat: Option<category::Model>) -> MfFeedDto {
@@ -90,7 +98,7 @@ pub fn map_feed(f: feed::Model, cat: Option<category::Model>) -> MfFeedDto {
         checked_at: f.checked_at.map(|d| d.to_rfc3339()),
         etag_header: f.etag,
         last_modified_header: f.last_modified,
-        parsing_error_message: None,
+        parsing_error_message: f.last_error_message,
         parsing_error_count: f.error_count,
         disabled: f.disabled,
         ignore_http_cache: false,
@@ -111,11 +119,18 @@ pub fn map_feed(f: feed::Model, cat: Option<category::Model>) -> MfFeedDto {
         category: cat.map(|c| MfCategoryDto {
             id: c.id,
             title: c.name,
+            hide_globally: false,
+            feed_count: None,
+            total_unread: None,
         }),
         hide_globally: false,
         disable_http2: f.disable_http2,
         proxy_url: f.proxy_url,
         unread_count: None,
+        icon: f.favicon_id.map(|icon_id| MfIconRef {
+            feed_id: f.id,
+            icon_id,
+        }),
     }
 }
 
@@ -167,4 +182,12 @@ pub struct MfEntryDto {
 pub struct MfEntryResultSet {
     pub total: i64,
     pub entries: Vec<MfEntryDto>,
+}
+
+#[derive(Serialize, Clone)]
+pub struct MfIconRef {
+    #[serde(rename = "feed_id")]
+    pub feed_id: i64,
+    #[serde(rename = "icon_id")]
+    pub icon_id: i64,
 }

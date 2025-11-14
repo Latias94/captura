@@ -135,7 +135,7 @@ async fn reader_items_ids_xt_read_excludes_read() {
         .unwrap();
     let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
     let cnt = v
-        .get("item_refs")
+        .get("itemRefs")
         .and_then(|x| x.as_array())
         .map(|a| a.len())
         .unwrap_or(0);
@@ -167,7 +167,7 @@ async fn reader_items_ids_xt_starred_excludes_starred() {
         .unwrap();
     let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
     let cnt = v
-        .get("item_refs")
+        .get("itemRefs")
         .and_then(|x| x.as_array())
         .map(|a| a.len())
         .unwrap_or(0);
@@ -259,7 +259,7 @@ async fn reader_items_ids_combination_s_q_xt() {
         .unwrap();
     let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
     let cnt = v
-        .get("item_refs")
+        .get("itemRefs")
         .and_then(|x| x.as_array())
         .map(|a| a.len())
         .unwrap_or(0);
@@ -291,7 +291,7 @@ async fn reader_items_ids_continuation_cuts_by_id() {
         .unwrap();
     let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
     let refs = v
-        .get("item_refs")
+        .get("itemRefs")
         .and_then(|x| x.as_array())
         .cloned()
         .unwrap_or_default();

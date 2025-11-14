@@ -154,6 +154,7 @@ impl MigrationTrait for Migration {
                     .col(ColumnDef::new(Feed::Etag).string())
                     .col(ColumnDef::new(Feed::LastModified).string())
                     .col(ColumnDef::new(Feed::LastStatus).integer())
+                    .col(ColumnDef::new(Feed::LastErrorMessage).text())
                     .col(
                         ColumnDef::new(Feed::ErrorCount)
                             .integer()
@@ -636,6 +637,7 @@ enum Category {
 }
 
 #[derive(DeriveIden)]
+#[allow(clippy::enum_variant_names)]
 enum Rule {
     Table,
     Id,
@@ -652,6 +654,7 @@ enum Rule {
 }
 
 #[derive(DeriveIden)]
+#[allow(clippy::enum_variant_names)]
 enum Feed {
     Table,
     Id,
@@ -675,6 +678,7 @@ enum Feed {
     Etag,
     LastModified,
     LastStatus,
+    LastErrorMessage,
     ErrorCount,
     Disabled,
     ScraperRules,
@@ -738,6 +742,7 @@ enum EntryLabel {
 }
 
 #[derive(DeriveIden)]
+#[allow(clippy::enum_variant_names)]
 enum Job {
     Table,
     Id,

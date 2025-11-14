@@ -19,6 +19,7 @@ pub struct FetchOptions {
     pub allow_invalid_certs: bool,
     pub disable_http2: bool,
     pub proxy_url: Option<String>,
+    pub basic_auth: Option<(String, String)>,
 }
 
 pub trait FeedFetcher: Send + Sync {
@@ -79,6 +80,9 @@ impl HttpFetcher {
         }
         headers.extend(self.options.headers.clone());
         req = req.headers(headers.clone());
+        if let Some((ref u, ref p)) = self.options.basic_auth {
+            req = req.basic_auth(u, Some(p));
+        }
         let resp = req
             .send()
             .await

@@ -1,0 +1,112 @@
+{% extends "layout.html" %}
+{% block body %}
+<div class="view view--entries" id="entriesView" data-filter="{{ filter }}" data-feed-id="{{ feed_id }}" data-limit="{{ limit }}" data-pick-label="{{ dict["label.pick"] }}" data-no-title="{{ dict["misc.no_title"] }}" data-search="{{ search_q }}">
+  <div class="toolbar">
+    <a class="link" href="/feeds">← {{ dict["nav.feeds"] }}</a>
+    <form id="formFeedMarkAllRead" method="post" action="/ui/feeds/{{ feed_id }}/mark-all-read" class="inline-block ml-3">
+      <button type="submit" class="button">{{ dict["btn.mark_all_read"] }}</button>
+    </form>
+    <form id="formFeedRefresh" method="post" action="/ui/feeds/{{ feed_id }}/refresh" class="inline-block ml-2">
+      <button type="submit" class="button">{{ dict["btn.refresh"] }}</button>
+    </form>
+    <span id="feedUnread" class="badge ml-2" aria-label="unread"></span>
+    <button type="button" class="button ml-3" id="btnSelectAll">{{ dict["btn.select_all"] }}</button>
+    <form id="formMarkRead" method="post" action="/ui/entries/bulk-mark" class="inline-block ml-2">
+      <input type="hidden" name="ids" id="idsRead" value="" />
+      <input type="hidden" name="status" value="read" />
+      <button type="submit" class="button">{{ dict["btn.mark_read"] }}</button>
+    </form>
+    <form id="formMarkUnread" method="post" action="/ui/entries/bulk-mark" class="inline-block ml-2">
+      <input type="hidden" name="ids" id="idsUnread" value="" />
+      <input type="hidden" name="status" value="unread" />
+      <button type="submit" class="button">{{ dict["btn.mark_unread"] }}</button>
+    </form>
+    <form id="formMarkPageRead" method="post" action="/ui/entries/bulk-mark" class="inline-block ml-2">
+      <input type="hidden" name="ids" id="idsPageRead" value="" />
+      <input type="hidden" name="status" value="read" />
+      <button type="submit" class="button" id="btnMarkPageRead">{{ dict["btn.mark_page_read"] }}</button>
+    </form>
+    <form id="formMarkAboveRead" method="post" action="/ui/entries/bulk-mark" class="inline-block ml-2">
+      <input type="hidden" name="ids" id="idsAboveRead" value="" />
+      <input type="hidden" name="status" value="read" />
+      <button type="submit" class="button" id="btnMarkAboveRead">{{ dict["btn.mark_above_read"] }}</button>
+    </form>
+    <form id="formMarkBelowRead" method="post" action="/ui/entries/bulk-mark" class="inline-block ml-2">
+      <input type="hidden" name="ids" id="idsBelowRead" value="" />
+      <input type="hidden" name="status" value="read" />
+      <button type="submit" class="button" id="btnMarkBelowRead">{{ dict["btn.mark_below_read"] }}</button>
+    </form>
+  </div>
+  <div class="toolbar my-2">
+    <form method="get" action="/feeds/{{ feed_id }}" class="inline-block">
+      <input id="searchInput" class="input" name="q" placeholder="{{ dict["search.placeholder"] }}" value="{{ search_q }}" />
+      <input type="hidden" name="limit" value="{{ limit }}" />
+      {% if filter == "unread" %}
+      <input type="hidden" name="status" value="unread" />
+      {% endif %}
+      {% if filter == "starred" %}
+      <input type="hidden" name="starred" value="true" />
+      {% endif %}
+      <button class="button ml-2" type="submit">{{ dict["btn.search"] }}</button>
+      {% if search_q != "" %}
+      <a class="button ml-2" href="/feeds/{{ feed_id }}?limit={{ limit }}{{ filter_q }}">{{ dict["btn.clear_search"] }}</a>
+      {% endif %}
+      <button class="button ml-2" type="button" id="btnSaveSearch">{{ dict["btn.save_search"] }}</button>
+    </form>
+  </div>
+  <section class="panel mt-2">
+    <h2 class="title">{{ dict["saved.title"] }}</h2>
+    <ul class="list" id="savedSearches" data-dict-empty="{{ dict["saved.empty"] }}" data-dict-rename="{{ dict["btn.rename"] }}" data-dict-delete="{{ dict["btn.delete"] }}" data-dict-saveas="{{ dict["saved.save_as"] }}" data-dict-saved="{{ dict["saved.saved"] }}" data-dict-exists="{{ dict["saved.exists"] }}"></ul>
+  </section>
+  {% if refreshed %}
+  <div class="alert">{{ dict["info.refreshed"] }}</div>
+  {% endif %}
+  {% if refresh_err %}
+  <div class="alert">{{ dict["error.refresh"] }}</div>
+  {% endif %}
+  <div class="toolbar my-2">
+    <a class="button{% if filter == "all" %} button--active{% endif %}" href="/feeds/{{ feed_id }}?limit={{ limit }}{{ search_q_qs }}">{{ dict["filter.all"] }}</a>
+    <a class="button{% if filter == "unread" %} button--active{% endif %}" href="/feeds/{{ feed_id }}?status=unread&limit={{ limit }}{{ search_q_qs }}">{{ dict["filter.unread"] }}</a>
+    <a class="button{% if filter == "starred" %} button--active{% endif %}" href="/feeds/{{ feed_id }}?starred=true&limit={{ limit }}{{ search_q_qs }}">{{ dict["filter.starred"] }}</a>
+  </div>
+  <h1 class="title">{{ dict["title.entries"] }}</h1>
+  {% if items | length == 0 %}
+    <p class="muted">{{ dict["empty.entries"] }}</p>
+  {% else %}
+    <ul class="cards" id="cards">
+    {% for e in items %}
+      <li class="card" tabindex="0" data-entry-id="{{ e.id }}" data-status="{{ e.status }}">
+        <label class="float-right"><input type="checkbox" class="card__pick" data-id="{{ e.id }}" /> {{ dict["label.pick"] }}</label>
+        <a class="card__title" href="/entries/{{ e.id }}">{% if e.title.is_some() %}{{ e.title.as_ref().unwrap() }}{% else %}{{ dict["misc.no_title"] }}{% endif %}</a>
+        <div class="card__meta">
+          {% if e.author.is_some() %}<span class="meta-author" data-author="{{ e.author.as_ref().unwrap() }}">{{ e.author.as_ref().unwrap() }}</span>{% endif %}
+          {% if e.date.is_some() %}<span>{{ e.date.as_ref().unwrap() }}</span>{% endif %}
+          <form method="post" action="/ui/entries/{{ e.id }}/toggle-star" class="inline">
+            <button type="submit" class="button button--xs">{% if e.starred %}★{% else %}☆{% endif %}</button>
+          </form>
+        </div>
+        {% if e.tags.is_some() %}
+        <div class="card__meta">
+          {% for t in e.tags.as_ref().unwrap() %}
+          <button type="button" class="entry-tag button button--xs" data-tag="{{ t }}">#{{ t }}</button>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </li>
+    {% endfor %}
+    </ul>
+    <script src="/ui/static/js/listkeys.js" defer></script>
+    <script src="/ui/static/js/listbulk.js" defer></script>
+    <script src="/ui/static/js/actions.js" defer></script>
+    <script src="/ui/static/js/search_hl.js" defer></script>
+    <script src="/ui/static/js/saved_searches.js" defer></script>
+  {% endif %}
+  <div class="toolbar mt-4">
+    {% if prev_page.is_some() %}
+    <a class="button" href="/feeds/{{ feed_id }}?page={{ prev_page.as_ref().unwrap() }}&limit={{ limit }}{{ filter_q }}{{ search_q_qs }}">{{ dict["btn.prev"] }}</a>
+    {% endif %}
+    {% if next_page.is_some() %}
+    <a class="button" href="/feeds/{{ feed_id }}?page={{ next_page.as_ref().unwrap() }}&limit={{ limit }}{{ filter_q }}{{ search_q_qs }}">{{ dict["btn.next"] }}</a>
+    {% endif %}
+  </div>
+{% endblock %}

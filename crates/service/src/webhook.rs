@@ -83,7 +83,7 @@ pub async fn emit_new_entries(
                 .unwrap_or_default();
             let text = ammonia::clean(&body);
             let words = text.split_whitespace().count();
-            let reading_time = std::cmp::max(1, (words + wpm - 1) / wpm) as i32;
+            let reading_time = std::cmp::max(1, words.div_ceil(wpm)) as i32;
             serde_json::json!({
                 "id": e.id,
                 "user_id": user_id,

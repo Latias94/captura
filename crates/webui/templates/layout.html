@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{ title }} · Captura</title>
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; frame-src *; img-src * data:; manifest-src 'self'; media-src *; connect-src 'self'; script-src 'nonce-{{ csp_nonce }}' 'strict-dynamic'; style-src 'nonce-{{ csp_nonce }}'{% if external_font_hosts|non_empty_str %} {{ external_font_hosts }}{% endif %}; font-src 'self' data:{% if external_font_hosts|non_empty_str %} {{ external_font_hosts }}{% endif %};" />
+    <link rel="stylesheet" href="/ui/static/css/app.css" nonce="{{ csp_nonce }}" />
+    <link rel="icon" href="/ui/static/img/favicon.svg" type="image/svg+xml" />
+    <script src="/ui/static/js/theme.js" nonce="{{ csp_nonce }}" type="module"></script>
+    {% if custom_css != "" %}
+    <style nonce="{{ csp_nonce }}">{{ custom_css | safe }}</style>
+    {% endif %}
+    {% if custom_js != "" %}
+    <script type="module" nonce="{{ csp_nonce }}">{{ custom_js | safe }}</script>
+    {% endif %}
+  </head>
+  <body class="layout">
+    <header class="header">
+      <div class="container header__inner">
+        <a href="/" class="brand">Captura</a>
+        <nav class="nav">
+          <a href="/" class="nav__link">{{ dict["nav.home"] }}</a>
+          <a href="/feeds" class="nav__link">{{ dict["nav.feeds"] }}</a>
+          <span id="navUnread" class="badge ml-2" aria-label="unread total"></span>
+          <a href="/settings" class="nav__link">{{ dict["nav.settings"] }}</a>
+          <a href="/login" class="nav__link">{{ dict["nav.login"] }}</a>
+        </nav>
+      </div>
+    </header>
+    <main class="container main">
+      {% block body %}{% endblock %}
+    </main>
+    <footer class="footer container"><p class="footer__copy">© Captura</p></footer>
+    <div id="toasts" class="toasts" role="status" aria-live="polite"></div>
+    <!-- Keyboard help overlay -->
+    <div id="kbHelp" class="overlay" role="dialog" aria-modal="true" hidden>
+      <div class="overlay__panel" role="document">
+        <h3>{{ dict["kb.help"] }}</h3>
+        <ul>
+          <li>{{ dict["kb.list"] }}</li>
+          <li>{{ dict["kb.entry"] }}</li>
+          <li>{{ dict["kb.toggle"] }}</li>
+        </ul>
+        <button id="kbClose" class="button" type="button">{{ dict["btn.close"] }}</button>
+      </div>
+    </div>
+    <script src="/ui/static/js/help.js" nonce="{{ csp_nonce }}" type="module"></script>
+    <script src="/ui/static/js/toast.js" nonce="{{ csp_nonce }}" type="module"></script>
+    <script src="/ui/static/js/external_links.js" nonce="{{ csp_nonce }}" type="module"></script>
+    <script src="/ui/static/js/feeds_counters.js" nonce="{{ csp_nonce }}" type="module"></script>
+  </body>
+  
+</html>
