@@ -24,6 +24,80 @@ pub(crate) struct FetchCfg {
     pub proxy_url: Option<String>,
 }
 
+/// Fetch HTML for rules/Hub handlers using either the HTTP client or the
+/// spider-based crawler, depending on `FetchCfg.smart`. This helper is shared
+/// by rule executors and Hub utilities.
+pub(crate) async fn fetch_html_strategy(
+    client: &Client,
+    url: &str,
+    fetch: &FetchCfg,
+    feed: Option<&feed::Model>,
+) -> Result<String> {
+    // Optional crawler path when `smart = true`.
+    if fetch.smart.unwrap_or(false) {
+        let mut opts = CrawlOptions::default();
+        opts.user_agent = fetch.user_agent.clone();
+        opts.respect_robots = fetch.respect_robots.unwrap_or(true);
+        if let Some(d) = fetch.delay_ms {
+            opts.delay_ms = d;
+        }
+        opts.limit = fetch.limit;
+        if let Some(proxy) = &fetch.proxy_url {
+            if !proxy.is_empty() {
+                opts.proxy_url = Some(proxy.clone());
+            }
+        }
+
+        if let Ok(html) = crawler::fetch_html(url, &opts).await {
+            if !html.trim().is_empty() {
+                return Ok(html);
+            }
+        }
+    }
+
+    // Fallback to plain HTTP using the provided client.
+    let mut req = client.get(url);
+
+    // Attach per-request headers from FetchCfg.
+    if let Some(headers) = &fetch.headers {
+        for (k, v) in headers {
+            if let Some(s) = v.as_str() {
+                if let Ok(name) = reqwest::header::HeaderName::from_bytes(k.as_bytes()) {
+                    if let Ok(val) = reqwest::header::HeaderValue::from_str(s) {
+                        req = req.header(name, val);
+                    }
+                }
+            }
+        }
+    }
+
+    // Attach cookies/basic auth from feed when available.
+    if let Some(f) = feed {
+        if let Some(ref c) = f.cookies {
+            if !c.is_empty() {
+                req = req.header(reqwest::header::COOKIE, c.clone());
+            }
+        }
+        if let Some(ref u) = f.username {
+            req = req.basic_auth(u, f.password.clone());
+        }
+    }
+
+    let resp = req
+        .send()
+        .await
+        .map_err(|e| Error::Network(e.to_string()))?;
+    let status = resp.status();
+    if !status.is_success() {
+        return Err(Error::Network(format!("http status {}", status)));
+    }
+    let text = resp
+        .text()
+        .await
+        .map_err(|e| Error::Network(e.to_string()))?;
+    Ok(text)
+}
+
 /// Parse YAML into `RuleSpecV1` and execute it for the given feed.
 #[instrument(skip(feed, yaml))]
 pub async fn refresh_rule_with_yaml(
@@ -465,15 +539,21 @@ async fn execute_list_detail_v1(
 
         let content_html: Option<String> = match content.mode {
             crate::ContentMode::Readability => {
-                readability_like_strategy_async(&client, url.as_deref(), &fetch_cfg, Some(feed))
+                crate::readability_like_strategy_async(&client, url.as_deref(), &fetch_cfg, Some(feed))
                     .await
             }
             crate::ContentMode::Css | crate::ContentMode::JsonFragment => {
                 if let Some(sel) = &content.selector {
                     if let Some(u) = &url {
                         Some(
-                            fetch_and_select_strategy(&client, u, sel, &fetch_cfg, Some(feed))
-                                .await?,
+                            crate::fetch_and_select_strategy(
+                                &client,
+                                u,
+                                sel,
+                                &fetch_cfg,
+                                Some(feed),
+                            )
+                            .await?,
                         )
                     } else {
                         None
@@ -562,13 +642,20 @@ async fn execute_single_page_v1(
 
     let content_html: Option<String> = match content.mode {
         crate::ContentMode::Readability => {
-            readability_like_strategy_async(&client, Some(&final_url), &fetch_cfg, Some(feed)).await
+            crate::readability_like_strategy_async(&client, Some(&final_url), &fetch_cfg, Some(feed))
+                .await
         }
         crate::ContentMode::Css | crate::ContentMode::JsonFragment => {
             if let Some(sel) = &content.selector {
                 Some(
-                    fetch_and_select_strategy(&client, &final_url, sel, &fetch_cfg, Some(feed))
-                        .await?,
+                    crate::fetch_and_select_strategy(
+                        &client,
+                        &final_url,
+                        sel,
+                        &fetch_cfg,
+                        Some(feed),
+                    )
+                    .await?,
                 )
             } else {
                 None
@@ -598,7 +685,10 @@ async fn execute_single_page_v1(
 /// - JSON embedded in HTML via `source.from_html`.
 ///
 /// Advanced timestamp and enclosure mapping can be extended later.
-async fn execute_json_v1(feed: &feed::Model, spec: &RuleSpecV1) -> Result<Vec<NormalizedEntry>> {
+pub(crate) async fn execute_json_v1(
+    feed: &feed::Model,
+    spec: &RuleSpecV1,
+) -> Result<Vec<NormalizedEntry>> {
     let root_path = spec
         .source
         .root
@@ -693,7 +783,7 @@ async fn execute_json_v1(feed: &feed::Model, spec: &RuleSpecV1) -> Result<Vec<No
             .text()
             .await
             .map_err(|e| Error::Network(e.to_string()))?;
-        serde_json::from_str(&text).map_err(|e| Error::Parse(format!("invalid json: {e}")))?;
+        serde_json::from_str(&text).map_err(|e| Error::Parse(format!("invalid json: {e}")))?
     };
 
     let root = json_get_path(&json_root, root_path)
@@ -766,6 +856,106 @@ async fn execute_json_v1(feed: &feed::Model, spec: &RuleSpecV1) -> Result<Vec<No
             author,
             published_at: None,
             enclosures,
+            extras: serde_json::json!({}),
+        });
+    }
+
+    Ok(entries)
+}
+
+/// Execute a v1 rule with `source.type = xpath`.
+///
+/// This implementation supports a pragmatic subset of XPath by converting
+/// XPath-like expressions into CSS selectors used by `scraper`.
+async fn execute_xpath_v1(feed: &feed::Model, spec: &RuleSpecV1) -> Result<Vec<NormalizedEntry>> {
+    let req = spec
+        .source
+        .request
+        .as_ref()
+        .ok_or_else(|| Error::Config("source.request is required for xpath".into()))?;
+    let xpath = spec
+        .source
+        .xpath
+        .as_ref()
+        .ok_or_else(|| Error::Config("source.xpath is required for xpath".into()))?;
+
+    let ua = spec
+        .fetch
+        .user_agent
+        .clone()
+        .or_else(|| feed.user_agent.clone())
+        .unwrap_or_else(|| "captura/0.1".to_string());
+
+    let client = Client::builder()
+        .user_agent(ua)
+        .build()
+        .map_err(|e| Error::Network(e.to_string()))?;
+
+    let fetch_cfg = FetchCfg {
+        user_agent: spec
+            .fetch
+            .user_agent
+            .clone()
+            .or_else(|| feed.user_agent.clone()),
+        headers: req.headers.clone(),
+        smart: spec.fetch.smart.or(req.smart),
+        timeout_ms: spec.fetch.timeout_ms.or(req.timeout_ms),
+        respect_robots: spec.fetch.respect_robots.or(req.respect_robots),
+        delay_ms: None,
+        limit: None,
+        proxy_url: None,
+    };
+
+    let params = merge_rule_params_v1(spec, feed.rule_params_json.as_ref());
+    let final_url = render_with_params(&req.url, params.as_ref());
+
+    let html = fetch_html_strategy(&client, &final_url, &fetch_cfg, Some(feed)).await?;
+    let doc = Html::parse_document(&html);
+
+    let item_sel_str = xpath_to_css_like(&xpath.item);
+    let item_sel = Selector::parse(&item_sel_str)
+        .map_err(|e| Error::Parse(format!("invalid xpath.item selector '{item_sel_str}': {e}")))?;
+
+    let mut entries = Vec::new();
+    for el in doc.select(&item_sel) {
+        let title = xpath.title.as_deref().and_then(|expr| {
+            let css = xpath_to_css_like(expr);
+            if css.contains('@') {
+                crate::extract_attr(&el, &css)
+            } else {
+                crate::extract_text(&el, &css)
+            }
+        });
+
+        let raw_url = xpath.url.as_deref().and_then(|expr| {
+            let css = xpath_to_css_like(expr);
+            if css.contains('@') {
+                crate::extract_attr(&el, &css)
+            } else {
+                crate::extract_text(&el, &css)
+            }
+        });
+        let url = raw_url.as_deref().map(|u| crate::absolutize(&final_url, u));
+
+        let content_html = xpath
+            .content_html
+            .as_deref()
+            .and_then(|expr| {
+                let css = xpath_to_css_like(expr);
+                extract_html(&el, &css)
+            })
+            .map(|html| sanitize_html(&html));
+
+        entries.push(NormalizedEntry {
+            guid: url.clone(),
+            url,
+            title,
+            summary: None,
+            content_html,
+            author: None,
+            // TODO: support xpath.published_at.expr / format
+            published_at: None,
+            enclosures: vec![],
             extras: serde_json::json!({}),
         });
     }

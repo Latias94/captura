@@ -1,4 +1,4 @@
-use crate::types::{FeatureConfig, Features, Radar, RouteMeta};
+use crate::types::{Features, Radar, RouteMeta};
 
 pub const META_HN_FRONT: RouteMeta = RouteMeta {
     hub_id: "hn/front",

@@ -6,6 +6,45 @@ use tracing::debug;
 
 use crate::hub_utils;
 
+struct BuiltinHubRoute {
+    hub_id: &'static str,
+    handler: &'static dyn HubHandler,
+}
+
+static BUILTIN_HUB_ROUTES: &[BuiltinHubRoute] = &[
+    BuiltinHubRoute {
+        hub_id: "github/trending",
+        handler: &GITHUB_TRENDING_HANDLER,
+    },
+    BuiltinHubRoute {
+        hub_id: "hn/front",
+        handler: &HN_FRONT_HANDLER,
+    },
+    BuiltinHubRoute {
+        hub_id: "lobsters/front",
+        handler: &LOBSTERS_FRONT_HANDLER,
+    },
+    BuiltinHubRoute {
+        hub_id: "zhihu/hotlist",
+        handler: &ZHIHU_HOTLIST_HANDLER,
+    },
+    BuiltinHubRoute {
+        hub_id: "reuters/top",
+        handler: &REUTERS_TOP_HANDLER,
+    },
+    BuiltinHubRoute {
+        hub_id: "medium/tag",
+        handler: &MEDIUM_TAG_HANDLER,
+    },
+];
+
+fn find_builtin_handler(hub_id: &str) -> Option<&'static dyn HubHandler> {
+    BUILTIN_HUB_ROUTES
+        .iter()
+        .find(|r| r.hub_id == hub_id)
+        .map(|r| r.handler)
+}
+
 /// Built-in Hub handler for github/trending.
 pub struct GithubTrendingHubHandler;
 
@@ -335,7 +374,7 @@ fn hub_result_to_entries(res: HubResult) -> Result<Vec<NormalizedEntry>> {
                     summary: item.description.clone(),
                     content_html: item.description,
                     author: item.author,
-                    published_at: item.pub_date,
+                    published_at: item.pub_date.map(|d| d.with_timezone(&chrono::Utc)),
                     enclosures: Vec::new(),
                     extras: serde_json::json!({}),
                 });
@@ -369,15 +408,12 @@ pub(crate) async fn execute_builtin_hub_for_rule(
         params: &param_map,
     };
 
-    let res = match hub_id.as_str() {
-        "github/trending" => GITHUB_TRENDING_HANDLER.handle(&mut ctx).await,
-        "hn/front" => HN_FRONT_HANDLER.handle(&mut ctx).await,
-        "lobsters/front" => LOBSTERS_FRONT_HANDLER.handle(&mut ctx).await,
-        "zhihu/hotlist" => ZHIHU_HOTLIST_HANDLER.handle(&mut ctx).await,
-        "reuters/top" => REUTERS_TOP_HANDLER.handle(&mut ctx).await,
-        "medium/tag" => MEDIUM_TAG_HANDLER.handle(&mut ctx).await,
-        _ => return None,
+    let handler = match find_builtin_handler(&hub_id) {
+        Some(h) => h,
+        None => return None,
     };
+
+    let res = handler.handle(&mut ctx).await;
     Some(res.and_then(hub_result_to_entries))
 }
 
@@ -386,34 +422,9 @@ pub async fn execute_hub_route(
     hub_id: &str,
     params: &serde_json::Map<String, serde_json::Value>,
 ) -> captura_common::Result<HubResult> {
-    match hub_id {
-        "github/trending" => {
-            let mut ctx = HubHandlerCtx { hub_id, params };
-            GITHUB_TRENDING_HANDLER.handle(&mut ctx).await
-        }
-        "hn/front" => {
-            let mut ctx = HubHandlerCtx { hub_id, params };
-            HN_FRONT_HANDLER.handle(&mut ctx).await
-        }
-        "lobsters/front" => {
-            let mut ctx = HubHandlerCtx { hub_id, params };
-            LOBSTERS_FRONT_HANDLER.handle(&mut ctx).await
-        }
-        "zhihu/hotlist" => {
-            let mut ctx = HubHandlerCtx { hub_id, params };
-            ZHIHU_HOTLIST_HANDLER.handle(&mut ctx).await
-        }
-        "reuters/top" => {
-            let mut ctx = HubHandlerCtx { hub_id, params };
-            REUTERS_TOP_HANDLER.handle(&mut ctx).await
-        }
-        "medium/tag" => {
-            let mut ctx = HubHandlerCtx { hub_id, params };
-            MEDIUM_TAG_HANDLER.handle(&mut ctx).await
-        }
-        _ => Err(captura_common::Error::Config(format!(
-            "unknown hub route: {}",
-            hub_id
-        ))),
-    }
+    let handler = find_builtin_handler(hub_id).ok_or_else(|| {
+        captura_common::Error::Config(format!("unknown hub route: {}", hub_id))
+    })?;
+    let mut ctx = HubHandlerCtx { hub_id, params };
+    handler.handle(&mut ctx).await
 }

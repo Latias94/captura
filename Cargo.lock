@@ -696,6 +696,7 @@ version = "0.1.0"
 dependencies = [
  "ammonia",
  "anyhow",
+ "async-trait",
  "captura-common",
  "captura-crawler",
  "captura-fetcher",

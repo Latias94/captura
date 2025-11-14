@@ -171,7 +171,7 @@ pub(crate) async fn preview_hub(
         }
     }
 
-    let res = captura_pipeline::hub_bridge::execute_hub_route(&hub_id, &map)
+    let res = captura_pipeline::execute_hub_route(&hub_id, &map)
         .await
         .map_err(internal)?;
 

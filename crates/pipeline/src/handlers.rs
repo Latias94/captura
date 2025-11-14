@@ -13,7 +13,8 @@ pub(crate) struct HandlerCtx<'a> {
 
 impl<'a> HandlerCtx<'a> {
     pub fn new(feed: &'a feed::Model, spec: &'a RuleSpecV1) -> Self {
-        let params = crate::merge_rule_params_v1(spec, feed.rule_params_json.as_ref());
+        let params =
+            crate::rules_engine::merge_rule_params_v1(spec, feed.rule_params_json.as_ref());
         Self { feed, spec, params }
     }
 }

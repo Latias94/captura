@@ -19,7 +19,10 @@ mod hub_bridge;
 mod hub_utils;
 mod rules_engine;
 
+use rules_engine::{fetch_html_strategy, FetchCfg};
+
 pub use rules_engine::{refresh_rule_v1, refresh_rule_v1_with_yaml, refresh_rule_with_yaml};
+pub use hub_bridge::execute_hub_route;
 
 #[derive(Debug, Clone)]
 pub struct RefreshMeta {
@@ -615,6 +618,15 @@ async fn execute_single_page_v1(
     };
 
     Ok(vec![entry])
+}
+
+// Legacy JSON executor kept only for compatibility; it delegates to the
+// consolidated implementation in `rules_engine`.
+async fn execute_json_v1(
+    feed: &feed::Model,
+    spec: &RuleSpecV1,
+) -> Result<Vec<NormalizedEntry>> {
+    rules_engine::execute_json_v1(feed, spec).await
 }
 
 

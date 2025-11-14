@@ -4,7 +4,8 @@ use reqwest::Client;
 use scraper::{ElementRef, Html, Selector};
 use url::Url;
 
-use crate::{extract_attr, extract_text, fetch_html_strategy, sanitize_html, FetchCfg};
+use crate::{extract_attr, extract_text, sanitize_html};
+use crate::rules_engine::{fetch_html_strategy, FetchCfg};
 
 /// Hub 级 HTTP 选项封装，便于在 handler 中复用。
 #[derive(Debug, Clone)]

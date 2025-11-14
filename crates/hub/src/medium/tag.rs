@@ -1,4 +1,4 @@
-use crate::types::{FeatureConfig, Features, Radar, RouteMeta};
+use crate::types::{Features, Radar, RouteMeta};
 
 pub const META_MEDIUM_TAG: RouteMeta = RouteMeta {
     hub_id: "medium/tag",
