@@ -10,7 +10,7 @@ use regex::Regex;
 use reqwest::header::HeaderMap;
 use reqwest::Client;
 use scraper::{Html, Selector};
-use tracing::instrument;
+use tracing::{debug, instrument};
 use url::Url;
 
 #[derive(Debug, Clone)]
@@ -348,7 +348,12 @@ pub async fn refresh_rule_feed(
             items.push((link, title));
         }
     }
-
+    debug!(
+        feed_id = feed.id,
+        list_url = %final_list_url,
+        items = items.len(),
+        "refresh_rule_feed: collected list items"
+    );
     // 2) 再按 items 顺序请求正文。
     let mut entries = Vec::new();
     for (link, title) in items {
@@ -401,6 +406,11 @@ pub async fn refresh_rule_feed(
             extras: serde_json::json!({}),
         });
     }
+    debug!(
+        feed_id = feed.id,
+        entry_count = entries.len(),
+        "refresh_rule_feed: entries before filters"
+    );
     // 规则同样应用条目过滤（与标准 Feed 路径保持一致）
     apply_entry_filters(feed, &mut entries);
     Ok(entries)
@@ -535,10 +545,25 @@ async fn fetch_html_strategy(
             limit: fetch.limit,
             proxy_url: None,
         };
-        if let Ok(html) = crawler::fetch_html(url, &opts).await {
-            return Ok(html);
+        // Apply an explicit timeout to spider-based crawling to avoid
+        // long-running tasks blocking the pipeline.
+        let spider_timeout_ms: u64 = fetch
+            .timeout_ms
+            .or_else(|| {
+                feed.and_then(|f| f.request_timeout_ms.map(|ms| ms as u64))
+            })
+            .unwrap_or(15_000);
+        if let Ok(res) = tokio::time::timeout(
+            std::time::Duration::from_millis(spider_timeout_ms),
+            crawler::fetch_html(url, &opts),
+        )
+        .await
+        {
+            if let Ok(html) = res {
+                return Ok(html);
+            }
         }
-        // fall back to HTTP path below
+        // fall back to HTTP path below on timeout or spider error
     }
     // Build client with proxy/invalid cert if needed
     let mut builder = reqwest::Client::builder();
@@ -636,6 +661,7 @@ mod live_tests {
             etag: None,
             last_modified: None,
             last_status: None,
+            last_error_message: None,
             error_count: 0,
             disabled: false,
             scraper_rules: None,

@@ -3,6 +3,7 @@ use captura_service::refresh_and_persist;
 use captura_storage::entity::{entry, feed, rule};
 use chrono::{FixedOffset, Utc};
 use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set};
+use tracing_subscriber::EnvFilter;
 
 /// 使用本地 HTTP 服务器验证：rule-type feed + YAML 规则
 /// 能通过 service 层完整走 pipeline，最终将 entry 落库。
@@ -133,3 +134,4 @@ content:\n\
         "no entry content contained expected marker text"
     );
 }
+

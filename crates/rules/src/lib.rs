@@ -9,6 +9,7 @@ use tracing::instrument;
 pub struct RuleSpec {
     pub id: String,
     pub description: Option<String>,
+    #[serde(default)]
     pub examples: Vec<String>,
     #[serde(default)]
     pub fetch: FetchSpec,
@@ -150,5 +151,25 @@ filters:
         assert!(spec.list.is_none());
         // ContentSpec should default to css mode when not specified.
         assert_eq!(spec.content.r#use, "css");
+    }
+
+    #[test]
+    fn parse_minimal_rule_with_list_and_content() {
+        let yaml = r#"id: "test.rule"
+list:
+  url: "http://localhost/list"
+  item: "a.item"
+content:
+  use: "css"
+  selector: "div.article"
+"#;
+        let spec = parse_rule(yaml).expect("parse rule");
+        assert_eq!(spec.id, "test.rule");
+        assert!(spec.list.is_some());
+        let list = spec.list.unwrap();
+        assert_eq!(list.url, "http://localhost/list");
+        assert_eq!(list.item, "a.item");
+        assert_eq!(spec.content.r#use, "css");
+        assert_eq!(spec.content.selector.as_deref(), Some("div.article"));
     }
 }
