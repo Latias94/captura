@@ -29,7 +29,7 @@ This document describes the initial architecture and workspace layout for Captur
     - Google Reader：`/reader/api/0/*`
 - `crates/fetcher`: standard feed fetching (HTTP + ETag/IMS) and parsing.
 - `crates/crawler`: spider-based adapter for dynamic pages and anti-bot bypass.
-- `crates/rules`: DSL schema, validator/linter; rule executor to be added.
+- `crates/rules`: Rules DSL v1 schema, validator/linter.
 - `crates/scheduler`: job scheduler and background workers.
 - `crates/pipeline`: Orchestrates `fetcher`/`crawler`/`rules` into normalized entries.
 - `rules/`: rule directory (YAML) for community.
@@ -58,36 +58,37 @@ Initial tables (to be refined):
 
 SeaORM provides entity-first or migration workflows. During early development we can use entity-first, then solidify migrations for releases.
 
-## Rules DSL (MVP)
+## Rules: DSL v1 + Handlers
 
-YAML schema (minimal):
+Captura 的内容抓取层分为两级：
 
-```yaml
-id: example.site
-description: Example site timeline
-examples:
-  - https://example.com/news
-fetch:
-  user_agent: captura/0.1
-  smart: false
-list:
-  url: https://example.com/news
-  item: article.post
-  link: a@href
-  title: a.title
-  published_at:
-    selector: time@datetime
-    format: "%Y-%m-%dT%H:%M:%S%z"
-content:
-  use: css
-  selector: "div.article-content, section.content"
-  fallback: readability
-filters:
-  include: [".*"]
-  exclude: []
-```
+- 声明层：Rules DSL v1（YAML），描述“数据源长什么样、如何提取列表与正文”。
+- 执行层：Rust handlers（包括通用的 DSL 执行器和少量专用 handler）。
 
-Validator ensures required fields and regexes are valid. A linter/test runner (to be added) will fetch sample URLs and snapshot results.
+详细 DSL 规范见 `docs/rules-dsl.md`。这里只概括运行时形态。
+
+### Rule 类型
+
+每条规则由一个逻辑记录表示（存于 DB 的 `rule` 表中，并可从 `rules/` 目录导入），核心字段：
+
+- `rule.rule_id`：逻辑 ID，例如 `captura.route.github.trending`。
+- `rule.version`：目前固定为 `1`（Rules DSL v1）。
+- `rule.yaml`：DSL v1 文本（YAML）。
+- 运行时元数据（namespace、maintainer、examples 等）。
+
+在运行时，我们抽象为三类 handler：
+
+- **DSL v1 handler（默认）**：
+  - 解析 `rule.yaml` 为 `RuleSpecV1`（见 `docs/rules-dsl.md`）。
+  - 由通用执行器解释 `source.type=list_detail|single_page|json|xpath`，使用现有 `fetcher` / `crawler` / `pipeline::extractor`。
+- **内置 Rust handler（custom）**：
+  - 针对极端复杂站点（例如需要登录/session、多步流程、复杂 DOM 改写）编写专用 Rust 代码。
+  - 与规则通过逻辑 ID 绑定：如 `captura.handlers.javdb_home`。
+- **外部 HTTP handler（预留）**：
+  - 未来可以允许部分规则委托给本机外部 HTTP 服务（例如用户私有爬虫），由 Captura 按约定的 JSON 协议调用。
+  - 目前仅在设计上预留，不实现。
+
+后续可以在单独文档中定义 handler 运行时协议和扩展点。
 
 ## Crawler (spider)
 

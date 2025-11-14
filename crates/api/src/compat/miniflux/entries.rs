@@ -7,8 +7,6 @@ use crate::AppState;
 use axum::extract::{Path, Query, State};
 use axum::Json;
 use chrono::{FixedOffset, Utc};
-use reqwest::Client as HttpClient;
-use scraper::{Html, Selector};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, Condition, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder,
     QuerySelect, RelationTrait, Set,
@@ -17,6 +15,7 @@ use sea_orm::{
 use axum::response::IntoResponse;
 use captura_storage::entity::prelude::*;
 use captura_storage::entity::{enclosure, entry, entry_label, feed, label};
+use captura_pipeline::extractor;
 
 #[derive(serde::Deserialize, Default)]
 pub(crate) struct MfEntriesQuery {
@@ -641,111 +640,19 @@ pub(crate) async fn fetch_content(
             return Ok(Json(MfEntryContentResp { content }));
         }
     };
-    // HTTP 客户端（遵循订阅配置）
-    let mut http = reqwest::Client::builder();
-    if let Some(ua) = f.user_agent.clone() {
-        http = http.user_agent(ua);
-    }
-    if let Some(ms) = f.request_timeout_ms {
-        http = http.timeout(std::time::Duration::from_millis(ms as u64));
-    }
-    if f.allow_invalid_certs {
-        http = http.danger_accept_invalid_certs(true);
-    }
-    if f.disable_http2 {
-        http = http.http1_only();
-    }
-    if f.fetch_via_proxy {
-        if let Some(p) = f.proxy_url.clone() {
-            if !p.is_empty() {
-                if let Ok(proxy) = reqwest::Proxy::all(p) {
-                    http = http.proxy(proxy);
-                }
-            }
-        }
-    }
-    let http: HttpClient = http.build().map_err(internal)?;
-    // 抓取并抽取正文
-    let mut req = http.get(page_url);
-    if let Some(ref c) = f.cookies {
-        if !c.is_empty() {
-            req = req.header(reqwest::header::COOKIE, c.clone());
-        }
-    }
-    if let Some(ref u) = f.username {
-        // 若设置了用户名，则附加 Basic Auth（密码可为空字符串）
-        req = req.basic_auth(u, f.password.clone());
-    }
-    let html = req
-        .send()
-        .await
-        .map_err(internal)?
-        .text()
+    // 使用统一的内部提取服务抓取 & 抽取正文
+    let extracted = extractor::fetch_and_extract_entry(page_url, &f)
         .await
         .map_err(internal)?;
-    let (out_html, new_title) = {
-        let doc = Html::parse_document(&html);
-        // Scraper Rules 优先（每行 CSS 选择器）
-        let mut content_html: Option<String> = None;
-        if let Some(ref rules) = f.scraper_rules {
-            let selector_lines: Vec<&str> = rules
-                .lines()
-                .map(|s| s.trim())
-                .filter(|s| !s.is_empty() && !s.starts_with('#'))
-                .collect();
-            if !selector_lines.is_empty() {
-                let mut buf = String::new();
-                for sel_str in selector_lines {
-                    if let Ok(sel) = Selector::parse(sel_str) {
-                        for el in doc.select(&sel) {
-                            buf.push_str(&el.html());
-                        }
-                    }
-                }
-                if !buf.is_empty() {
-                    content_html = Some(buf);
-                }
-            }
-        }
-        // 简易 Readability 备选
-        if content_html.is_none() {
-            let candidates = [
-                "article",
-                "main",
-                "#content",
-                ".post",
-                ".article",
-                ".entry-content",
-            ];
-            for c in candidates.iter() {
-                if let Ok(sel) = Selector::parse(c) {
-                    if let Some(el) = doc.select(&sel).next() {
-                        content_html = Some(el.html());
-                        break;
-                    }
-                }
-            }
-            if content_html.is_none() {
-                content_html = Some(html.clone());
-            }
-        }
-        // 可选标题
-        let mut new_title: Option<String> = None;
-        if let Ok(sel) = Selector::parse("title") {
-            if let Some(el) = doc.select(&sel).next() {
-                let t = el.text().collect::<Vec<_>>().join("").trim().to_string();
-                if !t.is_empty() {
-                    new_title = Some(t);
-                }
-            }
-        }
-        let out_html = content_html.unwrap_or_else(|| {
-            e.content_html
-                .clone()
-                .unwrap_or_else(|| e.summary.clone().unwrap_or_default())
-        });
-        (out_html, new_title)
-    };
+    let mut out_html = extracted.content_html.clone();
+    let new_title = extracted.title;
+    if out_html.is_empty() {
+        // 与原实现保持兼容：如果抽取结果为空，则回退到现有正文/摘要
+        out_html = e
+            .content_html
+            .clone()
+            .unwrap_or_else(|| e.summary.clone().unwrap_or_default());
+    }
     // 可选回写正文/标题
     if q.update_content.unwrap_or(false) {
         if let Some(model) = Entry::find_by_id(e.id)

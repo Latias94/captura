@@ -38,15 +38,21 @@ async fn rule_feed_pipeline_persists_entries() {
     let (uid, _token) = captura_testkit::seed_user_and_token(&db, "rule_user").await;
     let now = Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
 
-    // 简单 YAML 规则：从 /list 抓取 a.item 链接，并用 CSS 选择正文
+    // 简单 YAML 规则（DSL v1）：从 /list 抓取 a.item 链接，并用 CSS 选择正文
     let yaml = format!(
-        "id: \"test.rule\"\n\
-list:\n\
-  url: \"{base}/list\"\n\
-  item: \"a.item\"\n\
-content:\n\
-  use: \"css\"\n\
-  selector: \"div.article\"\n",
+        r#"id: "test.rule"
+version: 1
+description: "rule pipeline e2e"
+source:
+  type: list_detail
+  list:
+    request:
+      url: "{base}/list"
+    item: "a.item"
+  content:
+    mode: "css"
+    selector: "div.article"
+"#,
         base = base
     );
 
@@ -134,4 +140,3 @@ content:\n\
         "no entry content contained expected marker text"
     );
 }
-

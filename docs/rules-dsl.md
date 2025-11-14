@@ -1,0 +1,696 @@
+# Rules DSL v1 Specification
+
+This document describes the **official v1** rule DSL for Captura.
+It is designed to absorb practices from FreshRSS, Miniflux and RSSHub, while
+remaining ergonomic for rule authors and stable for the engine.
+
+The previous minimal DSL (in `crates/rules`) is considered **legacy**
+and will be replaced by this v1 design.
+
+---
+
+## Quick Start (Minimal Rules)
+
+For most simple sites (HTML list page + article detail page), you only need a
+small subset of this DSL.
+
+### Minimal `list_detail` rule
+
+The following fields are typically enough:
+
+- `id`, `version`
+- `source.type: list_detail`
+- `source.list.request.url`
+- `source.list.item`, `source.list.link`, `source.list.title`
+- `source.content.mode`, `source.content.selector`
+
+Example:
+
+```yaml
+id: captura.example.news
+version: 1
+description: Example news list
+examples:
+  - https://example.com/news
+
+source:
+  type: list_detail
+
+  list:
+    request:
+      url: "https://example.com/news"
+    item: "article.post"
+    link: "a@href"
+    title: "a.title"
+
+  content:
+    mode: css
+    selector: "div.article-content"
+```
+
+This is the “minimal mental model” for rule authors:
+
+- grab the list: `list.request.url` + `list.item`
+- find per‑item link and title: `link`, `title`
+- extract full content from the detail page: `content.selector`
+
+Everything else in this document is **optional** and intended for advanced use
+cases:
+
+- `match`, `params`, `filters`, `transform`
+- `source.type: json`, `xpath`, `from_html`
+- conditional full‑content fetch and merge strategies.
+
+You can safely start with the minimal subset above and only adopt advanced
+blocks when needed.
+
+---
+
+## 1. Design Goals
+
+- **Ergonomic**: Most rules should be writable with only CSS selectors and a few
+  URLs, without programming.
+- **Expressive**: Cover the common cases:
+  - HTML list + detail pages (news/blog listings).
+  - Single-page sources.
+  - JSON APIs turned into feeds.
+  - HTML/XML + XPath, for complex but stable layouts.
+- **Extensible**: Future additions (JSONPath, XPath extensions, script plugins)
+  should not break existing rules.
+- **Testable**: Every rule must be runnable in a test harness:
+  *input URL → normalized entries snapshot*.
+
+---
+
+## 2. Top‑Level Structure
+
+Each rule file is a YAML document with this top‑level layout:
+
+```yaml
+id: captura.route.github.trending
+version: 1
+description: GitHub Trending repositories
+author: captura
+tags: [github, trending]
+examples:
+  - https://github.com/trending
+
+match:
+  url:
+    host: "github.com"
+    path_regex: "^/trending"
+
+params:
+  defaults:
+    since: "daily"
+  docs:
+    since: "Trending range: daily/weekly/monthly"
+
+fetch:
+  user_agent: captura/0.1
+  timeout_ms: 15000
+  smart: false
+  respect_robots: true
+
+source:
+  type: list_detail   # list_detail | single_page | json | xpath
+  # ... (see sections below)
+
+filters:
+  # ... (optional)
+
+transform:
+  # ... (optional)
+```
+
+### 2.1 Meta
+
+- `id` (string, required): globally unique rule identifier.
+- `version` (integer, required): MUST be `1` for this DSL.
+- `description` (string, optional): human‑readable description.
+- `author` (string, optional): rule author/maintainer.
+- `tags` (string[], optional): tags for discovery and grouping.
+- `examples` (string[], optional): example URLs for testing and docs.
+
+### 2.2 Match
+
+Rules can declare which URLs they are intended for. This is mainly used for:
+
+- Auto‑selecting a rule when creating a feed from a URL.
+- Documentation and linter suggestions.
+
+```yaml
+match:
+  url:
+    host: "example.com"
+    path_regex: "^/news"
+```
+
+Fields:
+
+- `host` (string, optional): exact host (no wildcard) to match.
+- `path_regex` (string, optional): regular expression applied to the path
+  (e.g. `/news/...`).
+
+If `match` is missing, the rule will never be auto‑selected; it can still be
+used explicitly via `feed.rule_id`.
+
+### 2.3 Params
+
+Rules can be parameterized and receive values from `feed.rule_params_json`.
+
+```yaml
+params:
+  defaults:
+    cat: "news"
+    page: "1"
+  docs:
+    cat: "Category slug on the site"
+    page: "Page number (1-based)"
+```
+
+- `defaults` (map<string,string>, optional): default parameter values used when
+  missing in `rule_params_json`.
+- `docs` (map<string,string>, optional): documentation for each parameter, used
+  by UI and tooling only.
+
+Parameters are interpolated into strings using `{name}` syntax, e.g.:
+
+```yaml
+source:
+  type: list_detail
+  list:
+    request:
+      url: "https://example.com/{cat}?page={page}"
+```
+
+Interpolation is string‑based; non‑string values in `rule_params_json` will be
+stringified when substituted.
+
+### 2.4 Fetch Defaults
+
+`fetch` defines default HTTP/crawler behaviour for the rule. Sub‑blocks (list,
+content, JSON) may override these.
+
+```yaml
+fetch:
+  user_agent: captura/0.1
+  timeout_ms: 15000
+  smart: false
+  respect_robots: true
+```
+
+Fields:
+
+- `user_agent` (string, optional): default User‑Agent.
+- `timeout_ms` (integer, optional): request timeout in milliseconds.
+- `smart` (bool, optional, default `false`):
+  - `true`: allow using the spider “smart” path (headless/dynamic pages) where
+    supported.
+  - `false`: plain HTTP only.
+- `respect_robots` (bool, optional, default `true`): whether spider should
+  respect `robots.txt` when used.
+
+Additional HTTP fields (per request) are listed in §3.1.
+
+---
+
+## 3. Source Types
+
+The `source` block describes how to transform upstream data into normalized
+entries. It always has a `type` field:
+
+```yaml
+source:
+  type: list_detail | single_page | json | xpath
+```
+
+### 3.1 Common request options
+
+Several source types use a `request` object with these fields:
+
+```yaml
+request:
+  url: "https://example.com/path"
+  method: GET        # GET | POST (others may be added later)
+  headers:
+    X-Device: "pc"
+  body: null         # string or application/x-www-form-urlencoded map (future)
+  timeout_ms: 15000  # override fetch.timeout_ms
+  smart: false       # override fetch.smart
+  respect_robots: true
+```
+
+Semantics:
+
+- `url` (string, required): final URL after parameter interpolation.
+- `method` (string, optional, default `GET`).
+- `headers` (map<string,string>, optional): additional HTTP headers.
+- `body` (string, optional): request body for `POST` (v1 may keep this limited
+  to simple cases).
+- `timeout_ms`, `smart`, `respect_robots`: override `fetch` defaults for this
+  specific call.
+
+### 3.2 CSS selector shorthand
+
+For HTML/XML selectors, the following shorthand is used:
+
+- `"css-selector"` → text content of the first matching element.
+- `"css-selector@attr"` → value of the attribute `attr` on the first matching
+  element.
+
+For example:
+
+- `"a.title"` → text inside `<a class="title">...</a>`.
+- `"a@href"` → `href` attribute of `<a>` element.
+
+This is consistent with existing code in Captura.
+
+---
+
+### 3.3 `type: list_detail`
+
+Common pattern: list page(s) contain links; each link points to a detail page
+from which full content may be extracted.
+
+```yaml
+source:
+  type: list_detail
+
+  list:
+    request:
+      url: "https://example.com/news?page={page}"
+    item: "article.post"
+    link: "a@href"
+    title: "a.title"
+    summary: ".summary"
+    published_at:
+      selector: "time@datetime"
+      format: "%Y-%m-%dT%H:%M:%S%z"
+
+  content:
+    mode: css          # css | readability | json_fragment (reserved)
+    selector: "div.article-content, section.content"  # required when mode=css
+    remove:
+      - "script"
+      - ".ad"
+      - ".comments"
+    fallback: summary  # none | summary | whole_page
+    use_entry_url: true
+```
+
+#### 3.3.1 `list` block
+
+- `request` (required): see §3.1.
+- `item` (string, required): CSS selector for each list item element.
+- `link` (string, optional): CSS/attribute shorthand used relative to `item`:
+  - If missing, the engine may try `@href` on the `item` itself.
+- `title` (string, optional): CSS shorthand for title, relative to `item`.
+- `summary` (string, optional): CSS shorthand for summary, relative to `item`.
+- `published_at` (optional):
+
+  ```yaml
+  published_at:
+    selector: "time@datetime"
+    format: "%Y-%m-%dT%H:%M:%S%z"
+  ```
+
+  - `selector`: CSS shorthand; if absent, published date remains `null`.
+  - `format`: chrono‑compatible format string.
+
+#### 3.3.2 `content` block
+
+- `mode` (string, optional, default `"css"`):
+  - `"css"`: use `selector` to grab content.
+  - `"readability"`: use the internal readability engine to select main
+    article content (current implementation is a heuristic; pluggable later).
+  - `"json_fragment"`: reserved for future use.
+- `selector` (string, required when `mode = "css"`): CSS selector(s) applied to
+  the detail page to extract HTML fragments.
+- `remove` (string[], optional): CSS selectors to remove from the extracted
+  content (ads, comments, etc.).
+- `fallback` (string, optional, default `"summary"`):
+  - `"none"`: no fallback; content may be empty.
+  - `"summary"`: fall back to the list summary text if available.
+  - `"whole_page"`: fall back to the entire HTML body.
+- `use_entry_url` (bool, optional, default `true`):
+  - If `true`, the detail page URL is taken from the `link` field.
+  - If `false`, the list page HTML may be reused as the content source.
+
+---
+
+### 3.4 `type: single_page`
+
+Used when a single page represents one logical entry (e.g. a static article).
+
+```yaml
+source:
+  type: single_page
+
+  request:
+    url: "https://example.com/blog/{slug}"
+    smart: true
+
+  content:
+    mode: readability
+    remove:
+      - "nav"
+      - "footer"
+```
+
+Fields:
+
+- `request` (required): see §3.1.
+- `content` (required): same fields as in list_detail, but applied to a single
+  page.
+
+The engine produces a single `NormalizedEntry` per rule execution.
+
+---
+
+### 3.5 `type: json`
+
+Used for JSON APIs that should be turned into feeds (inspired by FreshRSS
+dot‑notation and RSSHub APIs), and for cases where JSON is embedded inside an
+HTML document.
+
+```yaml
+source:
+  type: json
+
+  request:
+    url: "https://api.example.com/articles?cat={cat}"
+
+  root: "items"
+
+  mapping:
+    title: "title"
+    url: "url"
+    summary: "summary"
+    content_html: "content_html"
+    author: "author.name"
+    published_at:
+      path: "published_at"
+      format: "%Y-%m-%dT%H:%M:%S%z"
+    enclosure:
+      url: "enclosure.url"
+      type: "enclosure.mime"
+      length: "enclosure.size"
+```
+
+Fields:
+
+- `request` (required unless `from_html` is used): see §3.1.
+- `root` (string, required): dot‑notation path to the list array inside the
+  JSON document, e.g. `"items"` or `"data.items"`.
+- `mapping` (required): describes how to populate `NormalizedEntry` fields from
+  each JSON item.
+
+Supported mapping keys:
+
+- `title`, `url`, `summary`, `content_html`, `author`:
+  - Value is a dot‑notation path (e.g. `"title"`, `"author.name"`).
+- `published_at`:
+
+  ```yaml
+  published_at:
+    path: "published_at"
+    format: "%Y-%m-%dT%H:%M:%S%z"
+  ```
+
+  - `path`: dot‑notation path inside the item.
+  - `format`: chrono‑compatible datetime format.
+
+- `enclosure`:
+
+  ```yaml
+  enclosure:
+    url: "enclosure.url"
+    type: "enclosure.mime"
+    length: "enclosure.size"
+  ```
+
+  - All fields are optional; if `url` is missing or empty, no enclosure is
+    created.
+
+#### 3.5.1 Extracting JSON from HTML (optional)
+
+Some sites expose structured data as JSON embedded in HTML (for example inside
+`<script type="application/ld+json">`). To support this pattern, `json` sources
+MAY provide a `from_html` block:
+
+```yaml
+source:
+  type: json
+
+  from_html:
+    request:
+      url: "https://example.com/page/{slug}"
+    selector: "script[type='application/ld+json']"
+    multiple: true      # optional, default false
+```
+
+Fields:
+
+- `from_html.request` (optional):
+  - If present, overrides the top‑level `request` for this source.
+  - If missing, the top‑level `request` is used, but the response is treated as
+    HTML instead of JSON.
+- `selector` (string, required): CSS selector used to locate node(s) whose
+  text content is JSON.
+- `multiple` (bool, optional, default `false`):
+  - `false`: only the first matching node is considered; its text content is
+    parsed as a single JSON document.
+  - `true`: all matching nodes are considered; each node’s text content is
+    parsed as JSON, then combined into an array. The effective `root` path is
+    applied to this combined array.
+
+Semantics:
+
+- When `from_html` is present, the engine:
+  1. Fetches HTML using `from_html.request` or `request`.
+  2. Selects node(s) with `selector`.
+  3. Reads each selected node’s text as JSON (ignoring nodes that fail to
+     parse).
+  4. If `multiple=false`, the first successful JSON document becomes the root
+     document; if `multiple=true`, all successful documents are aggregated into
+     a JSON array.
+  5. The `root` and `mapping` rules are then applied as described above.
+
+Initial v1 implementations may choose to support only the `multiple=false`
+case; the schema is defined to allow more complete implementations later.
+
+---
+
+### 3.6 `type: xpath`
+
+For complex HTML/XML sources where CSS is insufficient, rules can use XPath
+expressions (inspired by FreshRSS HTML/XML XPath modes).
+
+```yaml
+source:
+  type: xpath
+
+  request:
+    url: "https://example.com/news"
+    accept: "html"   # html | xml (reserved for future)
+
+  xpath:
+    item: "//ul/li"
+    title: ".//h2/text()"
+    url: ".//a/@href"
+    content_html: ".//div[@class='entry-content']"
+    published_at:
+      expr: ".//time/@datetime"
+      format: "%Y-%m-%dT%H:%M:%S%z"
+```
+
+Fields:
+
+- `request` (required): see §3.1.
+- `xpath` (required):
+  - `item` (string, required): XPath expression that yields a node set of items.
+  - `title`, `url`, `content_html` (string, optional): XPath expressions
+    evaluated relative to each item node.
+  - `published_at`:
+
+    ```yaml
+    published_at:
+      expr: ".//time/@datetime"
+      format: "%Y-%m-%dT%H:%M:%S%z"
+    ```
+
+    - `expr`: XPath expression evaluated relative to each item node.
+    - `format`: chrono datetime format.
+
+Implementation of XPath is optional in early v1 code, but the schema is
+established for forwards compatibility.
+
+---
+
+## 4. Filters
+
+Filters control which entries are kept, inspired by Miniflux block/keep filters
+and FreshRSS conditional full‑content retrieval.
+
+```yaml
+filters:
+  entry_include:
+    - ".*"            # regex on title+summary+content
+  entry_exclude:
+    - ".*广告.*"
+    - ".*sponsored.*"
+
+  fetch_full_content_when:
+    - field: title
+      regex: ".*阅读全文.*"
+    - field: summary
+      regex: ".*本文.*"
+```
+
+Fields:
+
+- `entry_include` (string[], optional):
+  - If non‑empty, an entry is **kept only if** at least one regex matches the
+    concatenated string `title + "\n" + summary + "\n" + content_html`.
+- `entry_exclude` (string[], optional):
+  - If any regex matches the same concatenated string, the entry is dropped.
+
+If both lists are empty or missing, no filter is applied at the DSL level
+(database‑level feed filters may still apply).
+
+- `fetch_full_content_when` (object[], optional):
+
+  ```yaml
+  fetch_full_content_when:
+    - field: title        # title | summary | content_html
+      regex: ".*阅读全文.*"
+  ```
+
+  - Each item describes a condition on a single field.
+  - `field`: which field to test:
+    - `"title"`: the entry title string (or empty when missing).
+    - `"summary"`: the entry summary string (or empty when missing).
+    - `"content_html"`: the HTML content as text.
+  - `regex`: regular expression evaluated against the chosen field.
+
+  Semantics:
+
+  - If the list is non‑empty and *any* condition matches for a given entry,
+    engines **may** trigger a “full content fetch” for that entry (for example
+    by invoking `extractor::fetch_and_extract_entry` on the entry URL and
+    merging the result, see §5).
+  - v1 implementations are allowed to ignore this block initially (best‑effort
+    hint), but should treat the schema as stable.
+
+---
+
+## 5. Transform
+
+Transform rules modify URLs and content once entries have been built, combining
+ideas from Miniflux rewrite rules and FreshRSS DOM filters.
+
+```yaml
+transform:
+  url_rewrite:
+    - "s/\\?utm_[^&]+//g"
+    - "ref=\\w+=>"
+
+  content_rewrite:
+    - "# remove sponsor wording"
+    - "s/赞助内容//g"
+
+  content_remove_selectors:
+    - ".ad"
+    - ".sponsor"
+    - "script"
+
+  content_merge:
+    mode: replace   # replace | prepend | append
+```
+
+### 5.1 Rewrite syntax
+
+Each rewrite rule is a single line string, using the same conventions as the
+existing pipeline:
+
+- Sed‑like syntax:
+
+  - `s/pattern/repl/flags` (flags are optional; initial v1 may ignore them).
+  - Example: `s/\\?utm_[^&]+//g`
+
+- Fallback syntax:
+
+  - `pattern => replacement`
+  - Example: `"ref=\\w+=>"`
+
+Both `url_rewrite` and `content_rewrite` apply these rules in order, where the
+engine:
+
+1. Tries to parse as sed‑like rule; if parsing fails,
+2. Falls back to `pattern => replacement`.
+
+### 5.2 DOM removal
+
+- `content_remove_selectors` (string[], optional):
+  - CSS selectors applied to the extracted HTML content to remove unwanted
+    nodes (ads, tracking widgets, comments, etc.).
+  - Semantics: parse the current HTML fragment as DOM, remove nodes matching
+    any selector, then re‑serialize.
+
+- `content_merge` (object, optional):
+
+  ```yaml
+  content_merge:
+    mode: replace   # replace | prepend | append
+  ```
+
+  - `mode` controls how new “full content” (for example obtained via
+    readability or an external extractor) should be combined with any existing
+    content/summary when the rule is used as a full‑content filter:
+    - `replace` (default): replace the existing content with the new full
+      content.
+    - `prepend`: prepend the new full content before the existing content.
+    - `append`: append the new full content after the existing content.
+
+  This setting is primarily intended for engines that apply rules to existing
+  entries (e.g. “fetch full content” actions on already‑stored items). Rule‑type
+  feeds that generate entries from scratch may ignore `content_merge` or treat
+  `replace` as the default.
+
+---
+
+## 6. Versioning and Compatibility
+
+- All new rules MUST set `version: 1`.
+- Future DSL versions will increment the `version` field and keep v1 parsing
+  available for backwards compatibility.
+- The legacy DSL (currently implemented in `crates/rules`) should be treated as
+  pre‑v1 and migrated to v1 over time.
+
+---
+
+## 7. Implementation Notes (non‑normative)
+
+This section is informational for Captura’s Rust implementation and is not part
+of the stable DSL contract.
+
+- Parsing:
+  - Define a `RuleSpecV1` struct mirroring this document.
+  - Use `serde_yaml` for YAML deserialization.
+  - Validate:
+    - `id` non‑empty.
+    - `version == 1`.
+    - Required fields for each `source.type` are present.
+    - Regex fields compile.
+- Execution:
+  - Introduce a dedicated executor for v1 rules:
+    - `execute_rule_v1(feed, &RuleSpecV1) -> Vec<NormalizedEntry>`.
+  - Reuse existing components:
+    - `fetch_html_strategy` for HTTP/spider logic.
+    - `extractor::fetch_and_extract_entry` / readability interface.
+    - Existing URL/content rewrite and entry filter helpers where possible.
+- Testing:
+  - Add sample rules under `rules/` with corresponding integration tests.
+  - For each rule, test at least one `examples` URL (when allowed) or mock
+    responses in a local test server.

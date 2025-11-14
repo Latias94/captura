@@ -8,6 +8,8 @@ Captura 支持使用本地的“Hub 路由”来快速创建基于模板的抓�
 
 ```
 captura_hub://github/trending?since=daily
+captura_hub://github/trending?since=daily&language=rust
+captura_hub://github/trending?since=weekly&language=javascript&spoken_language=en
 captura_hub://hn/front
 captura_hub://lobsters/front
 captura_hub://medium/tag?tag=rust

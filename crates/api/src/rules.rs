@@ -13,7 +13,7 @@ use sea_orm::{
 use serde::{Deserialize, Serialize};
 
 use captura_crawler::{self as crawler, CrawlOptions};
-use captura_rules::{parse_rule, RuleSpec};
+use captura_rules::v1::{parse_rule_v1, RuleSpecV1, SourceType};
 use captura_storage::entity::{feed, prelude::*, rule};
 
 use crate::auth::AuthUser;
@@ -49,8 +49,8 @@ pub(crate) async fn create_rule(
     Json(body): Json<CreateRuleReq>,
 ) -> ApiResult<Json<IdResp>> {
     let _user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
-    let spec: RuleSpec =
-        parse_rule(&body.yaml).map_err(|e| bad_request(format!("invalid rule yaml: {e}")))?;
+    let spec: RuleSpecV1 =
+        parse_rule_v1(&body.yaml).map_err(|e| bad_request(format!("invalid rule yaml: {e}")))?;
     let now = Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
     let examples = serde_json::to_value(&spec.examples).map_err(internal)?;
     let am = rule::ActiveModel {
@@ -145,8 +145,8 @@ pub(crate) async fn update_rule(
     let Some(r) = Rule::find_by_id(id).one(&st.db).await.map_err(internal)? else {
         return Err(not_found("rule not found"));
     };
-    let spec: RuleSpec =
-        parse_rule(&body.yaml).map_err(|e| bad_request(format!("invalid rule yaml: {e}")))?;
+    let spec: RuleSpecV1 =
+        parse_rule_v1(&body.yaml).map_err(|e| bad_request(format!("invalid rule yaml: {e}")))?;
     let examples = serde_json::to_value(&spec.examples).map_err(internal)?;
     let mut am: rule::ActiveModel = r.into();
     am.rule_id = Set(spec.id.clone());
@@ -197,9 +197,11 @@ pub(crate) struct RuleTemplateDto {
 }
 
 fn extract_params_from_yaml(yaml: &str) -> Vec<String> {
-    if let Ok(spec) = parse_rule(yaml) {
-        if let Some(list) = spec.list {
-            return extract_params_from_url(&list.url);
+    if let Ok(spec_v1) = parse_rule_v1(yaml) {
+        if matches!(spec_v1.source.kind, SourceType::ListDetail) {
+            if let Some(list) = spec_v1.source.list {
+                return extract_params_from_url(&list.request.url);
+            }
         }
     }
     Vec::new()
@@ -331,13 +333,11 @@ pub(crate) async fn create_feed_from_template(
     else {
         return Err(not_found("rule template"));
     };
-    let spec: RuleSpec = parse_rule(&r.yaml).map_err(internal)?;
-    // 渲染 feed_url 方便调试（即使 rule 模式不依赖 feed_url）
-    let feed_url_rendered = spec
-        .list
-        .as_ref()
-        .map(|l| {
-            let mut s = l.url.clone();
+    let spec: RuleSpecV1 = parse_rule_v1(&r.yaml).map_err(internal)?;
+    // 渲染 feed_url 方便调试（即使 rule 模式不依赖 feed_url）。仅对 list_detail 使用 list.request.url。
+    let feed_url_rendered = if matches!(spec.source.kind, SourceType::ListDetail) {
+        if let Some(list) = spec.source.list {
+            let mut s = list.request.url;
             if let Some(map) = req.params.as_object() {
                 for (k, v) in map.iter() {
                     let needle1 = format!(":{}", k);
@@ -351,8 +351,12 @@ pub(crate) async fn create_feed_from_template(
                 }
             }
             s
-        })
-        .unwrap_or_else(|| r.rule_id.clone());
+        } else {
+            r.rule_id.clone()
+        }
+    } else {
+        r.rule_id.clone()
+    };
     let now = Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
     let am = feed::ActiveModel {
         user_id: Set(user.user_id),
@@ -453,14 +457,17 @@ pub(crate) async fn try_rule(
             .ok_or_else(|| not_found("rule not found"))?;
         r.yaml
     };
-    let mut spec = captura_rules::parse_rule(&yaml).map_err(internal)?;
-    let _list = match &mut spec.list {
-        Some(l) => {
-            l.url = req.url.clone();
-            l
-        }
-        None => return Err(bad_request("rule has no list section")),
-    };
+
+    let mut spec = parse_rule_v1(&yaml).map_err(internal)?;
+    if !matches!(spec.source.kind, SourceType::ListDetail) {
+        return Err(bad_request("try_rule currently only supports list_detail source type"));
+    }
+    let list = spec
+        .source
+        .list
+        .as_mut()
+        .ok_or_else(|| bad_request("rule has no list section"))?;
+    list.request.url = req.url.clone();
 
     let now = Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
     let feed_model = feed::Model {
@@ -504,177 +511,13 @@ pub(crate) async fn try_rule(
         updated_at: now,
     };
 
-    let entries = captura_pipeline::refresh_rule_feed(&feed_model, &spec)
+    let started = std::time::Instant::now();
+    let entries = captura_pipeline::refresh_rule_v1(&feed_model, &spec)
         .await
         .map_err(internal)?;
+    let duration_ms = started.elapsed().as_millis();
     let used_smart = spec.fetch.smart.unwrap_or(false);
-    let mut list_html_len = 0usize;
-    let mut list_html = String::new();
-    let proxy_applied = spec
-        .fetch
-        .proxy_url
-        .as_ref()
-        .map(|s| !s.is_empty())
-        .unwrap_or(false);
-    let mut fallback_used = false;
-    let mut http_status: Option<u16> = None;
-    let mut duration_ms: u128 = 0;
-    let mut final_url: Option<String> = None;
-    let mut redirect_count: Option<u32> = None;
-    let started = std::time::Instant::now();
-    if used_smart && !proxy_applied {
-        let opts = CrawlOptions {
-            user_agent: spec.fetch.user_agent.clone(),
-            respect_robots: spec.fetch.respect_robots.unwrap_or(true),
-            smart: true,
-            delay_ms: spec.fetch.delay_ms.unwrap_or(250),
-            limit: spec.fetch.limit,
-            proxy_url: None,
-        };
-        match crawler::fetch_html(&req.url, &opts).await {
-            Ok(html) => {
-                list_html_len = html.len();
-                list_html = html;
-                duration_ms = started.elapsed().as_millis();
-            }
-            Err(_) => {
-                fallback_used = true;
-            }
-        }
-    }
-    if list_html_len == 0 {
-        use reqwest::Client;
-        if let Ok(http) = Client::builder()
-            .user_agent(
-                spec.fetch
-                    .user_agent
-                    .clone()
-                    .unwrap_or_else(|| "captura/0.1".into()),
-            )
-            .build()
-        {
-            use reqwest::header::HeaderMap;
-            let header_map: Option<HeaderMap> = if let Some(hdrs) = spec.fetch.headers.as_ref() {
-                let mut hm = HeaderMap::new();
-                for (k, v) in hdrs.iter() {
-                    if let Some(s) = v.as_str() {
-                        if let Ok(name) = reqwest::header::HeaderName::from_bytes(k.as_bytes()) {
-                            if let Ok(val) = reqwest::header::HeaderValue::from_str(s) {
-                                hm.insert(name, val);
-                            }
-                        }
-                    }
-                }
-                Some(hm)
-            } else {
-                None
-            };
-            let mut current = req.url.clone();
-            let mut redirects = 0u32;
-            loop {
-                let mut rq = http.get(&current);
-                if let Some(ref hm) = header_map {
-                    rq = rq.headers(hm.clone());
-                }
-                match rq.send().await {
-                    Ok(resp) => {
-                        http_status = Some(resp.status().as_u16());
-                        if resp.status().is_redirection() {
-                            if redirects >= 10 {
-                                break;
-                            }
-                            if let Some(loc) = resp
-                                .headers()
-                                .get(reqwest::header::LOCATION)
-                                .and_then(|v| v.to_str().ok())
-                            {
-                                if let Ok(next) = resp.url().join(loc) {
-                                    current = next.to_string();
-                                    redirects += 1;
-                                    continue;
-                                } else {
-                                    break;
-                                }
-                            } else {
-                                break;
-                            }
-                        } else {
-                            final_url = Some(resp.url().to_string());
-                            if let Ok(html) = resp.text().await {
-                                list_html_len = html.len();
-                                list_html = html;
-                            }
-                            break;
-                        }
-                    }
-                    Err(_) => break,
-                }
-            }
-            redirect_count = Some(redirects);
-        }
-        duration_ms = started.elapsed().as_millis();
-    }
 
-    // selector match stats
-    let mut list_item_matches: Option<usize> = None;
-    let mut content_selector_matches: Option<usize> = None;
-    if let Some(list) = &spec.list {
-        if let Ok(sel) = scraper::Selector::parse(&list.item) {
-            let doc = scraper::Html::parse_document(&list_html);
-            list_item_matches = Some(doc.select(&sel).count());
-        }
-    }
-    if let Some(first) = entries.iter().find(|e| e.url.is_some()) {
-        if spec.content.r#use == "css" {
-            if let Some(ref sel_str) = spec.content.selector {
-                // fetch content html then count selector matches
-                let mut content_html = String::new();
-                if used_smart && !proxy_applied {
-                    let opts = CrawlOptions {
-                        user_agent: spec.fetch.user_agent.clone(),
-                        respect_robots: spec.fetch.respect_robots.unwrap_or(true),
-                        smart: true,
-                        delay_ms: spec.fetch.delay_ms.unwrap_or(250),
-                        limit: spec.fetch.limit,
-                        proxy_url: None,
-                    };
-                    if let Some(ref u) = first.url {
-                        if let Ok(h) = crawler::fetch_html(u, &opts).await {
-                            content_html = h;
-                        }
-                    }
-                } else {
-                    let mut builder = reqwest::Client::builder();
-                    if let Some(ref ua) = spec.fetch.user_agent {
-                        builder = builder.user_agent(ua.clone());
-                    }
-                    if let Some(ms) = spec.fetch.timeout_ms {
-                        builder = builder.timeout(std::time::Duration::from_millis(ms));
-                    }
-                    if let Some(ref p) = spec.fetch.proxy_url {
-                        if !p.is_empty() {
-                            if let Ok(proxy) = reqwest::Proxy::all(p) {
-                                builder = builder.proxy(proxy);
-                            }
-                        }
-                    }
-                    if let Ok(http) = builder.build() {
-                        if let Some(ref u) = first.url {
-                            if let Ok(resp) = http.get(u).send().await {
-                                if let Ok(h) = resp.text().await {
-                                    content_html = h;
-                                }
-                            }
-                        }
-                    }
-                }
-                if let Ok(sel) = scraper::Selector::parse(sel_str) {
-                    let doc = scraper::Html::parse_document(&content_html);
-                    content_selector_matches = Some(doc.select(&sel).count());
-                }
-            }
-        }
-    }
     let mut out = Vec::new();
     for e in entries.iter().take(5) {
         let len = e.content_html.as_ref().map(|s| s.len()).unwrap_or(0);
@@ -692,16 +535,16 @@ pub(crate) async fn try_rule(
         ua: spec.fetch.user_agent.clone(),
         timeout_ms: spec.fetch.timeout_ms,
         respect_robots: spec.fetch.respect_robots,
-        delay_ms: spec.fetch.delay_ms,
-        limit: spec.fetch.limit,
-        proxy_applied,
-        list_html_len,
-        fallback_used,
-        http_status,
+        delay_ms: None,
+        limit: None,
+        proxy_applied: false,
+        list_html_len: 0,
+        fallback_used: false,
+        http_status: None,
         duration_ms,
-        final_url,
-        redirect_count,
-        list_item_matches,
-        content_selector_matches,
+        final_url: None,
+        redirect_count: None,
+        list_item_matches: None,
+        content_selector_matches: None,
     }))
 }

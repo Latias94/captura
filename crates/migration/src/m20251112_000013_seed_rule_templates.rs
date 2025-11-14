@@ -9,40 +9,67 @@ impl MigrationTrait for Migration {
         let db = manager.get_connection();
         // Three rule templates: GitHub Trending, Hacker News, Lobsters
         let tpl_github = r#"id: captura.route.github.trending
+version: 1
 description: GitHub Trending repositories
+examples:
+  - https://github.com/trending
+params:
+  defaults:
+    since: "daily"
+    language: ""
+    spoken_language: ""
+  docs:
+    since: "Trending range: daily/weekly/monthly"
+    language: "Repository language slug in /trending/{language}; empty for all languages"
+    spoken_language: "spoken_language_code in trending URL; empty for all spoken languages"
 fetch:
   user_agent: captura/0.1
-list:
-  url: "https://github.com/trending?since={since}"
-  item: "article.Box-row"
-  link: "h2 a@href"
-  title: "h2 a"
-content:
-  use: readability
+source:
+  type: list_detail
+  list:
+    request:
+      url: "https://github.com/trending/{language}?since={since}&spoken_language_code={spoken_language}"
+    item: "article.Box-row"
+    link: "h2 a@href"
+    title: "h2 a"
+  content:
+    mode: readability
 "#;
         let tpl_hn = r#"id: captura.route.hn.front
+version: 1
 description: Hacker News Front Page
+examples:
+  - https://news.ycombinator.com/
 fetch:
   user_agent: captura/0.1
-list:
-  url: "https://news.ycombinator.com/"
-  item: "tr.athing"
-  link: "span.titleline a@href"
-  title: "span.titleline a"
-content:
-  use: readability
+source:
+  type: list_detail
+  list:
+    request:
+      url: "https://news.ycombinator.com/"
+    item: "tr.athing"
+    link: "span.titleline a@href"
+    title: "span.titleline a"
+  content:
+    mode: readability
 "#;
         let tpl_lobsters = r#"id: captura.route.lobsters.front
+version: 1
 description: Lobsters Front Page
+examples:
+  - https://lobste.rs/
 fetch:
   user_agent: captura/0.1
-list:
-  url: "https://lobste.rs/"
-  item: "li.story"
-  link: "h2 a@href"
-  title: "h2 a"
-content:
-  use: readability
+source:
+  type: list_detail
+  list:
+    request:
+      url: "https://lobste.rs/"
+    item: "li.story"
+    link: "h2 a@href"
+    title: "h2 a"
+  content:
+    mode: readability
 "#;
         let stmts = [
             (
