@@ -4,7 +4,6 @@
 
 use captura_common::{Error, Result};
 use captura_storage::entity::feed;
-use reqwest::Client;
 use scraper::{Html, Selector};
 use tracing::warn;
 
@@ -15,33 +14,6 @@ use dom_smoothie::{Config as DsConfig, Readability as DsReadability};
 pub struct ExtractResult {
     pub content_html: String,
     pub title: Option<String>,
-}
-
-/// 为单个条目按订阅配置构建 HTTP 客户端。
-fn build_http_client_for_feed(f: &feed::Model) -> Result<Client> {
-    let mut http = Client::builder();
-    if let Some(ua) = f.user_agent.clone() {
-        http = http.user_agent(ua);
-    }
-    if let Some(ms) = f.request_timeout_ms {
-        http = http.timeout(std::time::Duration::from_millis(ms as u64));
-    }
-    if f.allow_invalid_certs {
-        http = http.danger_accept_invalid_certs(true);
-    }
-    if f.disable_http2 {
-        http = http.http1_only();
-    }
-    if f.fetch_via_proxy {
-        if let Some(ref p) = f.proxy_url {
-            if !p.is_empty() {
-                if let Ok(proxy) = reqwest::Proxy::all(p) {
-                    http = http.proxy(proxy);
-                }
-            }
-        }
-    }
-    http.build().map_err(|e| Error::Network(e.to_string()))
 }
 
 /// 按 Miniflux 语义应用 Scraper Rules（每行一个 CSS 选择器）。
@@ -111,7 +83,7 @@ fn extract_title(doc: &Html) -> Option<String> {
 /// - 否则使用简化版 Readability 逻辑。
 /// - 若仍然失败，则退回整页 HTML。
 pub async fn fetch_and_extract_entry(page_url: &str, f: &feed::Model) -> Result<ExtractResult> {
-    let http = build_http_client_for_feed(f)?;
+    let http = crate::http_client::client_for_feed(f, None, None)?;
     let mut req = http.get(page_url);
     if let Some(ref c) = f.cookies {
         if !c.is_empty() {

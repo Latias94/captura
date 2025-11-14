@@ -477,10 +477,8 @@ async fn execute_list_detail_v1(
         .or_else(|| feed.user_agent.clone())
         .unwrap_or_else(|| "captura/0.1".to_string());
 
-    let client = Client::builder()
-        .user_agent(ua)
-        .build()
-        .map_err(|e| Error::Network(e.to_string()))?;
+    let client =
+        crate::http_client::client_for_feed(feed, Some(ua), spec.fetch.timeout_ms)?;
 
     let fetch_cfg = FetchCfg {
         user_agent: spec
@@ -602,10 +600,7 @@ async fn execute_single_page_v1(
         .or_else(|| feed.user_agent.clone())
         .unwrap_or_else(|| "captura/0.1".to_string());
 
-    let client = Client::builder()
-        .user_agent(ua)
-        .build()
-        .map_err(|e| Error::Network(e.to_string()))?;
+    let client = crate::http_client::client_for_feed(feed, Some(ua), spec.fetch.timeout_ms)?;
 
     let fetch_cfg = FetchCfg {
         user_agent: spec
@@ -707,10 +702,7 @@ pub(crate) async fn execute_json_v1(
         .or_else(|| feed.user_agent.clone())
         .unwrap_or_else(|| "captura/0.1".to_string());
 
-    let client = Client::builder()
-        .user_agent(ua)
-        .build()
-        .map_err(|e| Error::Network(e.to_string()))?;
+    let client = crate::http_client::client_for_feed(feed, Some(ua), spec.fetch.timeout_ms)?;
 
     let params = merge_rule_params_v1(spec, feed.rule_params_json.as_ref());
 
@@ -886,10 +878,7 @@ async fn execute_xpath_v1(feed: &feed::Model, spec: &RuleSpecV1) -> Result<Vec<N
         .or_else(|| feed.user_agent.clone())
         .unwrap_or_else(|| "captura/0.1".to_string());
 
-    let client = Client::builder()
-        .user_agent(ua)
-        .build()
-        .map_err(|e| Error::Network(e.to_string()))?;
+    let client = crate::http_client::client_for_feed(feed, Some(ua), spec.fetch.timeout_ms)?;
 
     let fetch_cfg = FetchCfg {
         user_agent: spec

@@ -1,6 +1,5 @@
 use captura_common::{Error, Result};
 use captura_storage::entity::feed;
-use reqwest::Client;
 use scraper::{ElementRef, Html, Selector};
 use url::Url;
 
@@ -36,10 +35,7 @@ pub(crate) async fn get_html(
         .clone()
         .unwrap_or_else(|| "captura/0.1".to_string());
 
-    let client = Client::builder()
-        .user_agent(ua.clone())
-        .build()
-        .map_err(|e| captura_common::Error::Network(e.to_string()))?;
+    let client = crate::http_client::client_basic(Some(ua.clone()), opts.timeout_ms)?;
 
     let fetch_cfg = FetchCfg {
         user_agent: Some(ua),

@@ -10,8 +10,6 @@ pub struct Model {
     pub created_at: DateTimeWithTimeZone,
 }
 
-impl ActiveModelBehavior for ActiveModel {}
-
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
     #[sea_orm(
@@ -29,3 +27,5 @@ impl Related<super::user::Entity> for Entity {
         Relation::User.def()
     }
 }
+
+impl ActiveModelBehavior for ActiveModel {}

@@ -23,8 +23,6 @@ pub struct Model {
     pub created_at: DateTimeWithTimeZone,
 }
 
-impl ActiveModelBehavior for ActiveModel {}
-
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
     #[sea_orm(has_many = "super::feed::Entity")]
@@ -32,3 +30,5 @@ pub enum Relation {
     #[sea_orm(has_many = "super::category::Entity")]
     Category,
 }
+
+impl ActiveModelBehavior for ActiveModel {}
