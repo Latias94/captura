@@ -26,10 +26,10 @@ services:
       db:
         condition: service_healthy
     environment:
-      # 最小环境变量（对齐 Miniflux 风格）
+      # Minimal environment variables (aligned with Miniflux style).
       DATABASE_URL: ${DATABASE_URL:-postgres://captura:captura@db/captura}
       RUST_LOG: info
-      # 可选：调度器开关（默认已开启）
+      # Optional: scheduler toggle (enabled by default).
       # SCHEDULER_ENABLED: "true"
     ports:
       - "8080:8080"

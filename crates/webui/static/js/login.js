@@ -47,7 +47,8 @@
   }
 
   if(btn){ btn.addEventListener('click', doLogin); }
-  // 支持按回车提交：拦截表单提交，避免浏览器默认提交导致 CSP/编码问题
+  // Support submitting with Enter: intercept form submission to avoid
+  // default browser behavior that may conflict with CSP/encoding.
   form.addEventListener('submit', function(e){ e.preventDefault(); doLogin(); });
 
   if(useBtn){

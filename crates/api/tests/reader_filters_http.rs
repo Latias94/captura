@@ -18,7 +18,7 @@ async fn setup_user_and_app() -> (
     let db = captura_testkit::setup_db().await;
     let st = AppState::new(db.clone());
     let app = test_router_service(st);
-    // create user
+    // Create user.
     let req = Request::post("/api/v1/users")
         .header("content-type", "application/json")
         .body(Body::from(
@@ -27,7 +27,7 @@ async fn setup_user_and_app() -> (
         .unwrap();
     let resp = app.clone().oneshot(req).await.unwrap();
     assert!(resp.status().is_success());
-    // login
+    // Login.
     let req = Request::post("/api/v1/auth/login")
         .header("content-type", "application/json")
         .body(Body::from(
@@ -140,7 +140,7 @@ async fn reader_items_ids_xt_read_excludes_read() {
         .and_then(|x| x.as_array())
         .map(|a| a.len())
         .unwrap_or(0);
-    // unread + starred(unread) => 2
+    // unread + starred (still unread) => 2
     assert_eq!(cnt, 2);
 }
 
@@ -172,7 +172,7 @@ async fn reader_items_ids_xt_starred_excludes_starred() {
         .and_then(|x| x.as_array())
         .map(|a| a.len())
         .unwrap_or(0);
-    // exclude starred -> unread + read (both not starred) => 2
+    // Exclude starred -> unread + read (both not starred) => 2
     assert_eq!(cnt, 2);
 }
 
@@ -181,7 +181,7 @@ async fn reader_items_ids_combination_s_q_xt() {
     let (app, db, token) = setup_user_and_app().await;
     let uid = User::find().one(&db).await.unwrap().unwrap().id;
     let feed_url = "https://example.com/feed-combo";
-    // seed 3 entries: Alpha (unread), Beta (unread), Alpha Starred (starred)
+    // Seed 3 entries: Alpha (unread), Beta (unread), Alpha Starred (starred).
     let now = Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
     let f = feed::ActiveModel {
         user_id: Set(uid),
@@ -240,7 +240,7 @@ async fn reader_items_ids_combination_s_q_xt() {
     .await
     .unwrap();
 
-    // s=feed/<url> + q=Alpha + xt=/starred -> 仅匹配 "Alpha"（未加星） 1 条
+    // s=feed/<url> + q=Alpha + xt=/starred -> matches only "Alpha" (unstarred) once.
     let url = format!(
         "/reader/api/0/stream/items/ids?s=feed/{}&q={}&xt=user/-/state/com.google/starred",
         urlencoding::encode(feed_url),

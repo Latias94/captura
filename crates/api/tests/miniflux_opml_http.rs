@@ -2,10 +2,10 @@ use axum::{body::Body, http::Request};
 use captura_api::miniflux_service_with_state;
 use tower::ServiceExt;
 
-/// 简单验证 /v1/import + /v1/export：
-/// 1) 通过 /v1/import 导入一份小 OPML
-/// 2) 用 /v1/feeds 确认订阅存在
-/// 3) 用 /v1/export 导出 OPML，包含该订阅
+/// Simple roundtrip test for `/v1/import` + `/v1/export`:
+/// 1) Import a small OPML via `/v1/import`.
+/// 2) Use `/v1/feeds` to ensure the feed exists.
+/// 3) Use `/v1/export` to export OPML containing that feed.
 #[tokio::test]
 async fn miniflux_opml_import_export_roundtrip() {
     let db = captura_testkit::setup_db().await;

@@ -5,8 +5,8 @@ use chrono::{FixedOffset, Utc};
 use sea_orm::{ActiveModelTrait, Set};
 use tower::ServiceExt;
 
-/// 验证 Miniflux 兼容层接受 before_entry_id / after_entry_id 参数
-/// 并按预期过滤 entries。
+/// Verify Miniflux-compatible layer accepts `before_entry_id` / `after_entry_id`
+/// and filters entries as expected.
 #[tokio::test]
 async fn miniflux_entries_before_after_entry_id() {
     let db = captura_testkit::setup_db().await;
@@ -15,7 +15,7 @@ async fn miniflux_entries_before_after_entry_id() {
 
     let now = Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
 
-    // 插入一个 feed
+    // Insert a single feed.
     let f = feed::ActiveModel {
         user_id: Set(uid),
         category_id: Set(None),
@@ -31,7 +31,7 @@ async fn miniflux_entries_before_after_entry_id() {
     .await
     .unwrap();
 
-    // 插入三条 entry
+    // Insert three entries.
     let e1 = entry::ActiveModel {
         feed_id: Set(f.id),
         guid: Set(Some("g1".into())),
@@ -75,7 +75,7 @@ async fn miniflux_entries_before_after_entry_id() {
     .await
     .unwrap();
 
-    // before_entry_id: 只保留 id 小于 e3.id 的条目（至少 2 条）
+    // `before_entry_id`: keep only entries with id < e3.id (expect at least 2).
     let req = Request::get(format!(
         "/entries?feed_id={}&before_entry_id={}",
         f.id, e3.id
@@ -92,7 +92,7 @@ async fn miniflux_entries_before_after_entry_id() {
     let total = v.get("total").and_then(|x| x.as_i64()).unwrap_or(0);
     assert_eq!(total, 2);
 
-    // after_entry_id: 只保留 id 大于 e1.id 的条目（至少 2 条）
+    // `after_entry_id`: keep only entries with id > e1.id (expect at least 2).
     let req = Request::get(format!(
         "/entries?feed_id={}&after_entry_id={}",
         f.id, e1.id
@@ -110,7 +110,7 @@ async fn miniflux_entries_before_after_entry_id() {
     assert_eq!(total, 2);
 }
 
-/// 验证 /v1/flush-history 同时接受 PUT 和 DELETE（兼容 Miniflux 文档）
+/// Verify `/v1/flush-history` accepts both PUT and DELETE (per Miniflux docs).
 #[tokio::test]
 async fn miniflux_flush_history_put_and_delete() {
     let db = captura_testkit::setup_db().await;

@@ -18,7 +18,7 @@ FROM chef AS builder
 COPY --from=planner /app/recipe.json recipe.json
 RUN cargo chef cook --release --recipe-path recipe.json
 COPY . .
-# Build only the API binary (scheduler在API进程内可开关)
+# Build only the API binary (scheduler can be toggled inside the API process).
 RUN cargo build --release -p captura-api
 
 # Minimal runtime image

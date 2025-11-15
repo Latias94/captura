@@ -1,7 +1,7 @@
 use axum::{
     extract::{Query, State},
     response::Response,
-    routing::{get, post},
+    routing::get,
     Router,
 };
 

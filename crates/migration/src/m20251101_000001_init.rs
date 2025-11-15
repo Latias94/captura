@@ -26,6 +26,13 @@ impl MigrationTrait for Migration {
                             .unique_key(),
                     )
                     .col(ColumnDef::new(User::PasswordHash).string().not_null())
+                    .col(ColumnDef::new(User::FeverKeyMd5).string())
+                    .col(
+                        ColumnDef::new(User::Role)
+                            .string_len(16)
+                            .not_null()
+                            .default("user"),
+                    )
                     .col(
                         ColumnDef::new(User::CreatedAt)
                             .timestamp_with_time_zone()
@@ -125,8 +132,12 @@ impl MigrationTrait for Migration {
                     .col(ColumnDef::new(Feed::Title).string())
                     .col(ColumnDef::new(Feed::SiteUrl).string())
                     .col(ColumnDef::new(Feed::FeedUrl).string().not_null())
+                    .col(ColumnDef::new(Feed::FaviconId).big_integer())
                     .col(ColumnDef::new(Feed::RuleId).big_integer())
+                    .col(ColumnDef::new(Feed::RuleParamsJson).json_binary())
                     .col(ColumnDef::new(Feed::UserAgent).string())
+                    .col(ColumnDef::new(Feed::Username).string())
+                    .col(ColumnDef::new(Feed::Password).string())
                     .col(ColumnDef::new(Feed::HeadersJson).json_binary())
                     .col(ColumnDef::new(Feed::Cookies).text())
                     .col(ColumnDef::new(Feed::ProxyUrl).string())
@@ -174,6 +185,7 @@ impl MigrationTrait for Migration {
                     .col(ColumnDef::new(Feed::UrlRewriteRules).text())
                     .col(ColumnDef::new(Feed::BlockFilterEntryRules).text())
                     .col(ColumnDef::new(Feed::KeepFilterEntryRules).text())
+                     .col(ColumnDef::new(Feed::IntegrationsJson).json_binary())
                     .col(
                         ColumnDef::new(Feed::CreatedAt)
                             .timestamp_with_time_zone()
@@ -204,6 +216,44 @@ impl MigrationTrait for Migration {
                             .name("fk_feed_rule")
                             .from(Feed::Table, Feed::RuleId)
                             .to(Rule::Table, Rule::Id)
+                            .on_delete(ForeignKeyAction::SetNull),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+
+        // favicon
+        manager
+            .create_table(
+                Table::create()
+                    .table(Favicon::Table)
+                    .if_not_exists()
+                    .col(
+                        ColumnDef::new(Favicon::Id)
+                            .big_integer()
+                            .not_null()
+                            .auto_increment()
+                            .primary_key(),
+                    )
+                    .col(ColumnDef::new(Favicon::FeedId).big_integer())
+                    .col(ColumnDef::new(Favicon::Url).string())
+                    .col(ColumnDef::new(Favicon::Mime).string_len(64))
+                    .col(ColumnDef::new(Favicon::Data).binary())
+                    .col(
+                        ColumnDef::new(Favicon::CreatedAt)
+                            .timestamp_with_time_zone()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(Favicon::UpdatedAt)
+                            .timestamp_with_time_zone()
+                            .not_null(),
+                    )
+                    .foreign_key(
+                        ForeignKey::create()
+                            .name("fk_favicon_feed")
+                            .from(Favicon::Table, Favicon::FeedId)
+                            .to(Feed::Table, Feed::Id)
                             .on_delete(ForeignKeyAction::SetNull),
                     )
                     .to_owned(),
@@ -285,6 +335,7 @@ impl MigrationTrait for Migration {
                     .col(ColumnDef::new(Enclosure::Mime).string())
                     .col(ColumnDef::new(Enclosure::Length).big_integer())
                     .col(ColumnDef::new(Enclosure::Kind).string_len(16))
+                    .col(ColumnDef::new(Enclosure::MediaProgression).big_integer())
                     // indexes created after table (SQLite compatibility)
                     .foreign_key(
                         ForeignKey::create()
@@ -400,6 +451,7 @@ impl MigrationTrait for Migration {
                             .default(0),
                     )
                     .col(ColumnDef::new(Job::LastError).text())
+                    .col(ColumnDef::new(Job::PayloadJson).json_binary())
                     .col(
                         ColumnDef::new(Job::CreatedAt)
                             .timestamp_with_time_zone()
@@ -452,17 +504,143 @@ impl MigrationTrait for Migration {
                     .col(ColumnDef::new(ApiToken::UserId).big_integer().not_null())
                     .col(ColumnDef::new(ApiToken::Name).string_len(190))
                     .col(ColumnDef::new(ApiToken::TokenHash).string().not_null())
+                    .col(ColumnDef::new(ApiToken::TokenPlain).string())
                     .col(
                         ColumnDef::new(ApiToken::CreatedAt)
                             .timestamp_with_time_zone()
                             .not_null(),
                     )
                     .col(ColumnDef::new(ApiToken::LastUsedAt).timestamp_with_time_zone())
+                    .col(ColumnDef::new(ApiToken::ExpiresAt).timestamp_with_time_zone())
                     // indexes created after table (SQLite compatibility)
                     .foreign_key(
                         ForeignKey::create()
                             .name("fk_api_token_user")
                             .from(ApiToken::Table, ApiToken::UserId)
+                            .to(User::Table, User::Id)
+                            .on_delete(ForeignKeyAction::Cascade),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+
+        // integration
+        manager
+            .create_table(
+                Table::create()
+                    .table(Integration::Table)
+                    .if_not_exists()
+                    .col(
+                        ColumnDef::new(Integration::Id)
+                            .big_integer()
+                            .not_null()
+                            .auto_increment()
+                            .primary_key(),
+                    )
+                    .col(ColumnDef::new(Integration::UserId).big_integer().not_null())
+                    .col(ColumnDef::new(Integration::Kind).string_len(64).not_null())
+                    .col(ColumnDef::new(Integration::ConfigJson).json_binary())
+                    .col(
+                        ColumnDef::new(Integration::Enabled)
+                            .boolean()
+                            .not_null()
+                            .default(true),
+                    )
+                    .col(
+                        ColumnDef::new(Integration::CreatedAt)
+                            .timestamp_with_time_zone()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(Integration::UpdatedAt)
+                            .timestamp_with_time_zone()
+                            .not_null(),
+                    )
+                    .foreign_key(
+                        ForeignKey::create()
+                            .name("fk_integration_user")
+                            .from(Integration::Table, Integration::UserId)
+                            .to(User::Table, User::Id)
+                            .on_delete(ForeignKeyAction::Cascade),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+
+        // webhook
+        manager
+            .create_table(
+                Table::create()
+                    .table(Webhook::Table)
+                    .if_not_exists()
+                    .col(
+                        ColumnDef::new(Webhook::Id)
+                            .big_integer()
+                            .not_null()
+                            .auto_increment()
+                            .primary_key(),
+                    )
+                    .col(ColumnDef::new(Webhook::UserId).big_integer().not_null())
+                    .col(ColumnDef::new(Webhook::Url).string().not_null())
+                    .col(ColumnDef::new(Webhook::Secret).string().not_null())
+                    .col(ColumnDef::new(Webhook::Events).string())
+                    .col(
+                        ColumnDef::new(Webhook::Enabled)
+                            .boolean()
+                            .not_null()
+                            .default(true),
+                    )
+                    .col(
+                        ColumnDef::new(Webhook::CreatedAt)
+                            .timestamp_with_time_zone()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(Webhook::UpdatedAt)
+                            .timestamp_with_time_zone()
+                            .not_null(),
+                    )
+                    .foreign_key(
+                        ForeignKey::create()
+                            .name("fk_webhook_user")
+                            .from(Webhook::Table, Webhook::UserId)
+                            .to(User::Table, User::Id)
+                            .on_delete(ForeignKeyAction::Cascade),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+
+        // user_pref
+        manager
+            .create_table(
+                Table::create()
+                    .table(UserPref::Table)
+                    .if_not_exists()
+                    .col(
+                        ColumnDef::new(UserPref::Id)
+                            .big_integer()
+                            .not_null()
+                            .auto_increment()
+                            .primary_key(),
+                    )
+                    .col(ColumnDef::new(UserPref::UserId).big_integer().not_null())
+                    .col(ColumnDef::new(UserPref::Key).string_len(64).not_null())
+                    .col(ColumnDef::new(UserPref::ValueJson).json_binary())
+                    .col(
+                        ColumnDef::new(UserPref::CreatedAt)
+                            .timestamp_with_time_zone()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(UserPref::UpdatedAt)
+                            .timestamp_with_time_zone()
+                            .not_null(),
+                    )
+                    .foreign_key(
+                        ForeignKey::create()
+                            .name("fk_userpref_user")
+                            .from(UserPref::Table, UserPref::UserId)
                             .to(User::Table, User::Id)
                             .on_delete(ForeignKeyAction::Cascade),
                     )
@@ -513,6 +691,17 @@ impl MigrationTrait for Migration {
                     .name("idx_enclosure_entry")
                     .table(Enclosure::Table)
                     .col(Enclosure::EntryId)
+                    .to_owned(),
+            )
+            .await?;
+
+        // Favicon index
+        manager
+            .create_index(
+                Index::create()
+                    .name("idx_favicon_feed")
+                    .table(Favicon::Table)
+                    .col(Favicon::FeedId)
                     .to_owned(),
             )
             .await?;
@@ -580,10 +769,67 @@ impl MigrationTrait for Migration {
             )
             .await?;
 
+        // UserPref unique index
+        manager
+            .create_index(
+                Index::create()
+                    .name("idx_userpref_user_key")
+                    .table(UserPref::Table)
+                    .col(UserPref::UserId)
+                    .col(UserPref::Key)
+                    .unique()
+                    .to_owned(),
+            )
+            .await?;
+
+        // Postgres-only: add tsv column/index and trigger for full-text search on entry table
+        let db = manager.get_connection();
+        if db.get_database_backend() == sea_orm::DatabaseBackend::Postgres {
+            let stmts = [
+                // Column and index
+                "ALTER TABLE entry ADD COLUMN IF NOT EXISTS tsv tsvector;",
+                // Pre-fill, limiting each segment to 500k characters and setting weights
+                r#"
+                UPDATE entry SET tsv =
+                    setweight(to_tsvector('simple', left(coalesce(title,''), 500000)), 'A') ||
+                    setweight(to_tsvector('simple', left(coalesce(summary,''), 500000)), 'B') ||
+                    setweight(to_tsvector('simple', left(coalesce(content_html,''), 500000)), 'C');
+                "#,
+                "CREATE INDEX IF NOT EXISTS idx_entry_tsv ON entry USING GIN (tsv);",
+                // Trigger function
+                r#"
+                CREATE OR REPLACE FUNCTION entry_tsv_update() RETURNS trigger AS $$
+                BEGIN
+                    NEW.tsv :=
+                        setweight(to_tsvector('simple', left(coalesce(NEW.title,''), 500000)), 'A') ||
+                        setweight(to_tsvector('simple', left(coalesce(NEW.summary,''), 500000)), 'B') ||
+                        setweight(to_tsvector('simple', left(coalesce(NEW.content_html,''), 500000)), 'C');
+                    RETURN NEW;
+                END
+                $$ LANGUAGE plpgsql;
+                "#,
+                // Trigger
+                "DROP TRIGGER IF EXISTS entry_tsv_update ON entry;",
+                "CREATE TRIGGER entry_tsv_update BEFORE INSERT OR UPDATE OF title, summary, content_html ON entry FOR EACH ROW EXECUTE FUNCTION entry_tsv_update();",
+            ];
+            for sql in stmts {
+                db.execute_unprepared(sql).await?;
+            }
+        }
+
         Ok(())
     }
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        manager
+            .drop_table(Table::drop().table(UserPref::Table).to_owned())
+            .await?;
+        manager
+            .drop_table(Table::drop().table(Webhook::Table).to_owned())
+            .await?;
+        manager
+            .drop_table(Table::drop().table(Integration::Table).to_owned())
+            .await?;
         manager
             .drop_table(Table::drop().table(ApiToken::Table).to_owned())
             .await?;
@@ -600,6 +846,9 @@ impl MigrationTrait for Migration {
             .drop_table(Table::drop().table(Enclosure::Table).to_owned())
             .await?;
         manager
+            .drop_table(Table::drop().table(Favicon::Table).to_owned())
+            .await?;
+        manager
             .drop_table(Table::drop().table(Entry::Table).to_owned())
             .await?;
         manager
@@ -614,6 +863,19 @@ impl MigrationTrait for Migration {
         manager
             .drop_table(Table::drop().table(User::Table).to_owned())
             .await?;
+        // Postgres-only: drop FTS trigger/index/column if present
+        let db = manager.get_connection();
+        if db.get_database_backend() == sea_orm::DatabaseBackend::Postgres {
+            let stmts = [
+                "DROP TRIGGER IF EXISTS entry_tsv_update ON entry;",
+                "DROP FUNCTION IF EXISTS entry_tsv_update();",
+                "DROP INDEX IF EXISTS idx_entry_tsv;",
+                "ALTER TABLE entry DROP COLUMN IF EXISTS tsv;",
+            ];
+            for sql in stmts {
+                db.execute_unprepared(sql).await?;
+            }
+        }
         Ok(())
     }
 }
@@ -624,6 +886,8 @@ enum User {
     Id,
     Username,
     PasswordHash,
+    FeverKeyMd5,
+    Role,
     CreatedAt,
 }
 
@@ -664,8 +928,12 @@ enum Feed {
     Title,
     SiteUrl,
     FeedUrl,
+    FaviconId,
     RuleId,
+    RuleParamsJson,
     UserAgent,
+    Username,
+    Password,
     HeadersJson,
     Cookies,
     ProxyUrl,
@@ -688,6 +956,7 @@ enum Feed {
     UrlRewriteRules,
     BlockFilterEntryRules,
     KeepFilterEntryRules,
+    IntegrationsJson,
     CreatedAt,
     UpdatedAt,
 }
@@ -721,6 +990,19 @@ enum Enclosure {
     Mime,
     Length,
     Kind,
+    MediaProgression,
+}
+
+#[derive(DeriveIden)]
+enum Favicon {
+    Table,
+    Id,
+    FeedId,
+    Url,
+    Mime,
+    Data,
+    CreatedAt,
+    UpdatedAt,
 }
 
 #[derive(DeriveIden)]
@@ -755,6 +1037,7 @@ enum Job {
     RunAt,
     Attempts,
     LastError,
+    PayloadJson,
     CreatedAt,
     UpdatedAt,
 }
@@ -766,6 +1049,44 @@ enum ApiToken {
     UserId,
     Name,
     TokenHash,
+    TokenPlain,
     CreatedAt,
     LastUsedAt,
+    ExpiresAt,
+}
+
+#[derive(DeriveIden)]
+enum Integration {
+    Table,
+    Id,
+    UserId,
+    Kind,
+    ConfigJson,
+    Enabled,
+    CreatedAt,
+    UpdatedAt,
+}
+
+#[derive(DeriveIden)]
+enum Webhook {
+    Table,
+    Id,
+    UserId,
+    Url,
+    Secret,
+    Events,
+    Enabled,
+    CreatedAt,
+    UpdatedAt,
+}
+
+#[derive(DeriveIden)]
+enum UserPref {
+    Table,
+    Id,
+    UserId,
+    Key,
+    ValueJson,
+    CreatedAt,
+    UpdatedAt,
 }

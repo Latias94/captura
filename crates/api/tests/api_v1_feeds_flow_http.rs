@@ -2,19 +2,19 @@ use axum::{body::Body, http::Request};
 use captura_api::{test_router_service, AppState};
 use tower::ServiceExt;
 
-/// /api/v1 层面的精简 end-to-end 流程测试：
-/// 1) 创建用户 + 登录拿 token
-/// 2) 通过 /api/v1/feeds 创建订阅
-/// 3) 通过 /api/v1/feeds 列出订阅并拿到 id
-/// 4) 直接向数据库插入一条 entry
-/// 5) 通过 /api/v1/entries 查询该订阅的条目
+/// Minimal end-to-end flow test for the `/api/v1` surface:
+/// 1) Create user and login to obtain token.
+/// 2) Create a feed via `/api/v1/feeds`.
+/// 3) List feeds via `/api/v1/feeds` and obtain feed id.
+/// 4) Insert an entry directly into the database (simulating fetch result).
+/// 5) Query entries for that feed via `/api/v1/entries`.
 #[tokio::test]
 async fn api_v1_feeds_basic_flow() {
     let db = captura_testkit::setup_db().await;
     let st = AppState::new(db.clone());
     let app = test_router_service(st.clone());
 
-    // 1) 创建用户
+    // 1) Create user.
     let req = Request::post("/api/v1/users")
         .header("content-type", "application/json")
         .body(Body::from(
@@ -35,7 +35,7 @@ async fn api_v1_feeds_basic_flow() {
         panic!("create_user failed");
     }
 
-    // 2) 登录获取 token
+    // 2) Login and obtain token.
     let req = Request::post("/api/v1/auth/login")
         .header("content-type", "application/json")
         .body(Body::from(
@@ -65,7 +65,7 @@ async fn api_v1_feeds_basic_flow() {
         .expect("token")
         .to_string();
 
-    // 3) 通过 /api/v1/feeds 创建订阅
+    // 3) Create a feed via `/api/v1/feeds`.
     let feed_url = "https://example.com/feed";
     let req = Request::post("/api/v1/feeds")
         .header("content-type", "application/json")
@@ -104,13 +104,13 @@ async fn api_v1_feeds_basic_flow() {
         .and_then(|x| x.as_i64())
         .expect("feed id");
 
-    // 4) 直接向数据库插入一条 entry（模拟抓取结果）
+    // 4) Insert an entry directly into the database (simulate fetch result).
     use captura_storage::entity::{entry, feed};
     use chrono::{FixedOffset, Utc};
     use sea_orm::{ActiveModelTrait, EntityTrait, Set};
 
     let now = Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
-    // 确认 feed 存在
+    // Ensure feed exists.
     let f = feed::Entity::find_by_id(feed_id)
         .one(st.db())
         .await
@@ -133,7 +133,7 @@ async fn api_v1_feeds_basic_flow() {
     .await
     .expect("insert entry");
 
-    // 5) 通过 /api/v1/entries 查询该订阅的条目
+    // 5) Query entries for this feed via `/api/v1/entries`.
     let req = Request::get(format!("/api/v1/entries?feed_id={feed_id}&status=unread"))
         .header(
             axum::http::header::AUTHORIZATION,
@@ -157,7 +157,7 @@ async fn api_v1_feeds_basic_flow() {
     let bytes = axum::body::to_bytes(resp.into_body(), 1024 * 1024)
         .await
         .unwrap();
-    // /api/v1/entries 返回的是条目数组，验证数组非空即可
+    // `/api/v1/entries` returns an array of entries; ensure it is non-empty.
     let arr: Vec<serde_json::Value> = serde_json::from_slice(&bytes).unwrap();
     assert!(!arr.is_empty(), "expected at least one unread entry, got 0");
 }

@@ -2,12 +2,12 @@ use axum::{body::Body, http::Request};
 use captura_api::miniflux_service_with_state;
 use tower::ServiceExt;
 
-/// 验证 /v1/me 暴露的用户偏好字段与我们写入的值一致
+/// Verify `/v1/me` exposes user preference fields consistent with those written.
 #[tokio::test]
 async fn miniflux_me_exposes_core_prefs() {
     let db = captura_testkit::setup_db().await;
     let (uid, token) = captura_testkit::seed_user_and_token(&db, "u").await;
-    // 将测试用户提升为 admin，以便通过 /v1/users/{id} 更新偏好
+    // Promote the test user to admin so that `/v1/users/{id}` can update prefs.
     {
         use captura_storage::entity::user;
         use captura_storage::entity::user::Entity as User;
@@ -19,7 +19,7 @@ async fn miniflux_me_exposes_core_prefs() {
     }
     let app = miniflux_service_with_state(db.clone());
 
-    // 1) 调 /v1/users/{id} 更新若干偏好
+    // 1) Call `/v1/users/{id}` to update several preferences.
     let prefs = serde_json::json!({
         "theme": "dark_serif",
         "language": "zh_CN",
@@ -48,7 +48,7 @@ async fn miniflux_me_exposes_core_prefs() {
         resp.status()
     );
 
-    // 2) 调 /v1/me 读取并断言字段
+    // 2) Call `/v1/me` and assert the returned fields.
     let req = Request::get("/me")
         .header("X-Auth-Token", token.as_str())
         .body(Body::empty())

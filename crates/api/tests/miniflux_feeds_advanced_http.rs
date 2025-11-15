@@ -5,10 +5,10 @@ use chrono::{FixedOffset, Utc};
 use sea_orm::{ActiveModelTrait, EntityTrait, Set};
 use tower::ServiceExt;
 
-/// 验证 Miniflux 兼容层对订阅源“高级字段”的读写：
-/// - /v1/feeds/{id} PUT 写入抓取/规则相关字段
-/// - /v1/feeds/{id} GET 能返回这些字段
-/// - 数据库中的 feed 记录正确持久化这些设置
+/// Verify Miniflux-compatible layer for feed "advanced fields" read/write:
+/// - `/v1/feeds/{id}` PUT writes fetch/rule-related fields.
+/// - `/v1/feeds/{id}` GET returns these fields.
+/// - The underlying database feed record persists these settings correctly.
 #[tokio::test]
 async fn miniflux_feed_advanced_fields_roundtrip() {
     let db = captura_testkit::setup_db().await;
@@ -16,7 +16,7 @@ async fn miniflux_feed_advanced_fields_roundtrip() {
 
     let now = Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
 
-    // 先插入一个最小 feed，后续通过 /v1/feeds/{id} 更新高级字段
+    // Insert a minimal feed first; later update advanced fields via `/v1/feeds/{id}`.
     let f = feed::ActiveModel {
         user_id: Set(uid),
         category_id: Set(None),
@@ -34,7 +34,7 @@ async fn miniflux_feed_advanced_fields_roundtrip() {
 
     let app = miniflux_service_with_state(db.clone());
 
-    // 通过 Miniflux 兼容的更新接口写入高级字段
+    // Write advanced fields via the Miniflux-compatible update endpoint.
     let payload = serde_json::json!({
         "user_agent": "TestUA/1.0",
         "cookie": "a=b; c=d",
@@ -63,7 +63,7 @@ async fn miniflux_feed_advanced_fields_roundtrip() {
         resp.status()
     );
 
-    // 通过 /v1/feeds/{id} 读取并验证 JSON 字段
+    // Read back via `/v1/feeds/{id}` and validate JSON fields.
     let req = Request::get(format!("/feeds/{}", f.id))
         .header("X-Auth-Token", token.as_str())
         .body(Body::empty())
@@ -123,7 +123,7 @@ async fn miniflux_feed_advanced_fields_roundtrip() {
         Some("http://example.com/(.*) -> http://mirror.local/$1")
     );
 
-    // 再检查数据库中的 feed 记录，确认字段已持久化
+    // Also check the stored feed record in the database to confirm persistence.
     let stored = feed::Entity::find_by_id(f.id)
         .one(&db)
         .await

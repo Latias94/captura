@@ -6,7 +6,7 @@ async fn healthz_ok() {
     let st = AppState::new(db);
     let _ = st; // state not needed for minimal router
     let app = test_min_router().into_service();
-    // 简单发起 HTTP 请求需要监听端口；这里改为直接调用 oneshot 不依赖网络
+    // Use oneshot against the router directly instead of binding a real port.
     use axum::{body::Body, http::Request};
     use tower::ServiceExt;
     let resp = app

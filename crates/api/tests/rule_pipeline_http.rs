@@ -5,8 +5,8 @@ use chrono::{FixedOffset, Utc};
 use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set};
 use tracing_subscriber::EnvFilter;
 
-/// 使用本地 HTTP 服务器验证：rule-type feed + YAML 规则
-/// 能通过 service 层完整走 pipeline，最终将 entry 落库。
+/// Use a local HTTP server to verify that a `rule`-type feed with YAML rules
+/// can go through the full service pipeline and persist entries.
 #[tokio::test]
 async fn rule_feed_pipeline_persists_entries() {
     // 1) 启动本地 HTTP server，提供 list + article HTML
@@ -38,7 +38,7 @@ async fn rule_feed_pipeline_persists_entries() {
     let (uid, _token) = captura_testkit::seed_user_and_token(&db, "rule_user").await;
     let now = Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
 
-    // 简单 YAML 规则（DSL v1）：从 /list 抓取 a.item 链接，并用 CSS 选择正文
+    // Simple DSL v1 YAML rule: fetch links from `/list` via `a.item`, then use CSS for content.
     let yaml = format!(
         r#"id: "test.rule"
 version: 1
@@ -112,7 +112,7 @@ source:
     };
     let f = feed_am.insert(&db).await.expect("insert feed");
 
-    // 3) 通过 service 层刷新 rule feed 并持久化
+    // 3) Refresh the rule feed via the service layer and persist entries.
     let inserted = refresh_and_persist(&db, &f)
         .await
         .expect("refresh rule feed");
@@ -122,7 +122,7 @@ source:
         inserted
     );
 
-    // 4) 验证数据库中确实存在来自规则的 entry，且正文包含预期内容
+    // 4) Verify that entries from the rule exist and content contains the expected marker.
     let entries = entry::Entity::find()
         .filter(entry::Column::FeedId.eq(f.id))
         .all(&db)
@@ -141,7 +141,8 @@ source:
     );
 }
 
-/// 验证：`source.type = json` + `from_html` 能从 HTML 中的 JSON 片段构造条目并持久化。
+/// Verify `source.type = json` + `from_html` can build entries from HTML-embedded
+/// JSON fragments and persist them.
 #[tokio::test]
 async fn rule_feed_json_from_html_persists_entries() {
     // 1) 启动本地 HTTP server，返回嵌有 JSON 的 HTML
@@ -169,7 +170,7 @@ async fn rule_feed_json_from_html_persists_entries() {
     let (uid, _token) = captura_testkit::seed_user_and_token(&db, "rule_user_json").await;
     let now = Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
 
-    // DSL v1 JSON 规则：从 /html_json 抽取 script#data 文本作为 JSON
+    // DSL v1 JSON rule: extract `script#data` text from `/html_json` as JSON.
     let yaml = format!(
         r#"id: "test.rule.json_from_html"
 version: 1
@@ -245,7 +246,7 @@ source:
     };
     let f = feed_am.insert(&db).await.expect("insert feed");
 
-    // 3) 通过 service 层刷新 rule feed 并持久化
+    // 3) Refresh the rule feed via the service layer and persist entries.
     let inserted = refresh_and_persist(&db, &f)
         .await
         .expect("refresh json-from-html rule feed");
@@ -255,7 +256,7 @@ source:
         inserted
     );
 
-    // 4) 验证数据库中 entry 的标题和 URL 对应预期 JSON 数据
+    // 4) Verify that entry title and URL match the expected JSON data.
     let entries = entry::Entity::find()
         .filter(entry::Column::FeedId.eq(f.id))
         .all(&db)
@@ -281,8 +282,8 @@ source:
     );
 }
 
-/// 验证：DSL v1 filters.fetch_full_content_when + transform.content_merge
-/// 能够触发全文抓取并替换原有 content_html。
+/// Verify DSL v1 `filters.fetch_full_content_when` + `transform.content_merge`
+/// can trigger full-content fetching and replace the original `content_html`.
 #[tokio::test]
 async fn rule_feed_full_content_when_persists_extracted_body() {
     use axum::routing::get;
@@ -322,8 +323,8 @@ async fn rule_feed_full_content_when_persists_extracted_body() {
     let (uid, _token) = captura_testkit::seed_user_and_token(&db, "rule_user_full").await;
     let now = Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
 
-    // 规则：list_detail + 空 CSS 内容选择器；遇到标题包含 "Read full" 条目时，
-    // 触发全文抓取，并用 content_merge.mode = replace 覆盖 content_html。
+    // Rule: `list_detail` + empty CSS content selector; when title contains "Read full",
+    // trigger full-content fetch and use `content_merge.mode = replace` to override `content_html`.
     let yaml = format!(
         r#"id: "test.rule.full_content"
 version: 1
@@ -407,7 +408,7 @@ transform:
     };
     let f = feed_am.insert(&db).await.expect("insert feed");
 
-    // 3) 刷新并持久化
+    // 3) Refresh and persist.
     let inserted = refresh_and_persist(&db, &f)
         .await
         .expect("refresh full-content rule feed");
@@ -417,7 +418,8 @@ transform:
         inserted
     );
 
-    // 4) 验证 content_html 中包含 FULL_CONTENT_MARKER，说明确实使用全文替换。
+    // 4) Ensure `content_html` contains `FULL_CONTENT_MARKER`,
+    // confirming full-content replacement took place.
     let entries = entry::Entity::find()
         .filter(entry::Column::FeedId.eq(f.id))
         .all(&db)
@@ -439,7 +441,7 @@ transform:
     );
 }
 
-/// 验证：`source.type = xpath` 能通过轻量级 XPath→CSS 转换执行抓取并持久化。
+/// Verify `source.type = xpath` can crawl and persist entries via a light XPath→CSS conversion.
 #[tokio::test]
 async fn rule_feed_xpath_persists_entries() {
     use axum::routing::get;
@@ -472,8 +474,8 @@ async fn rule_feed_xpath_persists_entries() {
     let (uid, _token) = captura_testkit::seed_user_and_token(&db, "rule_user_xpath").await;
     let now = Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
 
-    // XPath 规则：使用 //ul/li 作为 item，.//h2/text() 作为标题，
-    // .//a/@href 作为链接，.//div[@class='entry-content'] 作为正文 HTML。
+    // XPath rule: use `//ul/li` as item, `.//h2/text()` as title,
+    // `.//a/@href` as link, `.//div[@class='entry-content']` as content HTML.
     let yaml = format!(
         r#"id: "test.rule.xpath"
 version: 1
