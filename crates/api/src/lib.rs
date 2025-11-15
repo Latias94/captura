@@ -276,6 +276,7 @@ pub fn test_router(app_state: AppState) -> Router<AppState> {
             post(crate::feeds::create_feed).get(crate::feeds::list_feeds),
         )
         .route("/entries", get(crate::entries::list_entries))
+        .route("/opml/validate", post(crate::opml::validate))
         .route("/users/{id}/fever-key", post(crate::users::set_fever_key));
 
     Router::new()

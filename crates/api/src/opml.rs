@@ -269,7 +269,7 @@ pub(crate) fn extract_outlines(body: &str) -> Vec<OutlineNode> {
 pub(crate) fn parse_opml_quickxml(body: &str) -> Result<Vec<OutlineNode>, String> {
     use quick_xml::{events::Event, Reader};
     let mut reader = Reader::from_str(body);
-    reader.trim_text(true);
+    reader.config_mut().trim_text(true);
     let mut buf = Vec::new();
     let mut nodes = Vec::new();
     let mut cat_stack: Vec<String> = Vec::new();
@@ -283,7 +283,7 @@ pub(crate) fn parse_opml_quickxml(body: &str) -> Result<Vec<OutlineNode>, String
                 for a in e.attributes().with_checks(false).flatten() {
                     let key = a.key.as_ref();
                     let val = a
-                        .decode_and_unescape_value(&reader)
+                        .decode_and_unescape_value(reader.decoder())
                         .map_err(|e| e.to_string())?
                         .to_string();
                     match key {
