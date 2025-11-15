@@ -8,7 +8,7 @@ use sea_orm::EntityTrait;
 
 use crate::error::{bad_request, forbidden, internal, ApiResult};
 
-// 通用分页与排序校验
+// Common paging and sorting validation helpers
 #[allow(dead_code)]
 pub(crate) fn validate_limit_offset(limit: Option<u64>, _offset: Option<u64>) -> ApiResult<()> {
     if let Some(l) = limit {
@@ -57,7 +57,7 @@ pub(crate) async fn assert_category_ownership(
     Ok(())
 }
 
-// 简易登录限流（进程内，按用户名窗口计数）
+// Simple in-process login rate limiter keyed by username
 static LOGIN_LIMITER: Lazy<Mutex<HashMap<String, (u32, std::time::Instant)>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 

@@ -146,12 +146,12 @@ pub async fn run_once(db: &DatabaseConnection, max: u64) -> Result<usize> {
                         am.status = Set(job::JobStatus::Failed);
                         am.last_error = Set(Some(msg.clone()));
                         if let Some(fid) = j.feed_id {
-                            // attempts 在运行前已 +1，这里应传入最新的 attempts 值
+                            // attempts has been incremented before execution; pass the latest attempts value here
                             let _ =
                                 update_feed_on_failure(&db, FeedId(fid), j.attempts + 1, Some(msg))
                                     .await;
                         } else if matches!(j.job_type, job::JobType::Integration) {
-                            // 对于集成任务，按通用回退规则设置下一次运行时间
+                            // For integration jobs, compute the next run time using the generic backoff policy
                             let now2 = Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
                             let base: i64 = std::env::var("SCHEDULER_BACKOFF_BASE_SECS")
                                 .ok()
@@ -415,7 +415,7 @@ async fn update_feed_on_failure(
     Ok(())
 }
 
-// TODO: 添加 scheduler 集成测试（需可注入 fetcher/crawler mock）。
+// TODO: add scheduler integration tests (needs injectable fetcher/crawler mocks)
 #[cfg(test)]
 mod it {
     use super::*;
@@ -435,7 +435,7 @@ mod it {
         .insert(&db)
         .await
         .unwrap();
-        // feed: rule 类型但无 rule_id，触发 service 层快速失败（无需网络）
+        // feed: rule type but without rule_id to trigger a fast failure in the service layer (no network required)
         let f = feed::ActiveModel {
             user_id: Set(u.id),
             category_id: Set(None),
@@ -481,7 +481,7 @@ mod it {
         let processed = run_once(&db, 10).await.unwrap();
         assert_eq!(processed, 1);
 
-        // 校验 Job 状态为 Failed 且 attempts=1
+        // Assert job status is Failed and attempts=1
         let j = job::Entity::find()
             .order_by_desc(job::Column::Id)
             .one(&db)
@@ -492,7 +492,7 @@ mod it {
         assert_eq!(j.attempts, 1);
         assert!(j.last_error.unwrap_or_default().contains("rule"));
 
-        // feed 应设置回退后的 next_run_at，并记录 error_count=1
+        // Feed should have backoff next_run_at set and error_count=1
         let f2 = feed::Entity::find_by_id(f.id)
             .one(&db)
             .await

@@ -11,7 +11,7 @@ use tracing::{info, Level};
 use tracing_subscriber::EnvFilter;
 // use url::Url; // no longer used in main
 // use axum::Form; // reader handlers moved to compat
-// testkit 已抽离为独立 crate: captura-testkit
+// testkit has been extracted into a dedicated crate: captura-testkit
 
 // Re-export types for tests no longer needed; keep API modules self-contained
 // OPML types for Miniflux wrappers (not used in main)
@@ -78,13 +78,13 @@ async fn main() -> anyhow::Result<()> {
         });
     }
 
-    // 路由组装与服务启动见下
+    // Router assembly and server startup follow below
 
-    // AppState 已迁移至 state.rs，并在此处通过 `pub use` 进行再导出
+    // AppState has been moved to state.rs and re-exported here via `pub use`
 
     // moved to compat::miniflux::router
 
-    // Miniflux/兼容层鉴权函数移至 auth.rs
+    // Miniflux/compat authentication helpers moved to auth.rs
 
     // Miniflux main implementation moved to compat::miniflux
 
@@ -127,9 +127,9 @@ async fn main() -> anyhow::Result<()> {
     // OPML export/import
     // legacy opml_export removed; use crate::opml::export
 
-    // opml_import 已迁至 crates/api/src/opml.rs
+    // opml_import has been moved to crates/api/src/opml.rs
 
-    // 统一使用 captura_api::build_router 作为唯一的路由构建入口
+    // Always use captura_api::build_router as the single router construction entrypoint
     let app = build_router(app_state.clone());
 
     let addr: SocketAddr = "0.0.0.0:8080".parse()?;
@@ -150,7 +150,7 @@ mod tests {
         use crate::compat::reader::types::ReaderItemsIdsQuery;
         let db = setup_db().await;
         let st = AppState::new(db.clone());
-        // 用户与 feed + 两条 entry
+        // user with a feed and two entries
         let _ = create_user(
             State(st.clone()),
             Json(CreateUserReq {
@@ -214,7 +214,7 @@ mod tests {
         use crate::compat::reader::types::ReaderItemsContentsQuery;
         let db = setup_db().await;
         let st = AppState::new(db.clone());
-        // 用户与 feed + 一条 entry
+        // user with a feed and a single entry
         let _ = create_user(
             State(st.clone()),
             Json(CreateUserReq {
@@ -280,7 +280,7 @@ mod tests {
         use serde_json::json;
         let db = setup_db().await;
         let st = AppState::new(db.clone());
-        // 用户 + fever key + 一个分类和 feed
+        // user with a Fever key and a single category + feed
         let create = create_user(
             State(st.clone()),
             Json(CreateUserReq {
@@ -357,7 +357,7 @@ mod tests {
         assert!(v.get("feeds").is_some());
     }
 
-    // HTTP 级路由集成测试计划迁移到 crates/api/tests/，此处暂以 handlers 级单测为主
+    // HTTP-level integration tests are being migrated to crates/api/tests/; keep handler-level tests here for now
 
     #[tokio::test]
     async fn auth_login_disabled() {
@@ -450,7 +450,7 @@ mod tests {
     async fn auth_token_expiry_and_last_used_update() {
         let db = setup_db().await;
         let st = AppState::new(db);
-        // 创建用户
+        // create a user
         let _ = create_user(
             State(st.clone()),
             Json(CreateUserReq {
@@ -460,7 +460,7 @@ mod tests {
         )
         .await
         .unwrap();
-        // 登录颁发 token
+        // login and issue token
         let login = auth_login(
             State(st.clone()),
             Json(AuthLoginReq {
@@ -473,14 +473,14 @@ mod tests {
         .unwrap();
         let token_plain = login.0.token.clone();
 
-        // 1) 正常鉴权应通过且刷新 last_used_at
+        // 1) Normal authentication should succeed and refresh last_used_at
         let before = Token::find()
             .filter(token::Column::TokenPlain.eq(token_plain.clone()))
             .one(&st.db)
             .await
             .unwrap()
             .and_then(|m| m.last_used_at);
-        // 稍作等待，确保时间可比较
+        // Wait briefly to ensure timestamps are comparable
         tokio::time::sleep(std::time::Duration::from_millis(5)).await;
         let _ = AuthUser::from_bearer(&st.db, &token_plain).await.unwrap();
         let after = Token::find()
@@ -494,7 +494,7 @@ mod tests {
             assert!(a >= b);
         }
 
-        // 2) 人为设置过期，再次鉴权应失败
+        // 2) Manually expire the token; next authentication should fail
         if let Some(model) = Token::find()
             .filter(token::Column::TokenPlain.eq(token_plain.clone()))
             .one(&st.db)
@@ -516,7 +516,7 @@ mod tests {
         assert_eq!(code, "unauthorized");
     }
 
-    // 迁移由 testkit::setup_db 完成
+    // Database migrations are executed by testkit::setup_db
 
     fn resp_to_status_and_code(resp: Response) -> (u16, String) {
         use axum::http::StatusCode;
@@ -1466,7 +1466,7 @@ mod tests {
     async fn create_feed_duplicate_url_bad_request() {
         let db = setup_db().await;
         let st = AppState::new(db.clone());
-        // 注册首个用户
+        // register the first user
         let _ = create_user(
             State(st.clone()),
             Json(CreateUserReq {
@@ -1476,7 +1476,7 @@ mod tests {
         )
         .await
         .unwrap();
-        // 登录获取 token
+        // login and obtain token
         let login = auth_login(
             State(st.clone()),
             Json(AuthLoginReq {
@@ -1488,7 +1488,7 @@ mod tests {
         .await
         .unwrap();
         let token = login.0.token;
-        // 创建同一个 feed 两次
+        // create the same feed twice
         let body = CreateFeedReq {
             category_id: None,
             r#type: "rss".into(),
@@ -1514,7 +1514,7 @@ mod tests {
         )
         .await
         .unwrap();
-        // 第二次提交相同的 feed_url
+        // second submission with the same feed_url
         let body2 = CreateFeedReq {
             category_id: None,
             r#type: "rss".into(),
@@ -1552,7 +1552,7 @@ mod tests {
         let db = setup_db().await;
         let st = AppState::new(db.clone());
 
-        // 用户A：注册并登录
+        // user A: register and login
         let _ = create_user(
             State(st.clone()),
             Json(CreateUserReq {
@@ -1574,7 +1574,7 @@ mod tests {
         .unwrap();
         let _token_a = login_a.0.token;
 
-        // 直接插入用户B与其 token（避免触发 create_user 限制）
+        // Directly insert user B and its token (to avoid create_user constraints)
         let now = Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
         let user_b = user::ActiveModel {
             username: Set("bob".into()),
@@ -1599,7 +1599,7 @@ mod tests {
         };
         let _ = am.insert(&st.db).await.unwrap();
 
-        // 为用户A插入一个 feed 与 entry
+        // insert a feed and entry for user A
         let f = feed::ActiveModel {
             user_id: Set(1),
             category_id: Set(None),
@@ -1627,7 +1627,7 @@ mod tests {
         .await
         .unwrap();
 
-        // 用用户B的 token 标记用户A的 entry 为已读，应 forbidden
+        // mark user A's entry as read using user B's token; should be forbidden
         let err = crate::entries::mark_read(
             State(st.clone()),
             TypedHeader(Authorization::bearer(&token_b_plain).unwrap()),
@@ -1651,7 +1651,7 @@ mod tests {
             .route("/api/v1/auth/login", post(auth_login))
             .with_state(AppState::new(db));
 
-        // 注册首个用户
+        // register the first user
         let resp = app
             .clone()
             .oneshot(
@@ -1666,7 +1666,7 @@ mod tests {
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
 
-        // 登录
+        // login
         let resp = app
             .oneshot(
                 Request::post("/api/v1/auth/login")

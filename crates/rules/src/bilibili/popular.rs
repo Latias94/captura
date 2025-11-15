@@ -3,9 +3,9 @@ use crate::v1::{
     SourceType, TransformSpec,
 };
 
-/// 内置 Bilibili 规则示例：综合热门（popular）。
+/// Built-in Bilibili rule example: "popular" (comprehensive trending).
 ///
-/// 对应 RSSHub 路由 `/bilibili/popular/all`，使用官方 JSON API：
+/// Corresponds to RSSHub route `/bilibili/popular/all`, using the official JSON API:
 /// `https://api.bilibili.com/x/web-interface/popular`
 pub fn rule() -> RuleSpecV1 {
     RuleSpecV1 {
@@ -28,14 +28,14 @@ pub fn rule() -> RuleSpecV1 {
             // list_detail-only fields
             list: None,
             content: Some(ContentSpec {
-                // 对 JSON 源，content 通常不使用；这里保留默认即可。
+                // For JSON sources, content is usually unused; keep default here.
                 mode: ContentMode::Css,
                 selector: None,
                 remove: Vec::new(),
                 fallback: None,
                 use_entry_url: None,
             }),
-            // single_page/json/xpath 通用字段
+            // Fields shared by single_page/json/xpath sources
             request: Some(RequestSpec {
                 url: "https://api.bilibili.com/x/web-interface/popular".to_string(),
                 method: Some("GET".to_string()),

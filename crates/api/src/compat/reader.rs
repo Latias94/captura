@@ -14,7 +14,7 @@ use crate::auth::AuthUser;
 use crate::error::ApiResult;
 use crate::AppState;
 
-// ---------- 端点 ----------
+// ---------- Endpoints ----------
 pub(crate) async fn subscription_list(
     State(st): State<AppState>,
     TypedHeader(Authorization(bearer)): TypedHeader<Authorization<Bearer>>,
@@ -104,43 +104,22 @@ pub(crate) async fn subscription_edit(
     Ok("OK")
 }
 
-/// 构建 Google Reader 兼容层 Router（`/reader/api/0/*`）。
+/// Build the Google Reader compatibility-layer Router (`/reader/api/0/*`).
 pub fn router() -> Router<AppState> {
     Router::new()
-        .route(
-            "/reader/api/0/subscription/list",
-            get(subscription_list),
-        )
+        .route("/reader/api/0/subscription/list", get(subscription_list))
         .route(
             "/reader/api/0/stream/contents/user/-/state/com.google/reading-list",
             get(stream_contents),
         )
-        .route(
-            "/reader/api/0/edit-tag",
-            post(edit_tag),
-        )
-        .route(
-            "/reader/api/0/mark-all-as-read",
-            post(mark_all_read),
-        )
-        .route(
-            "/reader/api/0/unread-count",
-            get(unread_count),
-        )
+        .route("/reader/api/0/edit-tag", post(edit_tag))
+        .route("/reader/api/0/mark-all-as-read", post(mark_all_read))
+        .route("/reader/api/0/unread-count", get(unread_count))
         .route(
             "/reader/api/0/subscription/quickadd",
             post(subscription_quickadd),
         )
-        .route(
-            "/reader/api/0/subscription/edit",
-            post(subscription_edit),
-        )
-        .route(
-            "/reader/api/0/stream/items/ids",
-            get(items_ids),
-        )
-        .route(
-            "/reader/api/0/stream/items/contents",
-            get(items_contents),
-        )
+        .route("/reader/api/0/subscription/edit", post(subscription_edit))
+        .route("/reader/api/0/stream/items/ids", get(items_ids))
+        .route("/reader/api/0/stream/items/contents", get(items_contents))
 }

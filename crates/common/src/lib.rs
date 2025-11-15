@@ -112,7 +112,7 @@ pub enum IntegrationEvent {
     },
 }
 
-/// 从 HTML 文本中去除标签，保留纯文本（简单实现）
+/// Strip HTML tags and return plain text (simple implementation)
 pub fn strip_html_simple(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     let mut in_tag = false;
@@ -130,7 +130,7 @@ pub fn strip_html_simple(s: &str) -> String {
     out
 }
 
-/// 根据 HTML 正文估算阅读时长（分钟）。
+/// Estimate reading time (minutes) from HTML content.
 pub fn reading_time_minutes_from_html(html: &str, wpm: usize) -> i32 {
     let text = strip_html_simple(html);
     let wpm = wpm.max(50);

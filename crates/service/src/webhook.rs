@@ -203,7 +203,7 @@ async fn deliver(
                 continue;
             }
         }
-        // HMAC-SHA256 签名
+        // HMAC-SHA256 signature
         let mut mac = Hmac::<Sha256>::new_from_slice(h.secret.as_bytes())
             .map_err(|e| captura_common::Error::Other(anyhow::anyhow!(e)))?;
         mac.update(&body);
@@ -214,7 +214,7 @@ async fn deliver(
             .header("X-Miniflux-Signature", sig)
             .header("X-Miniflux-Event-Type", event_type)
             .body(body.clone());
-        let _ = req.send().await; // 最小实现：不重试
+        let _ = req.send().await; // minimal implementation: no retries
     }
     Ok(())
 }

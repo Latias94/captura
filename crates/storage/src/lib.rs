@@ -20,7 +20,7 @@ pub async fn connect(db_url: &str) -> Result<DatabaseConnection> {
     let db = Database::connect(opt)
         .await
         .map_err(|e| Error::Storage(e.to_string()))?;
-    // SQLite 优化：WAL/foreign_keys/synchronous
+    // SQLite tuning: WAL / foreign_keys / synchronous
     if db_url.starts_with("sqlite") {
         let _ = db.execute_unprepared("PRAGMA journal_mode=WAL;").await;
         let _ = db.execute_unprepared("PRAGMA foreign_keys=ON;").await;

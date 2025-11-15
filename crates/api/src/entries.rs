@@ -82,7 +82,7 @@ pub(crate) async fn list_entries(
         if search::is_pg(backend) {
             if let Some(ref g) = pq.general {
                 sel = sel.filter(search::fts_filter_expr_pg(g));
-                // Miniflux 对齐：有搜索时默认按相关性排序；若显式指定 sort_by 则按指定排序
+                // Align with Miniflux: when searching, default to relevance; only use sort_by when explicitly requested
                 let want_rank = q
                     .sorting
                     .sort_by
@@ -117,7 +117,7 @@ pub(crate) async fn list_entries(
                 sel = sel.filter(tag_cond);
             }
         } else {
-            // 非 PG 回退：LIKE 匹配
+            // Non-Postgres fallback: LIKE matching
             if let Some(ref g) = pq.general {
                 let like = format!("%{}%", g);
                 let cond = Condition::any()
@@ -310,10 +310,8 @@ pub(crate) async fn entry_content(
             if let Some(nt) = new_title.clone() {
                 am.title = Set(Some(nt));
             }
-            am.updated_at = Set(
-                chrono::Utc::now()
-                    .with_timezone(&FixedOffset::east_opt(0).unwrap()),
-            );
+            am.updated_at =
+                Set(chrono::Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap()));
             let _ = am.update(&st.db).await.map_err(internal)?;
         }
     }

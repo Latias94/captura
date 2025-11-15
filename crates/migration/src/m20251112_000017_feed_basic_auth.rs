@@ -6,7 +6,7 @@ pub struct Migration;
 #[async_trait::async_trait]
 impl MigrationTrait for Migration {
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-        // Sqlite 不支持在一次 ALTER TABLE 中添加多个列，这里拆成两次
+        // Sqlite does not support adding multiple columns in a single ALTER TABLE, so split into two statements
         manager
             .alter_table(
                 Table::alter()

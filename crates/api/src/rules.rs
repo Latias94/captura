@@ -205,17 +205,17 @@ pub(crate) struct SyncRulesResp {
     pub failed: usize,
 }
 
-/// 从 `rules/` 目录同步 YAML 规则到数据库。
+/// Sync YAML rules from the `rules/` directory into the database.
 ///
-/// 当前实现：
-/// - 扫描进程工作目录下的 `rules/`（含子目录，例如 `rules/contrib`）；
-/// - 使用 Rule DSL v1 校验 YAML；
-/// - 以 rule_id 为主键 upsert。
+/// Current behavior:
+/// - Scan the process working directory `rules/` (including subdirectories such as `rules/contrib`);
+/// - Validate YAML using Rule DSL v1;
+/// - Upsert by `rule_id` as logical primary key.
 pub(crate) async fn sync_rules_from_fs(
     State(st): State<AppState>,
     TypedHeader(Authorization(bearer)): TypedHeader<Authorization<Bearer>>,
 ) -> ApiResult<Json<SyncRulesResp>> {
-    // 目前只要求通过 token 鉴权，后续可以根据用户角色限制为管理员。
+    // Currently only require token-based auth; later this can be restricted to admin users by role.
     let _user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
     let root = std::path::Path::new("rules");
     let report: RulesSyncReport = rules_sync_svc::sync_rules_from_fs(&st.db, root)
@@ -286,7 +286,7 @@ pub(crate) async fn list_templates(
 ) -> ApiResult<Json<Vec<RuleTemplateDto>>> {
     let _user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
     validate_limit_offset(q.paging.limit, q.paging.offset)?;
-    // 简单策略：按 namespace 过滤或按 rule_id/description 模糊匹配
+    // Simple strategy: filter by namespace or fuzzy match on rule_id/description
     let mut sel = rule::Entity::find();
     if let Some(ref ns) = q.ns {
         sel = sel.filter(rule::Column::Namespace.eq(ns.to_string()));
@@ -383,7 +383,7 @@ pub(crate) async fn create_feed_from_template(
         return Err(not_found("rule template"));
     };
     let spec: RuleSpecV1 = parse_rule_v1(&r.yaml).map_err(internal)?;
-    // 渲染 feed_url 方便调试（即使 rule 模式不依赖 feed_url）。仅对 list_detail 使用 list.request.url。
+    // Render feed_url for easier debugging (even if rule mode does not depend on feed_url); only for list_detail use list.request.url.
     let feed_url_rendered = if matches!(spec.source.kind, SourceType::ListDetail) {
         if let Some(list) = spec.source.list {
             let mut s = list.request.url;

@@ -78,4 +78,3 @@ pub struct CategoryDto {
 pub struct IdResp {
     pub id: i64,
 }
-

@@ -18,9 +18,9 @@ pub(crate) async fn proxy(
     TypedHeader(Authorization(bearer)): TypedHeader<Authorization<Bearer>>,
     Query(q): Query<MediaQuery>,
 ) -> ApiResult<Response> {
-    // 认证（校验 token 即可，不限制资源归属，后续可扩展策略）
+    // Authenticate request (validate token only; do not enforce resource ownership yet)
     let _user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
-    // 校验 URL
+    // Validate URL
     if q.url.len() > 2048 {
         return Err(bad_request("url too long"));
     }
@@ -29,7 +29,7 @@ pub(crate) async fn proxy(
         "http" | "https" => {}
         _ => return Err(bad_request("unsupported scheme")),
     }
-    // 拉取资源（限时，避免占用过久）
+    // Fetch the resource with a bounded timeout to avoid long blocking
     let cli = reqwest::Client::builder()
         .user_agent("captura-media-proxy/0.1")
         .timeout(std::time::Duration::from_secs(10))

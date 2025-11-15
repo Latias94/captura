@@ -154,7 +154,7 @@ pub(crate) async fn list(
             );
         }
     }
-    // id before/after filters（兼容 before_id / before_entry_id 以及 after_id / after_entry_id）
+    // id before/after filters (compatible with both before_id/before_entry_id and after_id/after_entry_id)
     let before = q.before_id.or(q.before_entry_id);
     let after = q.after_id.or(q.after_entry_id);
     if let Some(b) = before {
@@ -464,7 +464,7 @@ pub(crate) async fn update(
         am.content_html = Set(Some(c));
     }
     let _ = am.update(&st.db).await.map_err(internal)?;
-    // 返回更新后的条目（与 GET /v1/entries/:id 一致）
+    // Return the updated entry (same shape as GET /v1/entries/:id)
     let Some(e) = entry::Entity::find_by_id(id)
         .one(&st.db)
         .await
@@ -573,7 +573,7 @@ pub(crate) async fn toggle_star(
         .into_response())
 }
 
-// 清理历史：删除当前用户已读且未加星、超出阈值的条目
+// Cleanup history: delete read, unstarred entries older than the threshold for the current user
 pub(crate) async fn flush_history(
     State(st): State<AppState>,
     headers: axum::http::HeaderMap,
@@ -658,20 +658,20 @@ pub(crate) async fn fetch_content(
             return Ok(Json(MfEntryContentResp { content }));
         }
     };
-    // 使用统一的内部提取服务抓取 & 抽取正文
+    // Use the shared internal extraction service to fetch & extract full content
     let extracted = extractor::fetch_and_extract_entry(page_url, &f)
         .await
         .map_err(internal)?;
     let mut out_html = extracted.content_html.clone();
     let new_title = extracted.title;
     if out_html.is_empty() {
-        // 与原实现保持兼容：如果抽取结果为空，则回退到现有正文/摘要
+        // Stay compatible with the previous behavior: if extraction yields empty content, fall back to existing content/summary
         out_html = e
             .content_html
             .clone()
             .unwrap_or_else(|| e.summary.clone().unwrap_or_default());
     }
-    // 可选回写正文/标题
+    // Optionally persist extracted content/title back to the database
     if q.update_content.unwrap_or(false) {
         if let Some(model) = entry::Entity::find_by_id(e.id)
             .one(&st.db)

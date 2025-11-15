@@ -7,7 +7,7 @@ use url::Url;
 use crate::rules_engine::{fetch_html_strategy, FetchCfg};
 use crate::sanitize_html;
 
-/// Hub 级 HTTP 选项封装，便于在 handler 中复用。
+/// HTTP options wrapper used by Hub handlers.
 #[derive(Debug, Clone)]
 pub(crate) struct HubHttpOpts {
     pub user_agent: Option<String>,
@@ -28,7 +28,7 @@ impl Default for HubHttpOpts {
     }
 }
 
-/// 使用统一的 FetchCfg + fetch_html_strategy 抓取 HTML。
+/// Fetch HTML using the shared FetchCfg + fetch_html_strategy pipeline.
 pub(crate) async fn get_html(
     url: &str,
     opts: &HubHttpOpts,
@@ -63,8 +63,8 @@ pub(crate) async fn get_html(
     fetch_html_strategy(&client, url, &fetch_cfg, feed).await
 }
 
-/// 遍历匹配 selector 的所有元素，使用提供的回调处理。
-/// 适合在 handler 中快速提取文本/属性并构造业务结构。
+/// Iterate over all elements matching the selector and apply the provided callback.
+/// Useful in handlers for quickly extracting text/attributes to build business structures.
 pub(crate) fn for_each_element<F>(html: &str, selector: &str, mut f: F) -> Result<()>
 where
     F: FnMut(ElementRef<'_>),
@@ -78,12 +78,12 @@ where
     Ok(())
 }
 
-/// 便捷函数：对元素 HTML 做 sanitize。
+/// Convenience helper: sanitize the HTML of a single element.
 pub(crate) fn element_html_sanitized(el: &ElementRef<'_>) -> String {
     sanitize_html(&el.html())
 }
 
-/// 基于 base URL 和 href 计算绝对地址。
+/// Compute an absolute URL from a base URL and href.
 pub(crate) fn absolutize(base: &str, href: &str) -> String {
     if Url::parse(href).is_ok() {
         return href.to_string();

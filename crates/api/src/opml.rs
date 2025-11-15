@@ -182,7 +182,7 @@ pub(crate) enum OutlineNode {
 }
 
 pub(crate) fn extract_outlines(body: &str) -> Vec<OutlineNode> {
-    // 朴素 fallback，容错解析常见 OPML 结构
+    // Simple fallback to tolerate common OPML structures
     let mut nodes = Vec::new();
     for line in body.lines() {
         let line = line.trim();

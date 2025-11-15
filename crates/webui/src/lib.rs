@@ -25,19 +25,19 @@ mod i18n;
 // Askama looks for `crate::filters` by default when compiling templates.
 // Provide an empty module to satisfy the import (we only use built-ins).
 pub mod filters {
-    // 提供 length 过滤器，用于模板中的 `| length`
+    // Provide a length filter for templates using `| length`
     pub fn length<T>(v: &[T]) -> ::askama::Result<usize> {
         Ok(v.len())
     }
-    // 比较 i64 与 Option<i64> 是否相等（用于选中分类下拉）
+    // Compare i64 and Option<i64> for equality (used by category dropdown selection)
     pub fn eq64(v: &i64, other: &Option<i64>) -> ::askama::Result<bool> {
         Ok(other.is_some_and(|x| x == *v))
     }
-    // 判断 Option<i32> 是否 > 0（用于错误计数徽标显示）
+    // Check whether Option<i32> is > 0 (used for error badge visibility)
     pub fn gt0_i32(v: &Option<i32>) -> ::askama::Result<bool> {
         Ok(v.is_some_and(|n| n > 0))
     }
-    // 判断字符串是否非空（用于 CSP 中 external_font_hosts 判定）
+    // Check whether a string is non-empty (used when deciding CSP external_font_hosts)
     pub fn non_empty_str(v: &str) -> ::askama::Result<bool> {
         Ok(!v.is_empty())
     }
@@ -2229,7 +2229,7 @@ async fn ui_feed_update(Path(id): Path<i64>, headers: HeaderMap, body: Bytes) ->
     if let Some(t) = title {
         payload.insert("title".into(), serde_json::Value::String(t));
     }
-    // 允许传 null 以移出分类
+    // Allow null to remove the category assignment
     payload.insert(
         "category_id".into(),
         match category_id {

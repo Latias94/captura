@@ -52,11 +52,11 @@ pub fn router() -> Router<AppState> {
             "/feeds/{id}",
             get(feeds::get).put(feeds::update).delete(feeds::delete),
         )
-        // Miniflux 兼容：feed mark-all-as-read 使用 PUT + 名称为 mark-all-as-read
+        // Miniflux compatibility: feed mark-all-as-read uses PUT and the path segment mark-all-as-read
         .route("/feeds/{id}/mark-all-as-read", put(feeds::mark_all_read))
-        // 兼容旧路径（向后兼容）
+        // Backward-compatible legacy path
         .route("/feeds/{id}/mark-all-read", post(feeds::mark_all_read))
-        // Miniflux 使用 PUT /feeds/{id}/refresh；保留 POST 以兼容现有客户端
+        // Miniflux uses PUT /feeds/{id}/refresh; keep POST for compatibility with existing clients
         .route(
             "/feeds/{id}/refresh",
             put(feeds::refresh_one).post(feeds::refresh_one),
@@ -109,7 +109,7 @@ pub fn router() -> Router<AppState> {
 
 // map_feed moved to types.rs
 
-// 单个订阅源刷新已迁移至 feeds::refresh_one
+// Single-feed refresh has been moved to feeds::refresh_one
 
 // feed refresh_all moved to feeds.rs
 
@@ -150,7 +150,7 @@ pub fn router() -> Router<AppState> {
 // tags moved to tags.rs
 
 // -----------------------------
-// HTTP 级最小集成测试（sqlite::memory + migration）
+// Minimal HTTP-level integration tests (sqlite::memory + migration)
 // -----------------------------
 #[cfg(any())]
 mod it {

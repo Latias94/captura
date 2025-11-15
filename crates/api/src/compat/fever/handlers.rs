@@ -21,7 +21,7 @@ struct FeverBase {
 }
 
 pub(crate) async fn endpoint(st: &AppState, q: &FeverQuery) -> Response {
-    // 认证：query 传 MD5(username:api_password) 小写十六进制（简化：表中 fever_key_md5）
+    // Auth: query carries MD5(username:api_password) in lowercase hex (simplified: stored as fever_key_md5)
     let mut base = FeverBase {
         api_version: 3,
         auth: 0,
@@ -39,7 +39,7 @@ pub(crate) async fn endpoint(st: &AppState, q: &FeverQuery) -> Response {
     };
     base.auth = 1;
 
-    // 探测请求：仅返回基本信息
+    // Probe request: only return base info
     if q.api.unwrap_or(0) == 1
         && q.groups.is_none()
         && q.feeds.is_none()
@@ -51,7 +51,7 @@ pub(crate) async fn endpoint(st: &AppState, q: &FeverQuery) -> Response {
         return axum::Json(base).into_response();
     }
 
-    // 可选写入
+    // Optional write operations
     if let Some(ref mark) = q.mark {
         let _ = fever_apply_write(
             &st.db,
@@ -234,7 +234,7 @@ async fn fever_apply_write(
         if ids.is_empty() {
             return Ok(());
         }
-        // 仅限当前用户条目
+        // Restrict updates to entries owned by the current user
         let feed_ids: Vec<i64> = feed::Entity::find()
             .filter(feed::Column::UserId.eq(user_id))
             .select_only()

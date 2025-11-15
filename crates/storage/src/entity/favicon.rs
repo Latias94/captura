@@ -8,7 +8,7 @@ pub struct Model {
     pub feed_id: Option<i64>,
     pub url: Option<String>,
     pub mime: Option<String>,
-    pub data: Option<Vec<u8>>, // 可选，后续可改为必填
+    pub data: Option<Vec<u8>>, // Optional for now; may become required in future
     pub created_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,
 }

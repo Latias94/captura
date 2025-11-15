@@ -60,8 +60,8 @@ pub(crate) async fn stream_contents(
     let mut sel = entry::Entity::find()
         .join(sea_orm::JoinType::InnerJoin, entry::Relation::Feed.def())
         .filter(feed::Column::UserId.eq(user_id));
-    // 注：为确保兼容性与稳定性，items_ids 暂不按 s=feed/<url> 过滤；
-    // 测试环境每次仅存在一个 feed，因此不影响断言；后续可在确认兼容路径后开启。
+    // Note: to keep behavior compatible and stable, items_ids does not filter by s=feed/<url> for now;
+    // tests currently use a single feed, so assertions remain valid; this can be enabled later once semantics are confirmed.
     if let Some(ref c) = q.c {
         let id_cut = c
             .chars()
@@ -152,8 +152,9 @@ pub(crate) async fn items_ids(
     q: &ReaderItemsIdsQuery,
 ) -> ApiResult<ReaderItemsIdsResp> {
     let limit = q.n.unwrap_or(50).min(200);
-    // 注意：不要显式 JOIN，再调用 find_also_related(Feed) 否则会导致 feed 列重复造成歧义
-    // 与 items_contents 保持一致，直接按 feed 列过滤，依赖 find_also_related(Feed) 的 JOIN
+    // Important: do not perform an explicit JOIN when calling find_also_related(Feed) later,
+    // otherwise duplicated feed columns can cause ambiguity. Keep consistent with items_contents:
+    // filter directly on feed columns and rely on find_also_related(Feed) for the JOIN.
     let mut sel = entry::Entity::find().filter(feed::Column::UserId.eq(user_id));
     if let Some(ref s) = q.s {
         if s.starts_with("feed/") {
@@ -209,7 +210,7 @@ pub(crate) async fn items_ids(
             timestamp_usec: (e.created_at.timestamp_micros()).to_string(),
         });
     }
-    // continuation：按最后一条 id 给出下次 c 参数
+    // continuation: derive the next c parameter from the last item's id
     let cont = out
         .last()
         .and_then(|r| r.id.rsplit(':').next().and_then(|s| s.parse::<i64>().ok()))

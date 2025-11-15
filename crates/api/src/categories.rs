@@ -137,7 +137,7 @@ pub(crate) async fn delete_category(
     Ok("ok")
 }
 
-/// 统计当前用户下各分类的未读数（与 Miniflux 语义类似，category_id 为 None 表示未分类）。
+/// Compute unread counts per category for the current user (Miniflux-like semantics; category_id = None means "uncategorized").
 pub(crate) async fn category_counters(
     State(st): State<AppState>,
     TypedHeader(Authorization(bearer)): TypedHeader<Authorization<Bearer>>,
@@ -174,7 +174,10 @@ pub(crate) async fn category_counters(
     }
     let out = cat_map
         .into_iter()
-        .map(|(category_id, unread)| CategoryCounterDto { category_id, unread })
+        .map(|(category_id, unread)| CategoryCounterDto {
+            category_id,
+            unread,
+        })
         .collect();
     Ok(Json(out))
 }

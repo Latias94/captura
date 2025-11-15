@@ -44,9 +44,9 @@ pub(crate) async fn list(
         return Ok(Json(out));
     }
 
-    // 统计 feed_count 与 total_unread
+    // Compute feed_count and total_unread per category
     let cat_ids: Vec<i64> = cats.iter().map(|c| c.id).collect();
-    // 拉取该用户下的所有 feed（用于 unread 按分类汇总）
+    // Fetch all feeds for this user (used to aggregate unread counts by category)
     let feeds = feed::Entity::find()
         .filter(feed::Column::UserId.eq(auth.user_id))
         .all(&st.db)

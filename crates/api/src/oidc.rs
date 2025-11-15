@@ -33,7 +33,7 @@ fn hmac_sign(secret: &str, payload_b64: &str) -> String {
 
 fn hmac_verify(secret: &str, payload_b64: &str, sig: &str) -> bool {
     let expected = hmac_sign(secret, payload_b64);
-    // 最小实现：使用常规比较；如需更强对抗侧信道，可引入常量时间比较
+    // Minimal implementation: regular comparison; for stronger side-channel resistance consider a constant-time compare
     expected == sig
 }
 
@@ -114,7 +114,7 @@ pub(crate) struct OidcLoginResp {
     token: String,
 }
 
-/// 列出配置中的 OIDC Provider 名称，用于前端展示可选登录方式。
+/// List configured OIDC provider names for the frontend to render login choices.
 pub(crate) async fn oidc_providers(State(st): State<AppState>) -> ApiResult<Json<Vec<String>>> {
     let names: Vec<String> = st
         .cfg

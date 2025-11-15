@@ -34,7 +34,7 @@ pub(crate) struct CreateFeedReq {
     pub feed_url: String,
     pub rule_id: Option<i64>,
     pub rule_params_json: Option<serde_json::Value>,
-    // 抓取选项
+    // Fetch options
     pub user_agent: Option<String>,
     pub headers_json: Option<serde_json::Value>,
     pub cookies: Option<String>,
@@ -43,7 +43,7 @@ pub(crate) struct CreateFeedReq {
     pub disable_http2: Option<bool>,
     pub allow_invalid_certs: Option<bool>,
     pub request_timeout_ms: Option<i32>,
-    // 基本认证（用于私有源）
+    // Basic auth (for private feeds)
     pub username: Option<String>,
     pub password: Option<String>,
     pub disabled: Option<bool>,
@@ -165,7 +165,7 @@ pub(crate) struct UpdateFeedReq {
     pub title: Option<String>,
     pub category_id: Option<i64>,
     pub disabled: Option<bool>,
-    // 抓取选项
+    // Fetch options
     pub user_agent: Option<String>,
     pub headers_json: Option<serde_json::Value>,
     pub cookies: Option<String>,
@@ -176,7 +176,7 @@ pub(crate) struct UpdateFeedReq {
     pub request_timeout_ms: Option<i32>,
     pub integrations_json: Option<serde_json::Value>,
     pub rule_params_json: Option<serde_json::Value>,
-    // 基本认证（用于私有源）
+    // Basic auth (for private feeds)
     pub username: Option<String>,
     pub password: Option<String>,
 }
@@ -259,7 +259,7 @@ pub(crate) async fn create_feed(
     if body.feed_url.trim().is_empty() {
         return Err(bad_request("invalid feed_url"));
     }
-    // captura_hub:// 路由 → 本地规则模板映射
+    // captura_hub:// route → map to local rule template
     let normalized_feed_url = body.feed_url.clone();
     let mut hub_mapped_rule: Option<(String, serde_json::Value)> = None;
     if let Some(rest) = normalized_feed_url.strip_prefix("captura_hub://") {
@@ -290,7 +290,7 @@ pub(crate) async fn create_feed(
             return Err(bad_request("unknown captura_hub route"));
         }
     }
-    // 验证 URL（仅当非 captura_hub 路由时）
+    // Validate URL (only when not using captura_hub scheme)
     if hub_mapped_rule.is_none() && Url::parse(&normalized_feed_url).is_err() {
         return Err(bad_request("invalid feed_url"));
     }
@@ -316,9 +316,9 @@ pub(crate) async fn create_feed(
     if dup.is_some() {
         return Err(bad_request("feed already exists"));
     }
-    // 如果是 captura_hub 路由，优先落地为 rule 型订阅（模板 + 参数）
+    // If this is a captura_hub route, prefer creating a rule-based subscription (template + params)
     if let Some((rid, params)) = hub_mapped_rule {
-        // 找模板
+        // Look up the matching rule template
         let tpl = rule::Entity::find()
             .filter(rule::Column::RuleId.eq(rid.clone()))
             .one(&st.db)
@@ -366,7 +366,7 @@ pub(crate) async fn create_feed(
         let res = am.insert(&st.db).await.map_err(internal)?;
         return Ok(Json(CreateFeedResp { id: res.id }));
     }
-    // 常规订阅路径
+    // Regular feed subscription path
     let am = feed::ActiveModel {
         user_id: Set(user.user_id),
         category_id: Set(body.category_id),
@@ -408,7 +408,7 @@ pub(crate) async fn create_feed(
     Ok(Json(CreateFeedResp { id: res.id }))
 }
 
-/// 统计当前用户下各 feed 的已读/未读计数（仅供 /api/v1 第一方客户端使用）。
+/// Count read/unread entries per feed for the current user (for /api/v1 first-party clients).
 pub(crate) async fn feeds_counters(
     State(st): State<AppState>,
     TypedHeader(Authorization(bearer)): TypedHeader<Authorization<Bearer>>,

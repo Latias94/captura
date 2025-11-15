@@ -4,16 +4,16 @@ use sea_orm::DatabaseConnection;
 
 #[derive(Clone, Debug, Default)]
 pub struct AppConfig {
-    // 反向代理认证
+    // Reverse-proxy authentication
     pub auth_proxy_header: Option<String>,
     pub auth_proxy_user_creation: bool,
 
-    // 安全响应头
+    // Security response headers
     pub security_headers_enabled: bool,
     pub referrer_policy: String,
     pub content_security_policy: Option<String>,
 
-    // OIDC/OAuth2 (generic, Google 作为默认 OIDC 提供方)
+    // OIDC/OAuth2 (generic, with Google as the default OIDC provider)
     pub oidc_enabled: bool,
     pub oidc_issuer_url: String,
     pub oidc_client_id: String,
@@ -21,13 +21,13 @@ pub struct AppConfig {
     pub oidc_redirect_url: String,
     pub oidc_state_secret: String,
 
-    // 禁用本地认证（与 Miniflux 对齐）：禁用用户名/密码与 Basic 密码登录
+    // Disable local auth (align with Miniflux): disable username/password and Basic login
     pub disable_local_auth: bool,
 
-    // 多 OIDC 提供方（可选）：JSON 数组配置 CAPTURA_OIDC_PROVIDERS
+    // Multiple OIDC providers (optional): JSON array via CAPTURA_OIDC_PROVIDERS
     pub oidc_providers: Vec<OidcProvider>,
 
-    // 登录限速
+    // Login rate limiting
     pub login_max_attempts: u32,
     pub login_window_secs: u64,
 }
@@ -72,7 +72,7 @@ impl AppConfig {
         let oidc_client_id = std::env::var("CAPTURA_OIDC_CLIENT_ID").unwrap_or_default();
         let oidc_client_secret = std::env::var("CAPTURA_OIDC_CLIENT_SECRET").unwrap_or_default();
         let oidc_redirect_url = std::env::var("CAPTURA_OIDC_REDIRECT_URL").unwrap_or_default();
-        // State 签名密钥（为空时生成一次性内存密钥）
+        // State signing key (generate an in-memory one if empty)
         let oidc_state_secret = std::env::var("CAPTURA_OIDC_STATE_SECRET").unwrap_or_else(|_| {
             let mut buf = [0u8; 32];
             rand_core::OsRng.fill_bytes(&mut buf);

@@ -125,7 +125,7 @@ async fn refresh_standard_feed_with_meta(
                         content_html = Some(apply_rewrite_rules(c, rules));
                     }
                 }
-                // 提取 enclosure（依据 link rel="enclosure"）
+                // Extract enclosures (based on link rel="enclosure")
                 let mut enclosures = Vec::new();
                 for l in e.links.iter() {
                     // feed-rs: Link { href, rel, media_type, length, .. }
@@ -165,7 +165,7 @@ async fn refresh_standard_feed_with_meta(
 
 pub(crate) fn sanitize_html(input: &str) -> String {
     let mut builder = ammonia::Builder::default();
-    // 允许常用媒体/链接标签
+    // Allow common media/link tags
     builder.add_tags([
         "a",
         "p",
@@ -200,7 +200,7 @@ pub(crate) fn sanitize_html(input: &str) -> String {
 
 fn clean_url(u: &str) -> String {
     if let Ok(mut url) = Url::parse(u) {
-        // 过滤常见跟踪参数
+        // Strip common tracking query parameters
         let mut pairs: Vec<(String, String)> = url
             .query_pairs()
             .map(|(k, v)| (k.into_owned(), v.into_owned()))
@@ -362,7 +362,7 @@ async fn readability_like_strategy_async(
         Ok(h) => h,
         Err(_) => return None,
     };
-    // 先尝试 dom_smoothie，可读性失败时记录日志并回退到简单 heuristics。
+    // First try dom_smoothie; if readability extraction fails, log and fall back to simple heuristics.
     if let Some(article) = crate::extractor::extract_with_dom_smoothie(&html, Some(url)) {
         return Some(sanitize_html(&article.content));
     } else {
@@ -535,7 +535,7 @@ mod live_tests {
         let f = make_feed("https://www.solidot.org/index.rss", feed::FeedType::Rss);
         let entries = refresh_feed(&f).await.expect("fetch solidot feed");
         assert!(!entries.is_empty(), "solidot should return entries");
-        // 非 ASCII 标题/摘要覆盖（不强制断言具体值，仅断言存在）
+        // Ensure coverage of non-ASCII titles/summaries (only assert existence, not exact values)
         let has_non_ascii = entries.iter().any(|e| {
             e.title
                 .as_deref()

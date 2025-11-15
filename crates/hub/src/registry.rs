@@ -23,7 +23,7 @@ pub fn builtin_route_metas() -> &'static [&'static RouteMeta] {
     &BUILTIN_ROUTE_METAS
 }
 
-/// 完整的 Route 注册表（包含 handler），当前尚未接入具体 handler。
+/// Full route registry (including handlers); currently no concrete handlers are wired here.
 pub fn builtin_routes() -> &'static [RouteRegistration] {
     &[]
 }

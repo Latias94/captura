@@ -43,8 +43,8 @@ impl AuthUser {
     }
 }
 
-/// Miniflux/兼容层通用鉴权：优先 X-Auth-Token；回退 Authorization: Bearer
-// legacy Miniflux/Fever 兼容鉴权已不再使用
+/// Shared Miniflux/compat authentication: prefer X-Auth-Token; fall back to Authorization: Bearer
+// legacy Miniflux/Fever Basic-style auth is no longer used
 #[allow(dead_code)]
 pub async fn mf_auth(st: &AppState, headers: &HeaderMap) -> ApiResult<AuthUser> {
     if let Some(v) = headers.get("X-Auth-Token") {
@@ -57,13 +57,13 @@ pub async fn mf_auth(st: &AppState, headers: &HeaderMap) -> ApiResult<AuthUser> 
             if let Some(t) = s.strip_prefix("Bearer ") {
                 return AuthUser::from_bearer(&st.db, t).await;
             }
-            // 兼容 Basic 鉴权（Miniflux 支持 Basic 与 Token）：Authorization: Basic base64(username:password)
+            // Support Basic auth for compatibility (Miniflux supports both Basic and Token): Authorization: Basic base64(username:password)
             if !st.cfg.disable_local_auth {
                 if let Some(b64) = s.strip_prefix("Basic ") {
                     if let Ok(raw) = base64::engine::general_purpose::STANDARD.decode(b64) {
                         if let Ok(pair) = std::str::from_utf8(&raw) {
                             if let Some((username, password)) = pair.split_once(':') {
-                                // 校验用户口令
+                                // Validate user credentials
                                 let u = user::Entity::find()
                                     .filter(
                                         captura_storage::entity::user::Column::Username
@@ -92,7 +92,7 @@ pub async fn mf_auth(st: &AppState, headers: &HeaderMap) -> ApiResult<AuthUser> 
             }
         }
     }
-    // 反向代理认证（基于受信任的请求头）
+    // Reverse-proxy auth (based on trusted headers)
     if let Some(ref hdr) = st.cfg.auth_proxy_header {
         if !hdr.is_empty() {
             let name = axum::http::header::HeaderName::from_bytes(hdr.as_bytes())

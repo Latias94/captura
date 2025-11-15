@@ -1,6 +1,6 @@
 //! HTML fetching and content extraction helpers.
 //! This module centralizes entry-level fetching + extraction so
-//! API 兼容层和内部 pipeline 都可以复用同一套逻辑。
+//! both the API compatibility layers and the internal pipeline can reuse the same logic.
 
 use captura_common::{Error, Result};
 use captura_storage::entity::feed;
@@ -9,14 +9,14 @@ use tracing::warn;
 
 use dom_smoothie::{Config as DsConfig, Readability as DsReadability};
 
-/// 抽取结果：正文 HTML 与可选的新标题。
+/// Extraction result: article HTML and optional new title.
 #[derive(Debug, Clone)]
 pub struct ExtractResult {
     pub content_html: String,
     pub title: Option<String>,
 }
 
-/// 按 Miniflux 语义应用 Scraper Rules（每行一个 CSS 选择器）。
+/// Apply scraper_rules according to Miniflux semantics (one CSS selector per line).
 fn apply_scraper_rules(doc: &Html, rules: &str) -> Option<String> {
     let selector_lines: Vec<&str> = rules
         .lines()
@@ -41,10 +41,10 @@ fn apply_scraper_rules(doc: &Html, rules: &str) -> Option<String> {
     }
 }
 
-/// 简化版的 Readability 择优逻辑。
+/// Simplified Readability-like heuristic.
 ///
-/// 当前仅尝试一组常见正文选择器，返回原始 HTML 片段。
-/// 后续可以在此位置替换为完整的 Readability 实现或绑定。
+/// Currently tries a small set of common content selectors and returns raw HTML snippets.
+/// Can be replaced with a full Readability implementation or binding in the future.
 pub fn readability_pick_raw(doc: &Html) -> Option<String> {
     let candidates = [
         "article",
@@ -64,7 +64,7 @@ pub fn readability_pick_raw(doc: &Html) -> Option<String> {
     None
 }
 
-/// 从文档中提取 `<title>` 文本。
+/// Extract `<title>` text from the document.
 fn extract_title(doc: &Html) -> Option<String> {
     if let Ok(sel) = Selector::parse("title") {
         if let Some(el) = doc.select(&sel).next() {
@@ -77,11 +77,11 @@ fn extract_title(doc: &Html) -> Option<String> {
     None
 }
 
-/// 根据订阅配置抓取某个条目的网页，并尝试抽取正文与标题。
+/// Fetch the page for a given entry according to feed configuration and try to extract content and title.
 ///
-/// - 优先使用 feed.scraper_rules（CSS 选择器，每行一条）。
-/// - 否则使用简化版 Readability 逻辑。
-/// - 若仍然失败，则退回整页 HTML。
+/// - Prefer feed.scraper_rules (CSS selectors, one per line).
+/// - Otherwise, use the simplified Readability heuristic.
+/// - If everything fails, fall back to the full HTML page.
 pub async fn fetch_and_extract_entry(page_url: &str, f: &feed::Model) -> Result<ExtractResult> {
     let http = crate::http_client::client_for_feed(f, None, None)?;
     let mut req = http.get(page_url);
@@ -91,7 +91,7 @@ pub async fn fetch_and_extract_entry(page_url: &str, f: &feed::Model) -> Result<
         }
     }
     if let Some(ref u) = f.username {
-        // 密码可为空字符串
+        // Password may be an empty string
         req = req.basic_auth(u, f.password.clone());
     }
     let html = req
@@ -104,7 +104,7 @@ pub async fn fetch_and_extract_entry(page_url: &str, f: &feed::Model) -> Result<
 
     let doc = Html::parse_document(&html);
 
-    // 1) 优先使用用户配置的 scraper_rules（与 Miniflux 兼容）。
+    // 1) Prefer user-configured scraper_rules (compatible with Miniflux).
     if let Some(ref rules) = f.scraper_rules {
         if let Some(content) = apply_scraper_rules(&doc, rules) {
             let title = extract_title(&doc);
@@ -115,7 +115,7 @@ pub async fn fetch_and_extract_entry(page_url: &str, f: &feed::Model) -> Result<
         }
     }
 
-    // 2) 尝试使用 dom_smoothie（基于 mozilla/readability 的 Rust 实现）。
+    // 2) Try dom_smoothie (Rust implementation based on mozilla/readability).
     if let Some(article) = extract_with_dom_smoothie(&html, Some(page_url)) {
         let article_title = article.title.clone();
         let title = if article_title.trim().is_empty() {
@@ -134,7 +134,7 @@ pub async fn fetch_and_extract_entry(page_url: &str, f: &feed::Model) -> Result<
         );
     }
 
-    // 3) 回退到简化版 heuristics（readability_pick_raw），再退回整页 HTML。
+    // 3) Fall back to simplified heuristics (readability_pick_raw), then to the full HTML.
     let mut content_html = readability_pick_raw(&doc);
     if content_html.is_none() {
         content_html = Some(html.clone());
@@ -148,16 +148,16 @@ pub async fn fetch_and_extract_entry(page_url: &str, f: &feed::Model) -> Result<
     })
 }
 
-/// 使用 dom_smoothie 提取可读正文与元数据。
+/// Use dom_smoothie to extract readable content and metadata.
 ///
-/// - 返回 `Article` 的子集（目前只用到 title/content）；
-/// - 失败时返回 None，并由调用方决定 fallback 策略。
+/// - Returns a subset of `Article` (currently only title/content).
+/// - Returns None on failure; callers decide their own fallback strategy.
 pub(crate) fn extract_with_dom_smoothie(
     html: &str,
     url: Option<&str>,
 ) -> Option<dom_smoothie::Article> {
     let cfg = DsConfig {
-        // 使用默认配置即可，后续可根据经验调整。
+        // Use default config for now; can be tuned later as needed.
         ..Default::default()
     };
     let mut readability = DsReadability::new(html, url, Some(cfg)).ok()?;

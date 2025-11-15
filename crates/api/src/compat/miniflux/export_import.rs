@@ -18,7 +18,7 @@ pub(crate) async fn export(
         .all(&st.db)
         .await
         .map_err(internal)?;
-    // 简化：导出最小 OPML（标题/链接），UI/客户端可用
+    // Simplified exporter: minimal OPML (title/link) that is sufficient for UI/clients
     let mut body =
         String::from(r#"<?xml version="1.0" encoding="UTF-8"?><opml version="1.0"><body>"#);
     for f in feeds {
@@ -48,7 +48,7 @@ pub(crate) async fn import(
     body: axum::body::Bytes,
 ) -> MfResult<&'static str> {
     let auth = mf_auth(&st, &headers).await?;
-    // 支持 Miniflux 风格：Content-Type: application/xml 直接提交 OPML；也兼容原有 JSON {content}
+    // Support Miniflux-style import: Content-Type: application/xml with raw OPML; keep backward compatibility with JSON {content}
     let content_type = headers
         .get(axum::http::header::CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
@@ -60,12 +60,12 @@ pub(crate) async fn import(
         xml_owned = body_str;
         xml_owned.trim()
     } else {
-        // 兼容旧 JSON 形式
+        // Backward-compatible JSON form
         if let Ok(req) = serde_json::from_str::<MfImportReq>(&body_str) {
             xml_owned = req.content;
             xml_owned.trim()
         } else {
-            // 退化：尝试直接当作 XML
+            // Fallback: treat body as raw XML
             xml_owned = body_str;
             xml_owned.trim()
         }
@@ -73,7 +73,7 @@ pub(crate) async fn import(
     if xml.is_empty() {
         return Err(bad_request("empty opml").into());
     }
-    // 简化：仅解析 xmlUrl 属性，逐个创建 feed（如果不存在）
+    // Simplified importer: parse only xmlUrl attributes and create feeds if they do not yet exist
     let re = regex::Regex::new(r#"xmlUrl=\"([^\"]+)\""#).unwrap();
     let now = chrono::Utc::now().with_timezone(&chrono::FixedOffset::east_opt(0).unwrap());
     for cap in re.captures_iter(xml) {

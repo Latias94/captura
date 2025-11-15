@@ -35,12 +35,12 @@ pub(crate) async fn validate_hub(
     TypedHeader(Authorization(bearer)): TypedHeader<Authorization<Bearer>>,
     Json(req): Json<ValidateReq>,
 ) -> ApiResult<Json<ValidateResp>> {
-    // 仅支持 captura_hub:// 或者提供 route 字段；不再调用外部 Hub，也不依赖 CAPTURA_HUB_BASE/RSSHUB_BASE。
+    // Only support captura_hub:// URLs or explicit route; do not call external Hub or depend on CAPTURA_HUB_BASE/RSSHUB_BASE.
     let _user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
 
-    // 解析输入得到 route_path 与查询参数（仅用于回显，不参与验证）。
+    // Parse input into route_path and query parameters (used only for echoing, not validation).
     let (route_path, url_repr) = if let Some(u) = req.url {
-        // 只接受 captura_hub:// 开头
+        // Only accept captura_hub:// scheme
         if let Some(rest) = u.strip_prefix("captura_hub://") {
             let (path, _qs) = rest
                 .split_once('?')

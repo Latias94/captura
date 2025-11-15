@@ -12,11 +12,11 @@ pub(crate) struct ParsedQuery {
     pub tags: Vec<String>,
 }
 
-// 支持字段语法：title:, author:, url:，取值可为双引号、单引号包裹或不带引号的非空白串
+// Support field syntax: title:, author:, url:; values can be in double quotes, single quotes, or unquoted non-whitespace
 static FIELD_RE: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r#"(?i)(?P<field>title|author|url):(?P<val>"[^"]+"|'[^']+'|\S+)"#).unwrap()
 });
-// 支持标签语法：#tag，同样支持引号包裹
+// Support tag syntax: #tag, also allowing quoted values
 static TAG_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r#"(?i)#(?P<val>"[^"]+"|'[^']+'|\S+)"#).unwrap());
 
@@ -29,7 +29,7 @@ fn strip_quotes(s: &str) -> String {
     }
 }
 
-/// 解析简单语法，返回字段过滤与剩余通用检索词
+/// Parse the simple query syntax, returning field filters and remaining general search terms
 pub(crate) fn parse_query(input: &str) -> ParsedQuery {
     let mut parsed = ParsedQuery::default();
     let mut remove_spans: Vec<(usize, usize)> = Vec::new();
@@ -53,7 +53,7 @@ pub(crate) fn parse_query(input: &str) -> ParsedQuery {
         }
     }
 
-    // 去除已匹配片段，构造通用检索串
+    // Remove matched spans and construct the leftover general query string
     remove_spans.sort_by_key(|x| x.0);
     let mut last = 0usize;
     let mut leftover = String::new();
@@ -74,7 +74,7 @@ pub(crate) fn parse_query(input: &str) -> ParsedQuery {
     parsed
 }
 
-/// 构造 PG 的 FTS 过滤表达式（使用 entry.tsv + websearch_to_tsquery）
+/// Build a Postgres FTS filter expression (using entry.tsv + websearch_to_tsquery)
 pub(crate) fn fts_filter_expr_pg(q: &str) -> SimpleExpr {
     Expr::cust_with_values(
         "entry.tsv @@ websearch_to_tsquery('simple', ?)",
@@ -105,14 +105,14 @@ pub(crate) fn tag_exists_expr_pg(tag: &str) -> SimpleExpr {
 }
 
 pub(crate) fn tag_exists_expr_like(tag: &str) -> SimpleExpr {
-    // 非 PG 回退：LOWER(name) LIKE LOWER(?)
+    // Non-Postgres fallback: LOWER(name) LIKE LOWER(?)
     Expr::cust_with_values(
         "EXISTS (SELECT 1 FROM entry_label el JOIN label l ON l.id=el.label_id WHERE el.entry_id=entry.id AND LOWER(l.name) LIKE LOWER(?))",
         [sea_orm::Value::from(format!("%{}%", tag))],
     )
 }
 
-/// 是否为 Postgres
+/// Whether the backend is Postgres
 pub(crate) fn is_pg(backend: DatabaseBackend) -> bool {
     matches!(backend, DatabaseBackend::Postgres)
 }

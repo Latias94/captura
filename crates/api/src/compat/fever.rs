@@ -12,12 +12,12 @@ mod types;
 
 pub(crate) use types::FeverQuery;
 
-/// Fever 单端点适配器：`GET/POST /fever`
+/// Fever single-endpoint adapter: `GET/POST /fever`
 pub(crate) async fn endpoint(State(st): State<AppState>, Query(q): Query<FeverQuery>) -> Response {
     handlers::endpoint(&st, &q).await
 }
 
-/// 构建 Fever 兼容层 Router。
+/// Build the Fever compatibility-layer Router.
 pub fn router() -> Router<AppState> {
     Router::new().route("/fever", get(endpoint).post(endpoint))
 }

@@ -1,5 +1,5 @@
-//! 测试工具库：统一提供数据库初始化与常用种子数据
-//! 仅用于测试/CI，不参与生产构建逻辑。
+//! Test utilities crate: shared database initialization and common seed data.
+//! Used only for tests/CI; not part of production logic.
 
 use base64::Engine as _;
 use captura_storage::connect as db_connect;
@@ -9,7 +9,7 @@ use rand_core::{OsRng, RngCore};
 use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
 use sha2::{Digest, Sha256};
 
-/// 使用 sqlite::memory 初始化数据库并执行全部迁移
+/// Initialize an in-memory sqlite::memory database and run all migrations.
 pub async fn setup_db() -> DatabaseConnection {
     let db = db_connect("sqlite::memory:")
         .await
@@ -18,18 +18,18 @@ pub async fn setup_db() -> DatabaseConnection {
     db
 }
 
-/// 创建用户并颁发一个明文 token（仅测试使用）
+/// Create a user and issue a plaintext token (for tests only).
 pub async fn seed_user_and_token(db: &DatabaseConnection, username: &str) -> (i64, String) {
     use captura_storage::entity::{token, user};
     let now = Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
 
-    // 如果用户已存在则复用
+    // Reuse existing user if present
     if let Ok(Some(u)) = user::Entity::find()
         .filter(user::Column::Username.eq(username))
         .one(db)
         .await
     {
-        // 为该用户创建新 token
+        // Create a new token for this user
         let mut rand_bytes = [0u8; 32];
         OsRng.fill_bytes(&mut rand_bytes);
         let token_plain = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(rand_bytes);

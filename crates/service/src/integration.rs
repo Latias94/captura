@@ -173,7 +173,7 @@ pub async fn emit_save_entry(
         Box::new(Pushover),
         Box::new(Matrix),
     ];
-    // 加载 feed 以做每订阅启用判断
+    // Load feed to determine per-subscription enablement
     let feed = captura_storage::entity::feed::Entity::find_by_id(entry.feed_id)
         .one(db)
         .await

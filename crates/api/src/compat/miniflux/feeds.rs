@@ -122,10 +122,10 @@ pub(crate) struct MfCreateFeed {
     pub url: String,
     pub category_id: Option<i64>,
     pub title: Option<String>,
-    // 认证：可选用户名、密码（用于私有源 Basic Auth）
+    // Auth: optional username/password (for private feeds using Basic Auth)
     pub username: Option<String>,
     pub password: Option<String>,
-    // 抓取参数（可选）
+    // Optional fetch parameters
     pub user_agent: Option<String>,
     pub cookie: Option<String>,
     pub proxy_url: Option<String>,
@@ -208,7 +208,7 @@ pub(crate) struct MfUpdateFeed {
     pub category_id: Option<i64>,
     pub title: Option<String>,
     pub disabled: Option<bool>,
-    // 兼容 Miniflux 字段（按现有模型可映射者）
+    // Fields compatible with Miniflux (where our model can map them)
     pub user_agent: Option<String>,
     pub cookie: Option<String>,
     pub proxy_url: Option<String>,
@@ -225,7 +225,7 @@ pub(crate) struct MfUpdateFeed {
     pub url_rewrite_rules: Option<String>,
     pub username: Option<String>,
     pub password: Option<String>,
-    // 接收但当前忽略（为保持与 Miniflux API 兼容）
+    // Accepted but currently ignored (to stay API-compatible with Miniflux)
     #[allow(dead_code)]
     pub ignore_http_cache: Option<bool>,
     pub feed_url: Option<String>,
@@ -385,8 +385,8 @@ pub(crate) async fn refresh_all(
         let _ = am.insert(&st.db).await.map_err(internal)?;
         enqueued += 1;
     }
-    // 按 Miniflux 语义返回 204，无响应体
-    let _ = enqueued; // 保留逻辑以便后续统计/日志
+    // Return 204 with empty body, matching Miniflux semantics
+    let _ = enqueued; // keep for potential future metrics/logging
     Ok((
         axum::http::StatusCode::NO_CONTENT,
         axum::body::Body::empty(),
@@ -394,7 +394,7 @@ pub(crate) async fn refresh_all(
         .into_response())
 }
 
-// 单个订阅立即刷新（直连 service，返回插入条数）
+// Refresh a single subscription immediately (call service directly, return inserted count internally)
 pub(crate) async fn refresh_one(
     State(st): State<AppState>,
     headers: axum::http::HeaderMap,

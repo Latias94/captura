@@ -13,8 +13,8 @@ use crate::auth::AuthUser;
 use crate::error::{bad_request, internal, not_found, ApiResult};
 use crate::AppState;
 use captura_storage::entity::webhook;
-use rand_core::RngCore;
 use captura_types::IdResp;
+use rand_core::RngCore;
 
 #[derive(Serialize)]
 pub(crate) struct WebhookDto {
@@ -86,7 +86,7 @@ pub(crate) async fn create(
     if body.url.trim().is_empty() {
         return Err(bad_request("url required"));
     }
-    // 生成 secret
+    // Generate webhook secret
     let mut rand_bytes = [0u8; 32];
     rand_core::OsRng.fill_bytes(&mut rand_bytes);
     let secret = hex::encode(rand_bytes);

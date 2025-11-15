@@ -4,7 +4,7 @@ use captura_storage::entity::feed;
 
 use crate::error::{bad_request, ApiResult};
 
-/// 统一封装订阅源可更新的抓取/规则等选项，便于在不同 API 层复用逻辑。
+/// Encapsulate updatable fetch/rule options for a feed so that different API layers can reuse the same logic.
 pub(crate) struct FeedUpdateOptions {
     pub user_agent: Option<String>,
     pub headers_json: Option<serde_json::Value>,
@@ -18,18 +18,18 @@ pub(crate) struct FeedUpdateOptions {
     pub rule_params_json: Option<serde_json::Value>,
     pub username: Option<String>,
     pub password: Option<String>,
-    // 规则相关字段（主要供 Miniflux 兼容层使用）
+    // Rule-related fields (primarily used by the Miniflux compatibility layer)
     pub scraper_rules: Option<String>,
     pub rewrite_rules: Option<String>,
     pub blocklist_rules: Option<String>,
     pub keeplist_rules: Option<String>,
     pub url_rewrite_rules: Option<String>,
-    // Miniflux 兼容字段：允许更新 feed_url/site_url
+    // Miniflux-compatible fields: allow updating feed_url/site_url
     pub feed_url: Option<String>,
     pub site_url: Option<String>,
 }
 
-/// 将 FeedUpdateOptions 应用到 ActiveModel 上，负责统一的校验与空值处理。
+/// Apply FeedUpdateOptions to the ActiveModel, performing shared validation and empty-value handling.
 pub(crate) fn apply_feed_update_options(
     am: &mut feed::ActiveModel,
     opts: FeedUpdateOptions,

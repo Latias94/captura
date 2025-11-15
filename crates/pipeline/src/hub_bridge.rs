@@ -919,7 +919,7 @@ impl HubHandler for ZhihuHotlistHubHandler {
 
         let mut items: Vec<HubItem> = Vec::new();
         let mut opts = hub_utils::HubHttpOpts::default();
-        // Zhihu 反爬较严格，后续可在此扩展 UA/headers。
+        // Zhihu uses stronger anti-crawling; UA/headers can be extended here in the future if needed.
         opts.smart = false;
         let html = hub_utils::get_html(&url, &opts, None).await?;
 

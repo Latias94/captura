@@ -445,7 +445,7 @@ pub(crate) async fn delete(
         .into_response())
 }
 
-// 标记指定用户的所有条目为已读（仅允许本人）
+// Mark all entries of a given user as read (only allowed for self)
 pub(crate) async fn mark_all_read(
     State(st): State<AppState>,
     headers: axum::http::HeaderMap,

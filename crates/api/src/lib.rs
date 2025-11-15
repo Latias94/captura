@@ -21,8 +21,8 @@ pub mod users;
 pub mod util;
 pub mod webhooks;
 
-pub use state::{AppConfig, AppState};
 pub use captura_types::IdResp;
+pub use state::{AppConfig, AppState};
 
 use axum::body::Body as AxumBody;
 use axum::{
@@ -33,11 +33,11 @@ use axum::{
 use sea_orm::{ConnectionTrait, DatabaseConnection};
 use tower_http::set_header::SetResponseHeaderLayer;
 
-/// 构建完整的应用 Router，包括：
-/// - `/api/v1` 主 API（auth/feeds/entries/jobs/...）
-/// - `/v1` Miniflux 兼容层
-/// - `/fever` / Reader 兼容层
-/// - WebUI SSR 路由
+/// Build the full application Router, including:
+/// - `/api/v1` primary API (auth/feeds/entries/jobs/...)
+/// - `/v1` Miniflux compatibility layer
+/// - `/fever` / Reader compatibility layer
+/// - WebUI SSR routes
 pub fn build_router(app_state: AppState) -> Router {
     let api_v1 = Router::new()
         .route("/healthz", get(|| async { "ok" }))
@@ -97,10 +97,7 @@ pub fn build_router(app_state: AppState) -> Router {
             post(crate::entries::mark_all_read),
         )
         .route("/entries/{id}", get(crate::entries::get_entry))
-        .route(
-            "/entries/{id}/content",
-            get(crate::entries::entry_content),
-        )
+        .route("/entries/{id}/content", get(crate::entries::entry_content))
         .route("/entries/{id}/read", post(crate::entries::mark_read))
         .route("/entries/{id}/star", post(crate::entries::mark_star))
         .route("/opml/export", get(crate::opml::export))
@@ -246,12 +243,12 @@ pub fn build_router(app_state: AppState) -> Router {
     app
 }
 
-/// 构造带有最小路由的 Miniflux 兼容层 Router（用于测试）
+/// Build a Miniflux compatibility router with minimal routes (for tests)
 pub fn miniflux_router_with_state(db: DatabaseConnection) -> axum::Router<AppState> {
     compat::miniflux::router().with_state(AppState::new(db))
 }
 
-/// 返回可直接用于 oneshot 的 Service（测试便利）
+/// Return a oneshot-ready Service for Miniflux compatibility tests
 pub fn miniflux_service_with_state(
     db: DatabaseConnection,
 ) -> axum::routing::RouterIntoService<axum::body::Body, ()> {
@@ -261,7 +258,7 @@ pub fn miniflux_service_with_state(
         .into_service()
 }
 
-/// 提供最小可用的测试路由（健康检查 + 兼容层端点子集）
+/// Provide a minimal test router (healthcheck + subset of compatibility endpoints)
 pub fn test_router(app_state: AppState) -> Router<AppState> {
     let compat_root = compat::fever::router().merge(compat::reader::router());
 
@@ -285,7 +282,7 @@ pub fn test_router(app_state: AppState) -> Router<AppState> {
         .with_state(app_state)
 }
 
-/// 仅用于 HTTP 烟囱测试的最小 Router（无状态）
+/// Minimal router used only for HTTP smoke tests (stateless)
 pub fn test_min_router() -> Router {
     async fn liveness() -> &'static str {
         "OK"
@@ -293,7 +290,7 @@ pub fn test_min_router() -> Router {
     Router::new().route("/healthz", get(liveness))
 }
 
-/// 返回可直接 oneshot 的 Service（将状态注入路由后擦除为 `()`）
+/// Return a oneshot-ready Service, injecting state and erasing it to `()`
 pub fn test_router_service(app_state: AppState) -> axum::routing::RouterIntoService<AxumBody, ()> {
     let st = app_state.clone();
     test_router(app_state).with_state::<()>(st).into_service()

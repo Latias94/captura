@@ -1,9 +1,9 @@
-//! 同步 `rules/` 目录下的 YAML 规则到数据库的工具。
+//! Utility for syncing YAML rules under `rules/` directory into the database.
 //!
-//! 设计目标：
-//! - 以文件作为官方/社区规则的“真源”，DB 只是运行时镜像；
-//! - 目前实现为最小可用版本：按 `rule_id` upsert，不做用户修改检测；
-//! - 后续可以在 rule 表中扩展 origin/source_hash/user_modified 等字段。
+//! Design goals:
+//! - Treat files as the single source of truth for official/community rules; DB is just a runtime mirror.
+//! - Provide a minimal viable implementation for now: upsert by `rule_id` without tracking user modifications.
+//! - Allow future extensions on the rule table (origin/source_hash/user_modified, etc.).
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -15,7 +15,7 @@ use chrono::{FixedOffset, Utc};
 use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
 use tracing::{info, warn};
 
-/// 同步结果统计。
+/// Sync result statistics.
 #[derive(Debug, Clone)]
 pub struct RulesSyncReport {
     pub scanned_files: usize,
@@ -46,15 +46,15 @@ fn infer_namespace(rule_id: &str) -> Option<String> {
     rule_id.rsplit_once('.').map(|(ns, _)| ns.to_string())
 }
 
-/// 从给定根目录同步规则文件到数据库。
+/// Sync rule files from the given root directory into the database.
 ///
-/// 当前策略（v1）：
-/// - 扫描 `root` 下所有 `.yaml/.yml` 文件；
-/// - 解析为 `RuleSpecV1`；
-/// - 以 `rule_id` 为主键：
-///   - 不存在 → INSERT；
-///   - 已存在 → UPDATE（直接覆盖 yaml/description/examples）。
-/// - 任何解析或 IO 错误都会被计入 failed，但不会中断整体同步。
+/// Current strategy (v1):
+/// - Scan all `.yaml/.yml` files under `root`;
+/// - Parse each file into `RuleSpecV1`;
+/// - Use `rule_id` as logical primary key:
+///   - not exists → INSERT;
+///   - exists → UPDATE (overwrite yaml/description/examples directly).
+/// - Any parse or IO errors are counted as `failed` but do not abort the whole sync.
 pub async fn sync_rules_from_fs(db: &DatabaseConnection, root: &Path) -> Result<RulesSyncReport> {
     let mut files = Vec::new();
     collect_yaml_files(root, &mut files).map_err(|e| Error::Config(e.to_string()))?;
