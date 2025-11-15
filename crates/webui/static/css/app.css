@@ -19,7 +19,7 @@ body{margin:0;font-family:system-ui, -apple-system, Segoe UI, Roboto, Helvetica,
 .footer__copy{margin:0}
 
 .title{font-size:1.5rem;line-height:2rem;font-weight:600;margin:.5rem 0 1rem}
-.button{display:inline-block;background:#111827;color:#fff;border-radius:.375rem;padding:.5rem .75rem;text-decoration:none}
+.button{display:inline-block;background:#111827;color:#fff;border-radius:.375rem;padding:.5rem .75rem;text-decoration:none;border:none}
 @media(prefers-color-scheme:dark){.button{background:#2563eb}}
 .button--active{outline:2px solid var(--link)}
 .input{padding:.5rem .75rem;border:1px solid var(--border);border-radius:.375rem;background:var(--panel);color:var(--fg)}

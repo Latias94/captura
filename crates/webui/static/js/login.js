@@ -40,6 +40,10 @@
       ta.value = token;
       ta.select();
       if(useBtn){ useBtn.disabled = false; useBtn.dataset.token = token; }
+
+      // Automatically persist token for WebUI and go to feeds.
+      document.cookie = 'X-Auth-Token=' + token + '; Path=/; SameSite=Lax';
+      window.location.href = '/feeds';
     }catch(e){
       const msg = document.getElementById('loginMsg');
       if(msg){ msg.textContent = T.network; msg.style.color = '#dc2626'; }
