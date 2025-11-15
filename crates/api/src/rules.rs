@@ -18,7 +18,8 @@ use captura_storage::entity::{feed, rule};
 use crate::auth::AuthUser;
 use crate::error::{bad_request, forbidden, internal, not_found, ApiResult};
 use crate::util::validate_limit_offset;
-use crate::{AppState, IdResp};
+use crate::AppState;
+use captura_types::{IdResp, Paging};
 use regex::Regex;
 
 use captura_service::rules_sync::{self as rules_sync_svc, RulesSyncReport};
@@ -74,7 +75,7 @@ pub(crate) async fn create_rule(
 pub(crate) struct RulesQuery {
     pub q: Option<String>,
     #[serde(flatten)]
-    pub paging: crate::util::Paging,
+    pub paging: Paging,
 }
 
 pub(crate) async fn list_rules(
@@ -275,7 +276,7 @@ pub(crate) struct TemplatesQuery {
     pub ns: Option<String>,
     pub q: Option<String>,
     #[serde(flatten)]
-    pub paging: crate::util::Paging,
+    pub paging: Paging,
 }
 
 pub(crate) async fn list_templates(

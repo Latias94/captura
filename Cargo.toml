@@ -4,6 +4,7 @@ members = [
   "crates/storage",
   "crates/migration",
   "crates/api",
+  "crates/types",
   "crates/fetcher",
   "crates/crawler",
   "crates/rules",

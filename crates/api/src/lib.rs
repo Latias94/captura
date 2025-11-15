@@ -22,6 +22,7 @@ pub mod util;
 pub mod webhooks;
 
 pub use state::{AppConfig, AppState};
+pub use captura_types::IdResp;
 
 use axum::body::Body as AxumBody;
 use axum::{
@@ -30,7 +31,6 @@ use axum::{
     Router,
 };
 use sea_orm::{ConnectionTrait, DatabaseConnection};
-use serde::Serialize;
 use tower_http::set_header::SetResponseHeaderLayer;
 
 /// 构建完整的应用 Router，包括：
@@ -86,10 +86,20 @@ pub fn build_router(app_state: AppState) -> Router {
                 .put(crate::categories::update_category)
                 .delete(crate::categories::delete_category),
         )
+        .route("/feeds/counters", get(crate::feeds::feeds_counters))
+        .route(
+            "/categories/counters",
+            get(crate::categories::category_counters),
+        )
         .route("/entries", get(crate::entries::list_entries))
         .route(
             "/entries/mark-all-read",
             post(crate::entries::mark_all_read),
+        )
+        .route("/entries/{id}", get(crate::entries::get_entry))
+        .route(
+            "/entries/{id}/content",
+            get(crate::entries::entry_content),
         )
         .route("/entries/{id}/read", post(crate::entries::mark_read))
         .route("/entries/{id}/star", post(crate::entries::mark_star))
@@ -155,47 +165,7 @@ pub fn build_router(app_state: AppState) -> Router {
         .route("/hub/routes/{namespace}/{name}", get(crate::hub::get_route))
         .route("/hub/preview", post(crate::hub::preview_hub));
 
-    let compat_root = Router::new()
-        .route(
-            "/fever",
-            get(crate::compat::fever::endpoint).post(crate::compat::fever::endpoint),
-        )
-        .route(
-            "/reader/api/0/subscription/list",
-            get(crate::compat::reader::subscription_list),
-        )
-        .route(
-            "/reader/api/0/stream/contents/user/-/state/com.google/reading-list",
-            get(crate::compat::reader::stream_contents),
-        )
-        .route(
-            "/reader/api/0/edit-tag",
-            post(crate::compat::reader::edit_tag),
-        )
-        .route(
-            "/reader/api/0/mark-all-as-read",
-            post(crate::compat::reader::mark_all_read),
-        )
-        .route(
-            "/reader/api/0/unread-count",
-            get(crate::compat::reader::unread_count),
-        )
-        .route(
-            "/reader/api/0/subscription/quickadd",
-            post(crate::compat::reader::subscription_quickadd),
-        )
-        .route(
-            "/reader/api/0/subscription/edit",
-            post(crate::compat::reader::subscription_edit),
-        )
-        .route(
-            "/reader/api/0/stream/items/ids",
-            get(crate::compat::reader::items_ids),
-        )
-        .route(
-            "/reader/api/0/stream/items/contents",
-            get(crate::compat::reader::items_contents),
-        );
+    let compat_root = compat::fever::router().merge(compat::reader::router());
 
     let mut app = Router::new()
         .route("/healthz", get(|| async { "OK" }))
@@ -291,55 +261,9 @@ pub fn miniflux_service_with_state(
         .into_service()
 }
 
-// 在 lib 目标下也提供通用 IdResp，避免其他模块通过 crate::IdResp 引用失败
-#[derive(Serialize)]
-pub struct IdResp {
-    pub id: i64,
-}
-
 /// 提供最小可用的测试路由（健康检查 + 兼容层端点子集）
 pub fn test_router(app_state: AppState) -> Router<AppState> {
-    let compat_root = Router::new()
-        .route(
-            "/fever",
-            get(crate::compat::fever::endpoint).post(crate::compat::fever::endpoint),
-        )
-        .route(
-            "/reader/api/0/subscription/list",
-            get(crate::compat::reader::subscription_list),
-        )
-        .route(
-            "/reader/api/0/stream/contents/user/-/state/com.google/reading-list",
-            get(crate::compat::reader::stream_contents),
-        )
-        .route(
-            "/reader/api/0/edit-tag",
-            post(crate::compat::reader::edit_tag),
-        )
-        .route(
-            "/reader/api/0/mark-all-as-read",
-            post(crate::compat::reader::mark_all_read),
-        )
-        .route(
-            "/reader/api/0/unread-count",
-            get(crate::compat::reader::unread_count),
-        )
-        .route(
-            "/reader/api/0/subscription/quickadd",
-            post(crate::compat::reader::subscription_quickadd),
-        )
-        .route(
-            "/reader/api/0/subscription/edit",
-            post(crate::compat::reader::subscription_edit),
-        )
-        .route(
-            "/reader/api/0/stream/items/ids",
-            get(crate::compat::reader::items_ids),
-        )
-        .route(
-            "/reader/api/0/stream/items/contents",
-            get(crate::compat::reader::items_contents),
-        );
+    let compat_root = compat::fever::router().merge(compat::reader::router());
 
     async fn liveness() -> &'static str {
         "OK"

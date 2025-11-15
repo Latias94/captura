@@ -3,15 +3,14 @@ use axum::{
     Json,
 };
 use axum_extra::typed_header::TypedHeader;
+use chrono::FixedOffset;
 use headers::authorization::Bearer;
 use headers::Authorization;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, Condition, DatabaseConnection, EntityTrait, JoinType, Order,
-    QueryFilter, QueryOrder, QuerySelect, RelationTrait,
+    QueryFilter, QueryOrder, QuerySelect, RelationTrait, Set,
 };
-use serde::{Deserialize, Serialize};
-
-use captura_storage::entity::{entry, feed};
+use serde::Deserialize;
 
 use crate::auth::AuthUser;
 use crate::entry_options::{apply_entry_flags, EntryUpdateFlags};
@@ -19,6 +18,10 @@ use crate::error::{bad_request, internal, ApiResult};
 use crate::search;
 use crate::util::{validate_limit_offset, validate_sort};
 use crate::AppState;
+
+use captura_pipeline::extractor;
+use captura_storage::entity::{entry, feed};
+use captura_types::{EntryContentDto, EntryDto, Paging, Sorting};
 
 #[derive(Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -35,23 +38,9 @@ pub(crate) struct EntriesQuery {
     pub status: Option<StatusFilter>,
     pub q: Option<String>,
     #[serde(flatten)]
-    pub sorting: crate::util::Sorting,
+    pub sorting: Sorting,
     #[serde(flatten)]
-    pub paging: crate::util::Paging,
-}
-
-#[derive(Serialize)]
-pub(crate) struct EntryDto {
-    pub id: i64,
-    pub feed_id: i64,
-    pub url: Option<String>,
-    pub title: Option<String>,
-    pub summary: Option<String>,
-    pub content_html: Option<String>,
-    pub author: Option<String>,
-    pub published_at: Option<String>,
-    pub is_read: bool,
-    pub is_starred: bool,
+    pub paging: Paging,
 }
 
 pub(crate) async fn list_entries(
@@ -239,6 +228,99 @@ pub(crate) async fn mark_star(
         am.update(&st.db).await.map_err(internal)?;
     }
     Ok("ok")
+}
+
+pub(crate) async fn get_entry(
+    State(st): State<AppState>,
+    TypedHeader(Authorization(bearer)): TypedHeader<Authorization<Bearer>>,
+    Path(id): Path<i64>,
+) -> ApiResult<Json<EntryDto>> {
+    let user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
+    let Some(e) = load_owned_entry(&st.db, user.user_id, id).await? else {
+        return Err(crate::error::not_found("entry"));
+    };
+    Ok(Json(EntryDto {
+        id: e.id,
+        feed_id: e.feed_id,
+        url: e.url,
+        title: e.title,
+        summary: e.summary,
+        content_html: e.content_html,
+        author: e.author,
+        published_at: e.published_at.map(|d| d.to_rfc3339()),
+        is_read: e.is_read,
+        is_starred: e.is_starred,
+    }))
+}
+
+#[derive(Deserialize, Default)]
+pub(crate) struct EntryContentQuery {
+    pub update_content: Option<bool>,
+}
+
+pub(crate) async fn entry_content(
+    State(st): State<AppState>,
+    TypedHeader(Authorization(bearer)): TypedHeader<Authorization<Bearer>>,
+    Path(id): Path<i64>,
+    Query(q): Query<EntryContentQuery>,
+) -> ApiResult<Json<EntryContentDto>> {
+    let user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
+    let Some(e) = load_owned_entry(&st.db, user.user_id, id).await? else {
+        return Err(crate::error::not_found("entry"));
+    };
+    let Some(f) = feed::Entity::find_by_id(e.feed_id)
+        .one(&st.db)
+        .await
+        .map_err(internal)?
+    else {
+        return Err(crate::error::not_found("feed"));
+    };
+    let page_url = match e.url.as_deref() {
+        Some(u) => u,
+        None => {
+            let content = e
+                .content_html
+                .unwrap_or_else(|| e.summary.unwrap_or_default());
+            return Ok(Json(EntryContentDto {
+                content_html: content,
+                title: e.title,
+            }));
+        }
+    };
+    let extracted = extractor::fetch_and_extract_entry(page_url, &f)
+        .await
+        .map_err(internal)?;
+    let mut out_html = extracted.content_html.clone();
+    let new_title = extracted.title;
+    if out_html.is_empty() {
+        let fallback = e
+            .content_html
+            .clone()
+            .unwrap_or_else(|| e.summary.clone().unwrap_or_default());
+        out_html = fallback;
+    }
+    if q.update_content.unwrap_or(false) {
+        if let Some(model) = entry::Entity::find_by_id(e.id)
+            .one(&st.db)
+            .await
+            .map_err(internal)?
+        {
+            let mut am: entry::ActiveModel = model.into();
+            am.content_html = Set(Some(out_html.clone()));
+            if let Some(nt) = new_title.clone() {
+                am.title = Set(Some(nt));
+            }
+            am.updated_at = Set(
+                chrono::Utc::now()
+                    .with_timezone(&FixedOffset::east_opt(0).unwrap()),
+            );
+            let _ = am.update(&st.db).await.map_err(internal)?;
+        }
+    }
+    Ok(Json(EntryContentDto {
+        content_html: out_html,
+        title: new_title.or(e.title),
+    }))
 }
 
 async fn load_owned_entry(

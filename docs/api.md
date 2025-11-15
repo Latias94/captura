@@ -15,7 +15,36 @@ Base paths
   - Miniflux 客户端：固定访问 `/v1/*`
   - Fever 客户端：固定访问 `/fever`
   - Google Reader 客户端：固定访问 `/reader/api/0/*`
-  
+
+## First-party clients (TUI/CLI/GUI)
+
+For first-party clients maintained together with Captura (such as `captura-tui`), the recommended usage is:
+
+- Auth:
+  - Obtain a token either via Web UI (API key), `POST /api/v1/auth/login`, or Miniflux-compatible `/v1/api-keys`.
+  - Use the header `Authorization: Bearer <token>` for all authenticated requests.
+  - Both `/api/v1` and `/v1` accept bearer tokens; prefer bearer over `X-Auth-Token` or `Basic` for new clients.
+- Preferred `/api/v1` endpoints:
+  - Feeds:
+    - `GET /api/v1/feeds` – list feeds for the current user.
+    - `GET /api/v1/feeds/{id}` – get a single feed.
+    - `GET /api/v1/feeds/counters` – read/unread counters per feed.
+    - `POST /api/v1/feeds/{id}/refresh` – synchronous refresh of a single feed.
+    - `POST /api/v1/feeds/{id}/enqueue-refresh` – enqueue refresh job.
+  - Categories:
+    - `GET /api/v1/categories` – list categories.
+    - `GET /api/v1/categories/counters` – unread counters per category (including `null` = uncategorized).
+  - Entries:
+    - `GET /api/v1/entries` – list entries with filters (`feed_id`, `category_id`, `status`, `limit`, `offset`).
+    - `GET /api/v1/entries/{id}` – get a single entry.
+    - `GET /api/v1/entries/{id}/content?update_content=bool` – fetch and optionally persist full content (readability).
+    - `POST /api/v1/entries/{id}/read` – mark entry read/unread (`{ "value": true|false }`).
+    - `POST /api/v1/entries/{id}/star` – mark entry starred/unstarred (`{ "value": true|false }`).
+    - `POST /api/v1/entries/mark-all-read` – mark entries as read by `feed_id` or `category_id`.
+- Compatibility layers:
+  - `/v1/*` is a Miniflux-compatible API surface, intended for Miniflux clients and other third-party readers.
+  - `/fever` and `/reader/api/0/*` are intended for Fever / Google Reader compatible clients.
+  - First-party clients should prefer `/api/v1/*` for most operations and only use compatibility endpoints when strictly necessary.
 
 ## Auth
 

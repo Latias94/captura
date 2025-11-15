@@ -1,6 +1,5 @@
 use once_cell::sync::Lazy;
 use sea_orm::DatabaseConnection;
-use serde::Deserialize;
 use std::collections::HashMap;
 use std::sync::Mutex;
 
@@ -8,20 +7,6 @@ use captura_storage::entity::category;
 use sea_orm::EntityTrait;
 
 use crate::error::{bad_request, forbidden, internal, ApiResult};
-
-/// Common paging parameters for list endpoints.
-#[derive(Debug, Deserialize)]
-pub(crate) struct Paging {
-    pub limit: Option<u64>,
-    pub offset: Option<u64>,
-}
-
-/// Common sorting parameters for list endpoints.
-#[derive(Debug, Deserialize)]
-pub(crate) struct Sorting {
-    pub sort_by: Option<String>,
-    pub order: Option<String>,
-}
 
 // 通用分页与排序校验
 #[allow(dead_code)]

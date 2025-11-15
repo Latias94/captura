@@ -1,0 +1,11 @@
+[package]
+name = "captura-types"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "captura_types"
+path = "src/lib.rs"
+
+[dependencies]
+serde.workspace = true

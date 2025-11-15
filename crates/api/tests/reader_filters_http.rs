@@ -6,6 +6,7 @@ use captura_api::{test_router_service, AppState};
 use tower::ServiceExt;
 
 use captura_storage::entity::{entry, feed, prelude::*};
+use captura_storage::entity::user::Entity as User;
 use chrono::{FixedOffset, Utc};
 use sea_orm::{ActiveModelTrait, EntityTrait, Set};
 

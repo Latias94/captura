@@ -9,7 +9,8 @@ async fn miniflux_me_exposes_core_prefs() {
     let (uid, token) = captura_testkit::seed_user_and_token(&db, "u").await;
     // 将测试用户提升为 admin，以便通过 /v1/users/{id} 更新偏好
     {
-        use captura_storage::entity::{prelude::User, user};
+        use captura_storage::entity::user;
+        use captura_storage::entity::user::Entity as User;
         use sea_orm::{ActiveModelTrait, EntityTrait, Set};
         let u = User::find_by_id(uid).one(&db).await.unwrap().unwrap();
         let mut am: user::ActiveModel = u.into();

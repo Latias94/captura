@@ -32,7 +32,7 @@ async fn mysql_migration_and_crud() {
 }
 
 async fn basic_user_roundtrip(db: &sea_orm::DatabaseConnection) {
-    use captura_storage::entity::{prelude::*, user};
+    use captura_storage::entity::user;
     let now = Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
     let name = format!("test_{}", now.timestamp_nanos());
     let _u = user::ActiveModel {
@@ -44,7 +44,7 @@ async fn basic_user_roundtrip(db: &sea_orm::DatabaseConnection) {
     .insert(db)
     .await
     .expect("insert user");
-    let got = User::find()
+    let got = user::Entity::find()
         .filter(user::Column::Username.eq(name))
         .one(db)
         .await

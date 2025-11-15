@@ -23,6 +23,7 @@ use crate::error::{bad_request, internal, not_found, ApiResult};
 use crate::feed_options::{apply_feed_update_options, FeedUpdateOptions};
 use crate::util::{validate_limit_offset, validate_sort};
 use crate::AppState;
+use captura_types::{FeedCountersDto, FeedDto, Paging, Sorting};
 
 #[derive(Deserialize)]
 pub(crate) struct CreateFeedReq {
@@ -53,25 +54,15 @@ pub(crate) struct CreateFeedResp {
     pub id: i64,
 }
 
-#[derive(Serialize)]
-pub(crate) struct FeedDto {
-    pub id: i64,
-    pub title: Option<String>,
-    pub feed_url: String,
-    pub site_url: Option<String>,
-    pub disabled: bool,
-    pub category_id: Option<i64>,
-}
-
 #[derive(Deserialize)]
 pub(crate) struct FeedsQuery {
     pub category_id: Option<i64>,
     pub disabled: Option<bool>,
     pub has_errors: Option<bool>,
     #[serde(flatten)]
-    pub sorting: crate::util::Sorting,
+    pub sorting: Sorting,
     #[serde(flatten)]
-    pub paging: crate::util::Paging,
+    pub paging: Paging,
 }
 
 pub(crate) async fn list_feeds(
@@ -415,6 +406,55 @@ pub(crate) async fn create_feed(
     };
     let res = am.insert(&st.db).await.map_err(internal)?;
     Ok(Json(CreateFeedResp { id: res.id }))
+}
+
+/// 统计当前用户下各 feed 的已读/未读计数（仅供 /api/v1 第一方客户端使用）。
+pub(crate) async fn feeds_counters(
+    State(st): State<AppState>,
+    TypedHeader(Authorization(bearer)): TypedHeader<Authorization<Bearer>>,
+) -> ApiResult<Json<FeedCountersDto>> {
+    let user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
+    let feed_ids: Vec<i64> = feed::Entity::find()
+        .filter(feed::Column::UserId.eq(user.user_id))
+        .select_only()
+        .column(feed::Column::Id)
+        .into_tuple()
+        .all(&st.db)
+        .await
+        .map_err(internal)?;
+    let mut reads = std::collections::HashMap::new();
+    let mut unreads = std::collections::HashMap::new();
+    if !feed_ids.is_empty() {
+        let unread_pairs: Vec<(i64, i64)> = entry::Entity::find()
+            .filter(entry::Column::FeedId.is_in(feed_ids.clone()))
+            .filter(entry::Column::IsRead.eq(false))
+            .select_only()
+            .column(entry::Column::FeedId)
+            .column_as(entry::Column::Id.count(), "cnt")
+            .group_by(entry::Column::FeedId)
+            .into_tuple()
+            .all(&st.db)
+            .await
+            .map_err(internal)?;
+        for (fid, cnt) in unread_pairs {
+            unreads.insert(fid, cnt);
+        }
+        let read_pairs: Vec<(i64, i64)> = entry::Entity::find()
+            .filter(entry::Column::FeedId.is_in(feed_ids))
+            .filter(entry::Column::IsRead.eq(true))
+            .select_only()
+            .column(entry::Column::FeedId)
+            .column_as(entry::Column::Id.count(), "cnt")
+            .group_by(entry::Column::FeedId)
+            .into_tuple()
+            .all(&st.db)
+            .await
+            .map_err(internal)?;
+        for (fid, cnt) in read_pairs {
+            reads.insert(fid, cnt);
+        }
+    }
+    Ok(Json(FeedCountersDto { reads, unreads }))
 }
 
 pub(crate) async fn refresh_feed(

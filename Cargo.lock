@@ -602,6 +602,7 @@ dependencies = [
  "captura-service",
  "captura-storage",
  "captura-testkit",
+ "captura-types",
  "captura-webui",
  "chrono",
  "futures",
@@ -801,6 +802,13 @@ dependencies = [
  "rand_core 0.6.4",
  "sea-orm",
  "sha2",
+]
+
+[[package]]
+name = "captura-types"
+version = "0.1.0"
+dependencies = [
+ "serde",
 ]
 
 [[package]]

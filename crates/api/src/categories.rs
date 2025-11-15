@@ -6,20 +6,17 @@ use axum_extra::typed_header::TypedHeader;
 use chrono::{FixedOffset, Utc};
 use headers::authorization::Bearer;
 use headers::Authorization;
-use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, QueryOrder, Set};
-use serde::{Deserialize, Serialize};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect, Set,
+};
+use serde::Deserialize;
 
 use captura_storage::entity::category;
 
 use crate::auth::AuthUser;
 use crate::error::{bad_request, internal, not_found, ApiResult};
-use crate::{AppState, IdResp};
-
-#[derive(Serialize)]
-pub(crate) struct CategoryDto {
-    pub id: i64,
-    pub name: String,
-}
+use crate::AppState;
+use captura_types::{CategoryCounterDto, CategoryDto, IdResp};
 
 pub(crate) async fn list_categories(
     State(st): State<AppState>,
@@ -138,4 +135,46 @@ pub(crate) async fn delete_category(
     let am: category::ActiveModel = c.into();
     am.delete(&st.db).await.map_err(internal)?;
     Ok("ok")
+}
+
+/// 统计当前用户下各分类的未读数（与 Miniflux 语义类似，category_id 为 None 表示未分类）。
+pub(crate) async fn category_counters(
+    State(st): State<AppState>,
+    TypedHeader(Authorization(bearer)): TypedHeader<Authorization<Bearer>>,
+) -> ApiResult<Json<Vec<CategoryCounterDto>>> {
+    use captura_storage::entity::{entry, feed};
+    let user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
+    let feeds = feed::Entity::find()
+        .filter(feed::Column::UserId.eq(user.user_id))
+        .all(&st.db)
+        .await
+        .map_err(internal)?;
+    let feed_ids: Vec<i64> = feeds.iter().map(|f| f.id).collect();
+    if feed_ids.is_empty() {
+        return Ok(Json(vec![]));
+    }
+    let pairs: Vec<(i64, i64)> = entry::Entity::find()
+        .filter(entry::Column::FeedId.is_in(feed_ids.clone()))
+        .filter(entry::Column::IsRead.eq(false))
+        .select_only()
+        .column(entry::Column::FeedId)
+        .column_as(entry::Column::Id.count(), "cnt")
+        .group_by(entry::Column::FeedId)
+        .into_tuple()
+        .all(&st.db)
+        .await
+        .map_err(internal)?;
+    use std::collections::HashMap;
+    let feed_cat: HashMap<i64, Option<i64>> =
+        feeds.into_iter().map(|f| (f.id, f.category_id)).collect();
+    let mut cat_map: HashMap<Option<i64>, i64> = HashMap::new();
+    for (fid, cnt) in pairs {
+        let cat = feed_cat.get(&fid).cloned().unwrap_or(None);
+        *cat_map.entry(cat).or_insert(0) += cnt;
+    }
+    let out = cat_map
+        .into_iter()
+        .map(|(category_id, unread)| CategoryCounterDto { category_id, unread })
+        .collect();
+    Ok(Json(out))
 }

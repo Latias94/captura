@@ -11,9 +11,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::auth::AuthUser;
 use crate::error::{bad_request, internal, not_found, ApiResult};
-use crate::{AppState, IdResp};
+use crate::AppState;
 use captura_storage::entity::webhook;
 use rand_core::RngCore;
+use captura_types::IdResp;
 
 #[derive(Serialize)]
 pub(crate) struct WebhookDto {
