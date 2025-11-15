@@ -185,7 +185,7 @@ impl MigrationTrait for Migration {
                     .col(ColumnDef::new(Feed::UrlRewriteRules).text())
                     .col(ColumnDef::new(Feed::BlockFilterEntryRules).text())
                     .col(ColumnDef::new(Feed::KeepFilterEntryRules).text())
-                     .col(ColumnDef::new(Feed::IntegrationsJson).json_binary())
+                    .col(ColumnDef::new(Feed::IntegrationsJson).json_binary())
                     .col(
                         ColumnDef::new(Feed::CreatedAt)
                             .timestamp_with_time_zone()

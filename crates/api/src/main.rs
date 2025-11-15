@@ -4,11 +4,15 @@ use captura_api::{build_router, AppState};
 use captura_scheduler as scheduler;
 use captura_storage::connect as db_connect;
 use migration::migrate;
-// once_cell only used in old tests
-// use scraper::{Html, Selector};
 use std::net::SocketAddr;
 use tracing::{info, Level};
 use tracing_subscriber::EnvFilter;
+
+use argon2::password_hash::SaltString;
+use argon2::PasswordHasher;
+use captura_storage::entity::user;
+use chrono::{FixedOffset, Utc};
+use sea_orm::{ActiveModelTrait, EntityTrait, PaginatorTrait, Set};
 // use url::Url; // no longer used in main
 // use axum::Form; // reader handlers moved to compat
 // testkit has been extracted into a dedicated crate: captura-testkit
@@ -32,6 +36,7 @@ async fn main() -> anyhow::Result<()> {
         .unwrap_or_else(|_| "sqlite://captura.db?mode=rwc".to_string());
     let db = db_connect(&db_url).await?;
     migrate(&db).await?;
+    maybe_create_initial_admin(&db).await?;
     let app_state = AppState::new(db.clone());
 
     // Background scheduler (optional)
@@ -136,6 +141,49 @@ async fn main() -> anyhow::Result<()> {
     info!(%addr, "listening");
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app).await?;
+    Ok(())
+}
+
+async fn maybe_create_initial_admin(db: &sea_orm::DatabaseConnection) -> anyhow::Result<()> {
+    // Only when there is no user yet.
+    let count = user::Entity::find().count(db).await?;
+    if count > 0 {
+        return Ok(());
+    }
+    // Read admin credentials from env (either CAPTURA_* or generic names).
+    let username = std::env::var("CAPTURA_ADMIN_USERNAME")
+        .ok()
+        .or_else(|| std::env::var("ADMIN_USERNAME").ok())
+        .unwrap_or_default();
+    let password = std::env::var("CAPTURA_ADMIN_PASSWORD")
+        .ok()
+        .or_else(|| std::env::var("ADMIN_PASSWORD").ok())
+        .unwrap_or_default();
+    let username = username.trim();
+    if username.is_empty() || password.is_empty() {
+        // Nothing to do; fallback to manual /api/v1/users bootstrap.
+        return Ok(());
+    }
+    let salt = SaltString::generate(&mut rand_core::OsRng);
+    let hash = argon2::Argon2::default()
+        .hash_password(password.as_bytes(), &salt)
+        .map_err(|e| anyhow::anyhow!("failed to hash admin password: {e}"))?
+        .to_string();
+    let now = Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
+    let am = user::ActiveModel {
+        username: Set(username.to_string()),
+        password_hash: Set(hash),
+        fever_key_md5: Set(None),
+        role: Set(captura_storage::entity::user::UserRole::Admin),
+        created_at: Set(now),
+        ..Default::default()
+    };
+    let rec = am.insert(db).await?;
+    info!(
+        user_id = rec.id,
+        username = username,
+        "created initial admin user from env"
+    );
     Ok(())
 }
 

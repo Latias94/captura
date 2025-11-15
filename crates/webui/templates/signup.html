@@ -1,0 +1,28 @@
+{% extends "layout.html" %}
+{% block body %}
+<section class="space-y-4">
+  <h1 class="title">{{ dict["signup.title"] }}</h1>
+  <p class="muted">{{ dict["signup.hint"] }}</p>
+  <form id="signupForm" class="login-form" method="post" action="/api/v1/users"
+    data-msg-failed="{{ dict["signup.failed"] }}"
+    data-msg-network="{{ dict["login.network_error"] }}"
+    data-msg-created="{{ dict["signup.created"] }}"
+    data-msg-disabled="{{ dict["signup.disabled"] }}">
+    <div class="field">
+      <label class="label" for="signup_username">{{ dict["label.username"] }}</label>
+      <input id="signup_username" name="username" class="input" autocomplete="username" />
+    </div>
+    <div class="field">
+      <label class="label" for="signup_password">{{ dict["label.password"] }}</label>
+      <input id="signup_password" name="password" type="password" class="input" autocomplete="new-password" />
+    </div>
+    <div class="actions">
+      <button id="signupBtn" class="button" type="button">{{ dict["btn.signup"] }}</button>
+      <a class="button ml-2" href="/login">{{ dict["title.signin"] }}</a>
+    </div>
+    <p id="signupMsg" class="muted"></p>
+  </form>
+</section>
+<script src="/ui/static/js/signup.js" nonce="{{ csp_nonce }}" type="module"></script>
+{% endblock %}
+

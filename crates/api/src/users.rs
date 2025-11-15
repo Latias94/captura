@@ -32,8 +32,9 @@ pub async fn create_user(
     Json(body): Json<CreateUserReq>,
 ) -> ApiResult<Json<CreateUserResp>> {
     let count = user::Entity::find().count(&st.db).await.map_err(internal)?;
-    if count > 0 {
-        return Err(forbidden("user exists"));
+    let is_first = count == 0;
+    if !is_first && !st.cfg.signup_enabled {
+        return Err(forbidden("signup disabled"));
     }
     let salt = argon2::password_hash::SaltString::generate(&mut OsRng);
     let hash = argon2::Argon2::default()
@@ -44,7 +45,11 @@ pub async fn create_user(
     let am = user::ActiveModel {
         username: Set(body.username),
         password_hash: Set(hash),
-        role: Set(captura_storage::entity::user::UserRole::Admin),
+        role: Set(if is_first {
+            captura_storage::entity::user::UserRole::Admin
+        } else {
+            captura_storage::entity::user::UserRole::User
+        }),
         created_at: Set(now),
         ..Default::default()
     };

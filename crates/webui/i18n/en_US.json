@@ -82,6 +82,7 @@
   "intro.tagline": "Minimalist, SSR-based feed reading UI.",
   "intro.todo.signin": "Use an API token or OIDC to sign in.",
   "intro.todo.next": "Explore feeds, entries, reading view and settings.",
+  "intro.todo.signup": "First time here? Create an admin account via the signup page.",
   "misc.untitled": "(untitled)",
   "misc.no_title": "(no title)",
   "btn.switch_account": "Switch account",
@@ -147,4 +148,11 @@
   ,"hub.routes.list_title": "Available Hub routes"
   ,"hub.routes.empty": "No Hub routes available yet."
   ,"btn.preview": "Preview"
+  ,"signup.title": "Create Account"
+  ,"signup.hint": "Create a new Captura account. The very first account will become an admin user."
+  ,"signup.failed": "Signup failed"
+  ,"signup.created": "Account created. You can now sign in."
+  ,"signup.disabled": "Signup is disabled by the server."
+  ,"btn.signup": "Sign Up"
+  ,"signup.link": "Need an account? Sign up"
 }

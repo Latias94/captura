@@ -24,7 +24,7 @@
   <section class="panel mt-4">
     <h2 class="title">{{ dict["saved.title"] }}</h2>
     <ul class="list" id="feedsSavedSearches" data-dict-empty="{{ dict["saved.empty"] }}"></ul>
-    <script src="/ui/static/js/feeds_saved_searches.js" defer></script>
+    <script src="/ui/static/js/feeds_saved_searches.js" nonce="{{ csp_nonce }}" type="module"></script>
   </section>
   <div class="toolbar">
     <button type="button" class="button" id="btnRefreshAll">{{ dict["btn.refresh_all"] }}</button>
@@ -127,8 +127,8 @@
     {% endif %}
     {% endif %}
   </div>
-  <script src="/ui/static/js/feeds_actions.js" defer></script>
-  <script src="/ui/static/js/feeds_groups.js" defer></script>
+  <script src="/ui/static/js/feeds_actions.js" nonce="{{ csp_nonce }}" type="module"></script>
+  <script src="/ui/static/js/feeds_groups.js" nonce="{{ csp_nonce }}" type="module"></script>
   {% if feeds | length == 0 %}
   <p class="muted">{{ dict["empty.feeds"] }}</p>
   <p class="muted"><a class="link" href="/settings">{{ dict["empty.feeds_hint"] }}</a></p>

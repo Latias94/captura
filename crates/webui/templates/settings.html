@@ -133,7 +133,7 @@
       <input id="opmlFile" type="file" accept=".opml,.xml" class="input" />
       <button id="opmlFileBtn" class="button ml-2" type="button">{{ dict["btn.import"] }}</button>
     </div>
-    <script src="/ui/static/js/opml_file.js" defer></script>
+    <script src="/ui/static/js/opml_file.js" nonce="{{ csp_nonce }}" type="module"></script>
   </section>
 
   <section class="panel mt-4">

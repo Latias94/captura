@@ -24,6 +24,9 @@
         </div>
         <p id="loginMsg" class="muted"></p>
       </form>
+      <p class="muted mt-2">
+        <a class="link" href="/signup">{{ dict["signup.link"] }}</a>
+      </p>
     </div>
     <div>
       <h2 class="title">{{ dict["login.sso"] }}</h2>
@@ -35,6 +38,6 @@
     </div>
   </div>
 
-  <script src="/ui/static/js/login.js" defer></script>
+  <script src="/ui/static/js/login.js" nonce="{{ csp_nonce }}" type="module"></script>
 </section>
 {% endblock %}

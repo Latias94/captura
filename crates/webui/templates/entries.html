@@ -95,11 +95,11 @@
       </li>
     {% endfor %}
     </ul>
-    <script src="/ui/static/js/listkeys.js" defer></script>
-    <script src="/ui/static/js/listbulk.js" defer></script>
-    <script src="/ui/static/js/actions.js" defer></script>
-    <script src="/ui/static/js/search_hl.js" defer></script>
-    <script src="/ui/static/js/saved_searches.js" defer></script>
+    <script src="/ui/static/js/listkeys.js" nonce="{{ csp_nonce }}" type="module"></script>
+    <script src="/ui/static/js/listbulk.js" nonce="{{ csp_nonce }}" type="module"></script>
+    <script src="/ui/static/js/actions.js" nonce="{{ csp_nonce }}" type="module"></script>
+    <script src="/ui/static/js/search_hl.js" nonce="{{ csp_nonce }}" type="module"></script>
+    <script src="/ui/static/js/saved_searches.js" nonce="{{ csp_nonce }}" type="module"></script>
   {% endif %}
   <div class="toolbar mt-4">
     {% if prev_page.is_some() %}

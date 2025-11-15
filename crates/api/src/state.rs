@@ -30,6 +30,9 @@ pub struct AppConfig {
     // Login rate limiting
     pub login_max_attempts: u32,
     pub login_window_secs: u64,
+
+    // Optional open signup (non-admin users) via /api/v1/users
+    pub signup_enabled: bool,
 }
 
 #[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
@@ -99,6 +102,10 @@ impl AppConfig {
             .ok()
             .and_then(|s| s.parse().ok())
             .unwrap_or(60);
+        let signup_enabled = std::env::var("CAPTURA_SIGNUP_ENABLED")
+            .ok()
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
         Self {
             auth_proxy_header,
             auth_proxy_user_creation,
@@ -115,6 +122,7 @@ impl AppConfig {
             oidc_providers,
             login_max_attempts,
             login_window_secs,
+            signup_enabled,
         }
     }
 }

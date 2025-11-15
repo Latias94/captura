@@ -140,6 +140,17 @@ struct LoginTemplate<'a> {
     external_font_hosts: &'a str,
 }
 
+#[derive(Template)]
+#[template(path = "signup.html")]
+struct SignupTemplate<'a> {
+    title: &'a str,
+    dict: &'a std::collections::HashMap<String, String>,
+    csp_nonce: &'a str,
+    custom_css: &'a str,
+    custom_js: &'a str,
+    external_font_hosts: &'a str,
+}
+
 async fn index(headers: HeaderMap) -> axum::response::Response {
     let lang = resolve_lang(&headers).await;
     let dict = i18n::load(&lang);
@@ -190,6 +201,28 @@ async fn login(headers: HeaderMap) -> axum::response::Response {
     }
 }
 
+async fn signup(headers: HeaderMap) -> axum::response::Response {
+    let lang = resolve_lang(&headers).await;
+    let dict = i18n::load(&lang);
+    let nonce = gen_csp_nonce();
+    let tpl = SignupTemplate {
+        title: "Sign Up",
+        dict: &dict,
+        csp_nonce: &nonce,
+        custom_css: "",
+        custom_js: "",
+        external_font_hosts: "",
+    };
+    match tpl.render() {
+        Ok(s) => Html(s).into_response(),
+        Err(_) => (
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            "template error",
+        )
+            .into_response(),
+    }
+}
+
 /// Build a UI router with generic state.
 /// No handler here takes a dependency on the state so S can be any shared state.
 pub fn router<S>() -> Router<S>
@@ -199,6 +232,7 @@ where
     Router::new()
         .route("/", get(index))
         .route("/login", get(login))
+        .route("/signup", get(signup))
         .route("/settings", get(ui_settings))
         .route("/hub", get(ui_hub_routes))
         // static files: /ui/static/{*path}
