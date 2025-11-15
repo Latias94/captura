@@ -54,11 +54,28 @@ pub async fn run_once(db: &DatabaseConnection, max: u64) -> Result<usize> {
         .map(|n| n.get())
         .unwrap_or(4)
         .max(1);
-    let concurrency: usize = env::var("SCHEDULER_WORKER_CONCURRENCY")
+    let mut concurrency: usize = env::var("SCHEDULER_WORKER_CONCURRENCY")
         .ok()
         .and_then(|s| s.parse().ok())
         .filter(|&v| v > 0)
         .unwrap_or(default_workers);
+    // When using SQLite, keep worker concurrency conservative to reduce
+    // `database is locked` errors. This can be tuned via
+    // SCHEDULER_SQLITE_MAX_CONCURRENCY (default 2).
+    if env::var("DATABASE_URL")
+        .ok()
+        .map(|u| u.starts_with("sqlite"))
+        .unwrap_or(false)
+    {
+        let sqlite_cap: usize = env::var("SCHEDULER_SQLITE_MAX_CONCURRENCY")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .filter(|&v| v > 0)
+            .unwrap_or(2);
+        if concurrency > sqlite_cap {
+            concurrency = sqlite_cap;
+        }
+    }
     let per_host: usize = env::var("SCHEDULER_PER_HOST_CONCURRENCY")
         .ok()
         .and_then(|s| s.parse().ok())
@@ -146,6 +163,7 @@ pub async fn run_once(db: &DatabaseConnection, max: u64) -> Result<usize> {
                         tracing::error!(
                             job_id = j.id,
                             job_type = ?j.job_type,
+                            feed_id = j.feed_id,
                             %msg,
                             "scheduler job failed"
                         );

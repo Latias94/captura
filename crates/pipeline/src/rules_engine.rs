@@ -9,7 +9,10 @@ use serde_json::Value as JsonValue;
 use std::time::Duration;
 use tracing::{debug, instrument};
 
-use crate::{apply_entry_filters, extractor, render_with_params, sanitize_html};
+use crate::{
+    apply_entry_filters_with_cfg, extractor, render_with_params, sanitize_html,
+    ContentTransformConfig,
+};
 
 /// Local fetch configuration used by helper functions to avoid depending on
 /// legacy rule types.
@@ -92,10 +95,10 @@ pub(crate) async fn fetch_html_strategy(
     let resp = req
         .send()
         .await
-        .map_err(|e| Error::Network(e.to_string()))?;
+        .map_err(|e| Error::Network(format!("{} -> {}", url, e)))?;
     let status = resp.status();
     if !status.is_success() {
-        return Err(Error::Network(format!("http status {}", status)));
+        return Err(Error::Network(format!("{} -> http status {}", url, status)));
     }
     let text = resp
         .text()
@@ -135,7 +138,13 @@ pub async fn refresh_rule_v1(
     // Prefer Rust handlers (Hub routes) when available.
     if let Some(res) = crate::handlers::execute_rust_handler_if_any(feed, spec).await {
         let mut entries = res?;
-        apply_entry_filters(feed, &mut entries);
+        let cfg = ContentTransformConfig {
+            url_rewrite_rules: feed.url_rewrite_rules.clone(),
+            content_rewrite_rules: feed.rewrite_rules.clone(),
+            keep_filter_rules: feed.keep_filter_entry_rules.clone(),
+            block_filter_rules: feed.block_filter_entry_rules.clone(),
+        };
+        apply_entry_filters_with_cfg(&cfg, &mut entries);
         return Ok(entries);
     }
 
@@ -150,7 +159,13 @@ pub async fn refresh_rule_v1(
     apply_rule_filters_v1(spec, &mut entries);
     apply_full_content_when_v1(feed, spec, &mut entries).await?;
     apply_description_template_v1(spec, &mut entries);
-    apply_entry_filters(feed, &mut entries);
+    let cfg = ContentTransformConfig {
+        url_rewrite_rules: feed.url_rewrite_rules.clone(),
+        content_rewrite_rules: feed.rewrite_rules.clone(),
+        keep_filter_rules: feed.keep_filter_entry_rules.clone(),
+        block_filter_rules: feed.block_filter_entry_rules.clone(),
+    };
+    apply_entry_filters_with_cfg(&cfg, &mut entries);
 
     Ok(entries)
 }
@@ -736,6 +751,232 @@ async fn execute_list_detail_v1(
     Ok(entries)
 }
 
+async fn execute_list_detail_v1_dto(
+    cfg: &crate::FeedConfigDto,
+    spec: &RuleSpecV1,
+) -> Result<Vec<NormalizedEntry>> {
+    let list = spec
+        .source
+        .list
+        .as_ref()
+        .ok_or_else(|| Error::Config("source.list is required for list_detail".into()))?;
+    let content = spec
+        .source
+        .content
+        .as_ref()
+        .ok_or_else(|| Error::Config("source.content is required for list_detail".into()))?;
+
+    let ua = spec
+        .fetch
+        .user_agent
+        .clone()
+        .or_else(|| cfg.user_agent.clone())
+        .unwrap_or_else(|| "captura/0.1".to_string());
+
+    let client = crate::http_client::client_basic(Some(ua), spec.fetch.timeout_ms)?;
+
+    let fetch_cfg = FetchCfg {
+        user_agent: spec
+            .fetch
+            .user_agent
+            .clone()
+            .or_else(|| cfg.user_agent.clone()),
+        headers: None,
+        smart: spec.fetch.smart,
+        timeout_ms: spec.fetch.timeout_ms,
+        respect_robots: spec.fetch.respect_robots,
+        delay_ms: None,
+        limit: None,
+        proxy_url: cfg.proxy_url.clone(),
+    };
+
+    let params = merge_rule_params_v1(spec, None);
+    let final_list_url = render_with_params(&list.request.url, params.as_ref());
+
+    let html = fetch_html_strategy(&client, &final_list_url, &fetch_cfg, None).await?;
+
+    #[derive(Debug)]
+    struct ListItem {
+        url: Option<String>,
+        title: Option<String>,
+        summary: Option<String>,
+        extra_params: serde_json::Map<String, JsonValue>,
+    }
+
+    let mut items: Vec<ListItem> = Vec::new();
+    {
+        let doc = Html::parse_document(&html);
+        let item_sel = Selector::parse(&list.item)
+            .map_err(|e| Error::Parse(format!("invalid item selector: {e}")))?;
+        for el in doc.select(&item_sel) {
+            let link = list
+                .link
+                .as_ref()
+                .and_then(|s| crate::extract_attr(&el, s))
+                .or_else(|| el.value().attr("href").map(|s| s.to_string()));
+            let title = list
+                .title
+                .as_ref()
+                .and_then(|s| crate::extract_text(&el, s));
+            let summary = list
+                .summary
+                .as_ref()
+                .and_then(|s| crate::extract_text(&el, s));
+
+            // Per-item extra params for detail_extra (if configured).
+            let mut extra_params = serde_json::Map::new();
+            if let Some(extra) = &spec.source.detail_extra {
+                for (k, expr) in extra.params_from.iter() {
+                    let value = if expr.contains('@') {
+                        crate::extract_attr(&el, expr)
+                    } else {
+                        crate::extract_text(&el, expr)
+                    };
+                    if let Some(v) = value {
+                        extra_params.insert(k.clone(), JsonValue::String(v));
+                    }
+                }
+            }
+
+            items.push(ListItem {
+                url: link,
+                title,
+                summary,
+                extra_params,
+            });
+        }
+    }
+    debug!(
+        list_url = %final_list_url,
+        items = items.len(),
+        "refresh_rule_v1_dto: collected list items"
+    );
+
+    let mut entries = Vec::new();
+    let base_params = merge_rule_params_v1(spec, None);
+
+    for item in items {
+        let url = item
+            .url
+            .as_deref()
+            .map(|u| crate::absolutize(&final_list_url, u));
+
+        let content_html: Option<String> = match content.mode {
+            ContentMode::Readability => {
+                crate::readability_like_strategy_async(&client, url.as_deref(), &fetch_cfg, None)
+                    .await
+            }
+            ContentMode::Css | ContentMode::JsonFragment => {
+                if let Some(sel) = &content.selector {
+                    if let Some(u) = &url {
+                        Some(
+                            crate::fetch_and_select_strategy(&client, u, sel, &fetch_cfg, None)
+                                .await?,
+                        )
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            }
+        };
+        let mut entry = NormalizedEntry {
+            guid: url.clone(),
+            url,
+            title: item.title,
+            summary: item.summary,
+            content_html,
+            author: None,
+            published_at: None,
+            enclosures: vec![],
+            extras: serde_json::json!({}),
+        };
+
+        if let Some(extra) = &spec.source.detail_extra {
+            let mut params_map = match &base_params {
+                Some(JsonValue::Object(map)) => map.clone(),
+                _ => serde_json::Map::new(),
+            };
+            for (k, v) in item.extra_params.iter() {
+                params_map.insert(k.clone(), v.clone());
+            }
+            let params_val = JsonValue::Object(params_map);
+            let extra_url = render_with_params(&extra.request.url, Some(&params_val));
+
+            let mut req = match extra
+                .request
+                .method
+                .as_deref()
+                .unwrap_or("GET")
+                .to_ascii_uppercase()
+                .as_str()
+            {
+                "POST" => client.post(&extra_url),
+                "PUT" => client.put(&extra_url),
+                "DELETE" => client.delete(&extra_url),
+                _ => client.get(&extra_url),
+            };
+
+            if let Some(headers) = &extra.request.headers {
+                for (k, v) in headers {
+                    if let Some(s) = v.as_str() {
+                        if let Ok(name) = reqwest::header::HeaderName::from_bytes(k.as_bytes()) {
+                            if let Ok(val) = reqwest::header::HeaderValue::from_str(s) {
+                                req = req.header(name, val);
+                            }
+                        }
+                    }
+                }
+            }
+
+            if let Some(ms) = extra.request.timeout_ms.or(spec.fetch.timeout_ms) {
+                req = req.timeout(Duration::from_millis(ms));
+            }
+
+            match req.send().await {
+                Ok(resp) => match resp.text().await {
+                    Ok(text) => match serde_json::from_str::<JsonValue>(&text) {
+                        Ok(json_val) => {
+                            let value = if let Some(root) = &extra.root {
+                                json_get_path(&json_val, root).cloned().unwrap_or(json_val)
+                            } else {
+                                json_val
+                            };
+                            entry.extras = value;
+                        }
+                        Err(e) => {
+                            debug!(
+                                url = %extra_url,
+                                error = %e,
+                                "detail_extra_dto: invalid json response"
+                            );
+                        }
+                    },
+                    Err(e) => {
+                        debug!(
+                            url = %extra_url,
+                            error = %e,
+                            "detail_extra_dto: failed to read response body"
+                        );
+                    }
+                },
+                Err(e) => {
+                    debug!(
+                        url = %extra_url,
+                        error = %e,
+                        "detail_extra_dto: http request failed"
+                    );
+                }
+            }
+        }
+
+        entries.push(entry);
+    }
+
+    Ok(entries)
+}
+
 async fn execute_single_page_v1(
     feed: &feed::Model,
     spec: &RuleSpecV1,
@@ -1038,6 +1279,159 @@ pub(crate) async fn execute_json_v1(
             if text.is_empty() {
                 continue;
             }
+            if let Ok(json_val) = serde_json::from_str::<JsonValue>(&text) {
+                fragments.push(json_val);
+            }
+        }
+        JsonValue::Array(fragments)
+    } else {
+        let text = client
+            .get(&render_with_params(
+                spec.source
+                    .request
+                    .as_ref()
+                    .ok_or_else(|| Error::Config("source.request is required for json".into()))?
+                    .url
+                    .as_str(),
+                params.as_ref(),
+            ))
+            .send()
+            .await
+            .map_err(|e| Error::Network(e.to_string()))?
+            .text()
+            .await
+            .map_err(|e| Error::Network(e.to_string()))?;
+
+        serde_json::from_str(&text).map_err(|e| Error::Parse(format!("invalid json: {e}")))?
+    };
+
+    let json_root = json_get_path(&json_root, root_path)
+        .ok_or_else(|| Error::Parse("json root not found".into()))?;
+    let array = json_root
+        .as_array()
+        .ok_or_else(|| Error::Parse("json root is not an array".into()))?;
+
+    let mut entries = Vec::new();
+    for item in array {
+        let title = mapping
+            .title
+            .as_deref()
+            .and_then(|p| json_get_path(item, p))
+            .and_then(|v| v.as_str().map(|s| s.to_string()));
+        let url = mapping
+            .url
+            .as_deref()
+            .and_then(|p| json_get_path(item, p))
+            .and_then(|v| v.as_str().map(|s| s.to_string()));
+        let summary = mapping
+            .summary
+            .as_deref()
+            .and_then(|p| json_get_path(item, p))
+            .and_then(|v| v.as_str().map(|s| s.to_string()));
+        let content_html = mapping
+            .content_html
+            .as_deref()
+            .and_then(|p| json_get_path(item, p))
+            .and_then(|v| v.as_str().map(|s| s.to_string()));
+        let author = mapping
+            .author
+            .as_deref()
+            .and_then(|p| json_get_path(item, p))
+            .and_then(|v| v.as_str().map(|s| s.to_string()));
+
+        let mut enclosures = Vec::new();
+        if let Some(enc_map) = &mapping.enclosure {
+            let enc_url = enc_map
+                .url
+                .as_deref()
+                .and_then(|p| json_get_path(item, p))
+                .and_then(|v| v.as_str().map(|s| s.to_string()));
+            if let Some(enc_url) = enc_url {
+                let enc_type = enc_map
+                    .r#type
+                    .as_deref()
+                    .and_then(|p| json_get_path(item, p))
+                    .and_then(|v| v.as_str().map(|s| s.to_string()));
+                let enc_len = enc_map
+                    .length
+                    .as_deref()
+                    .and_then(|p| json_get_path(item, p))
+                    .and_then(|v| v.as_i64());
+                enclosures.push(captura_common::Enclosure {
+                    url: enc_url,
+                    r#type: enc_type,
+                    length: enc_len,
+                    kind: None,
+                });
+            }
+        }
+
+        let entry_url = url.clone();
+        entries.push(NormalizedEntry {
+            guid: entry_url.clone(),
+            url: entry_url,
+            title,
+            summary,
+            content_html,
+            author,
+            published_at: None,
+            enclosures,
+            extras: serde_json::json!({}),
+        });
+    }
+
+    let _ = Ok::<Vec<NormalizedEntry>, Error>(entries);
+
+    // Single-source mode (existing behaviour).
+    let root_path = spec
+        .source
+        .root
+        .as_ref()
+        .ok_or_else(|| Error::Config("source.root is required for json".into()))?;
+    let mapping = spec
+        .source
+        .mapping
+        .as_ref()
+        .ok_or_else(|| Error::Config("source.mapping is required for json".into()))?;
+
+    let json_root: JsonValue = if let Some(from_html) = &spec.source.from_html {
+        let html_req = if let Some(req) = from_html.request.as_ref() {
+            req
+        } else if let Some(req) = spec.source.request.as_ref() {
+            req
+        } else {
+            return Err(Error::Config(
+                "either source.request or from_html.request is required when using from_html"
+                    .into(),
+            ));
+        };
+
+        let fetch_cfg = FetchCfg {
+            user_agent: spec
+                .fetch
+                .user_agent
+                .clone()
+                .or_else(|| feed.user_agent.clone()),
+            headers: None,
+            smart: spec.fetch.smart,
+            timeout_ms: spec.fetch.timeout_ms.or(html_req.timeout_ms),
+            respect_robots: spec.fetch.respect_robots,
+            delay_ms: None,
+            limit: None,
+            proxy_url: None,
+        };
+        let final_html_url = render_with_params(&html_req.url, params.as_ref());
+        let html = fetch_html_strategy(&client, &final_html_url, &fetch_cfg, Some(feed)).await?;
+
+        let doc = Html::parse_document(&html);
+        let sel = Selector::parse(&from_html.selector)
+            .map_err(|e| Error::Parse(format!("invalid from_html selector: {e}")))?;
+        let mut fragments: Vec<JsonValue> = Vec::new();
+        for el in doc.select(&sel) {
+            let text = el.text().collect::<Vec<_>>().join("").trim().to_string();
+            if text.is_empty() {
+                continue;
+            }
             if let Ok(v) = serde_json::from_str::<JsonValue>(&text) {
                 fragments.push(v);
                 if !from_html.multiple.unwrap_or(false) {
@@ -1148,6 +1542,8 @@ pub(crate) async fn execute_json_v1(
 
     Ok(entries)
 }
+
+// execute_single_page_v1_dto was removed; DTO rule execution is not exposed yet.
 
 /// Execute a v1 rule with `source.type = xpath`.
 ///

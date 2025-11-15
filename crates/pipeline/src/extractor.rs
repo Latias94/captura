@@ -16,6 +16,20 @@ pub struct ExtractResult {
     pub title: Option<String>,
 }
 
+/// DTO-style configuration for entry-level full-content extraction.
+/// This is decoupled from database models so it can be reused by
+/// clients (TUI/CLI) and other tools.
+#[derive(Debug, Clone, Default)]
+pub struct EntryExtractConfigDto {
+    pub page_url: String,
+    pub scraper_rules: Option<String>,
+    pub cookies: Option<String>,
+    pub username: Option<String>,
+    pub password: Option<String>,
+    pub user_agent: Option<String>,
+    pub request_timeout_ms: Option<u64>,
+}
+
 /// Apply scraper_rules according to Miniflux semantics (one CSS selector per line).
 fn apply_scraper_rules(doc: &Html, rules: &str) -> Option<String> {
     let selector_lines: Vec<&str> = rules
@@ -130,6 +144,75 @@ pub async fn fetch_and_extract_entry(page_url: &str, f: &feed::Model) -> Result<
     } else {
         warn!(
             url = page_url,
+            "dom_smoothie readability failed, falling back to simple heuristics"
+        );
+    }
+
+    // 3) Fall back to simplified heuristics (readability_pick_raw), then to the full HTML.
+    let mut content_html = readability_pick_raw(&doc);
+    if content_html.is_none() {
+        content_html = Some(html.clone());
+    }
+
+    let title = extract_title(&doc);
+
+    Ok(ExtractResult {
+        content_html: content_html.unwrap_or_default(),
+        title,
+    })
+}
+
+/// Fetch and extract entry content using a DTO configuration
+/// rather than a database feed model. This is intended for
+/// use by clients and tools that do not depend on SeaORM.
+pub async fn fetch_and_extract_entry_dto(cfg: &EntryExtractConfigDto) -> Result<ExtractResult> {
+    let http = crate::http_client::client_basic(cfg.user_agent.clone(), cfg.request_timeout_ms)?;
+    let mut req = http.get(&cfg.page_url);
+    if let Some(ref c) = cfg.cookies {
+        if !c.is_empty() {
+            req = req.header(reqwest::header::COOKIE, c.clone());
+        }
+    }
+    if let Some(ref u) = cfg.username {
+        // Password may be an empty string
+        req = req.basic_auth(u, cfg.password.clone());
+    }
+    let html = req
+        .send()
+        .await
+        .map_err(|e| Error::Network(e.to_string()))?
+        .text()
+        .await
+        .map_err(|e| Error::Network(e.to_string()))?;
+
+    let doc = Html::parse_document(&html);
+
+    // 1) Prefer user-configured scraper_rules (compatible with Miniflux semantics).
+    if let Some(ref rules) = cfg.scraper_rules {
+        if let Some(content) = apply_scraper_rules(&doc, rules) {
+            let title = extract_title(&doc);
+            return Ok(ExtractResult {
+                content_html: content,
+                title,
+            });
+        }
+    }
+
+    // 2) Try dom_smoothie (Rust implementation based on mozilla/readability).
+    if let Some(article) = extract_with_dom_smoothie(&html, Some(&cfg.page_url)) {
+        let article_title = article.title.clone();
+        let title = if article_title.trim().is_empty() {
+            extract_title(&doc)
+        } else {
+            Some(article_title)
+        };
+        return Ok(ExtractResult {
+            content_html: article.content.to_string(),
+            title,
+        });
+    } else {
+        warn!(
+            url = cfg.page_url.as_str(),
             "dom_smoothie readability failed, falling back to simple heuristics"
         );
     }

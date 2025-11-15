@@ -43,7 +43,11 @@ async fn opml_import_follow_view_like() {
         .body(Body::from(opml))
         .unwrap();
     let resp = app.clone().oneshot(req).await.unwrap();
-    assert!(resp.status().is_success(), "import failed: {}", resp.status());
+    assert!(
+        resp.status().is_success(),
+        "import failed: {}",
+        resp.status()
+    );
 
     // List feeds to ensure all outlines became feeds.
     let req = Request::get("/feeds")
@@ -60,4 +64,3 @@ async fn opml_import_follow_view_like() {
     // We inserted 10 outlines; all should be imported as feeds.
     assert_eq!(arr.len(), 10, "unexpected feed count after OPML import");
 }
-

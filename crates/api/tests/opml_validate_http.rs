@@ -15,15 +15,13 @@ async fn api_v1_opml_validate_counts() {
     // 1) Create user
     let req = Request::post("/api/v1/users")
         .header("content-type", "application/json")
-        .body(
-            Body::from(
-                serde_json::json!({
-                    "username": "opml_user",
-                    "password": "p"
-                })
-                .to_string(),
-            ),
-        )
+        .body(Body::from(
+            serde_json::json!({
+                "username": "opml_user",
+                "password": "p"
+            })
+            .to_string(),
+        ))
         .unwrap();
     let resp = app.clone().oneshot(req).await.unwrap();
     assert!(
@@ -35,18 +33,20 @@ async fn api_v1_opml_validate_counts() {
     // 2) Login to get token
     let req = Request::post("/api/v1/auth/login")
         .header("content-type", "application/json")
-        .body(
-            Body::from(
-                serde_json::json!({
-                    "username": "opml_user",
-                    "password": "p"
-                })
-                .to_string(),
-            ),
-        )
+        .body(Body::from(
+            serde_json::json!({
+                "username": "opml_user",
+                "password": "p"
+            })
+            .to_string(),
+        ))
         .unwrap();
     let resp = app.clone().oneshot(req).await.unwrap();
-    assert!(resp.status().is_success(), "login failed: {}", resp.status());
+    assert!(
+        resp.status().is_success(),
+        "login failed: {}",
+        resp.status()
+    );
     let bytes = axum::body::to_bytes(resp.into_body(), 1024 * 1024)
         .await
         .unwrap();
@@ -100,4 +100,3 @@ async fn api_v1_opml_validate_counts() {
         categories
     );
 }
-

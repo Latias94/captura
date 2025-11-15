@@ -136,7 +136,7 @@ impl HttpFetcher {
             });
         }
         if !status.is_success() {
-            return Err(Error::Network(format!("http status {}", status)));
+            return Err(Error::Network(format!("{} -> http status {}", url, status)));
         }
         let parsed = parser::parse(bytes.as_slice()).map_err(|e| Error::Parse(e.to_string()))?;
         Ok(FeedFetchResult {

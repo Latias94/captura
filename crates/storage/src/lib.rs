@@ -25,6 +25,14 @@ pub async fn connect(db_url: &str) -> Result<DatabaseConnection> {
         let _ = db.execute_unprepared("PRAGMA journal_mode=WAL;").await;
         let _ = db.execute_unprepared("PRAGMA foreign_keys=ON;").await;
         let _ = db.execute_unprepared("PRAGMA synchronous=NORMAL;").await;
+        // Configure busy_timeout so short lock contention does not immediately fail.
+        // Default to 5000ms; can be tuned via CAPTURA_SQLITE_BUSY_TIMEOUT_MS.
+        let timeout_ms: i64 = std::env::var("CAPTURA_SQLITE_BUSY_TIMEOUT_MS")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(5000);
+        let pragma = format!("PRAGMA busy_timeout={};", timeout_ms.max(0));
+        let _ = db.execute_unprepared(&pragma).await;
     }
     Ok(db)
 }
