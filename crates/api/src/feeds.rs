@@ -466,7 +466,11 @@ pub(crate) async fn rss_feed(
     State(st): State<AppState>,
     Path(id): Path<i64>,
 ) -> ApiResult<Response> {
-    let Some(f) = feed::Entity::find_by_id(id).one(&st.db).await.map_err(internal)? else {
+    let Some(f) = feed::Entity::find_by_id(id)
+        .one(&st.db)
+        .await
+        .map_err(internal)?
+    else {
         return Err(not_found("feed not found"));
     };
     // collect latest entries
@@ -563,13 +567,7 @@ fn xml_escape(s: &str) -> String {
 }
 
 fn non_empty_opt(v: Option<String>) -> Option<String> {
-    v.and_then(|s| {
-        if s.trim().is_empty() {
-            None
-        } else {
-            Some(s)
-        }
-    })
+    v.and_then(|s| if s.trim().is_empty() { None } else { Some(s) })
 }
 
 async fn load_owned_feed(

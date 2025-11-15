@@ -1,10 +1,11 @@
 use captura_common::{Error, Result};
 use captura_storage::entity::feed;
 use scraper::{ElementRef, Html, Selector};
+use serde_json::Value as JsonValue;
 use url::Url;
 
-use crate::sanitize_html;
 use crate::rules_engine::{fetch_html_strategy, FetchCfg};
+use crate::sanitize_html;
 
 /// Hub 级 HTTP 选项封装，便于在 handler 中复用。
 #[derive(Debug, Clone)]
@@ -12,6 +13,8 @@ pub(crate) struct HubHttpOpts {
     pub user_agent: Option<String>,
     pub timeout_ms: Option<u64>,
     pub smart: bool,
+    /// Optional extra headers to attach for HTTP fetches.
+    pub headers: Option<Vec<(String, String)>>,
 }
 
 impl Default for HubHttpOpts {
@@ -20,6 +23,7 @@ impl Default for HubHttpOpts {
             user_agent: Some("captura/0.1".to_string()),
             timeout_ms: Some(15_000),
             smart: false,
+            headers: None,
         }
     }
 }
@@ -37,9 +41,17 @@ pub(crate) async fn get_html(
 
     let client = crate::http_client::client_basic(Some(ua.clone()), opts.timeout_ms)?;
 
+    let headers_map = opts.headers.as_ref().map(|pairs| {
+        let mut m = serde_json::Map::new();
+        for (k, v) in pairs {
+            m.insert(k.clone(), JsonValue::String(v.clone()));
+        }
+        m
+    });
+
     let fetch_cfg = FetchCfg {
         user_agent: Some(ua),
-        headers: None,
+        headers: headers_map,
         smart: Some(opts.smart),
         timeout_ms: opts.timeout_ms,
         respect_robots: Some(true),

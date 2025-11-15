@@ -70,7 +70,11 @@ pub async fn set_fever_key(
     if req.api_password.trim().is_empty() {
         return Err(bad_request("api_password required"));
     }
-    let Some(u) = user::Entity::find_by_id(id).one(&st.db).await.map_err(internal)? else {
+    let Some(u) = user::Entity::find_by_id(id)
+        .one(&st.db)
+        .await
+        .map_err(internal)?
+    else {
         return Err(crate::error::not_found("user not found"));
     };
     let s = format!("{}:{}", u.username, req.api_password);

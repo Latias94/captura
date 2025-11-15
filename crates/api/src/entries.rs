@@ -6,8 +6,8 @@ use axum_extra::typed_header::TypedHeader;
 use headers::authorization::Bearer;
 use headers::Authorization;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, Condition, DatabaseConnection, EntityTrait, JoinType,
-    Order, QueryFilter, QueryOrder, QuerySelect, RelationTrait,
+    ActiveModelTrait, ColumnTrait, Condition, DatabaseConnection, EntityTrait, JoinType, Order,
+    QueryFilter, QueryOrder, QuerySelect, RelationTrait,
 };
 use serde::{Deserialize, Serialize};
 

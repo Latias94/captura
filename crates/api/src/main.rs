@@ -842,7 +842,11 @@ mod tests {
         .await
         .unwrap();
         let fid = created.0.id;
-        let f = feed::Entity::find_by_id(fid).one(&st.db).await.unwrap().unwrap();
+        let f = feed::Entity::find_by_id(fid)
+            .one(&st.db)
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(f.username.as_deref(), Some("authu"));
         assert_eq!(f.password.as_deref(), Some("authp"));
     }
@@ -932,7 +936,11 @@ mod tests {
         .unwrap();
 
         // verify
-        let f = feed::Entity::find_by_id(fid).one(&st.db).await.unwrap().unwrap();
+        let f = feed::Entity::find_by_id(fid)
+            .one(&st.db)
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(f.username.as_deref(), Some("u2"));
         assert_eq!(f.password.as_deref(), Some("p2"));
     }
@@ -1021,7 +1029,11 @@ mod tests {
         .await
         .unwrap();
 
-        let f = feed::Entity::find_by_id(fid).one(&st.db).await.unwrap().unwrap();
+        let f = feed::Entity::find_by_id(fid)
+            .one(&st.db)
+            .await
+            .unwrap()
+            .unwrap();
         assert!(f.cookies.is_none());
         assert!(f.proxy_url.is_none());
     }
@@ -1171,7 +1183,11 @@ mod tests {
         .unwrap();
         let fid = created.0.id;
 
-        let f = feed::Entity::find_by_id(fid).one(&st.db).await.unwrap().unwrap();
+        let f = feed::Entity::find_by_id(fid)
+            .one(&st.db)
+            .await
+            .unwrap()
+            .unwrap();
         assert!(f.user_agent.is_none());
         assert!(f.cookies.is_none());
         assert!(f.proxy_url.is_none());

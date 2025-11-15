@@ -723,7 +723,9 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "captura-common",
+ "chrono",
  "regex",
+ "reqwest 0.12.24",
  "serde",
  "serde_json",
  "serde_yaml",

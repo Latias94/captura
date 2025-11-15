@@ -123,7 +123,11 @@ pub(crate) async fn get_rule(
     Path(id): Path<i64>,
 ) -> ApiResult<Json<RuleDto>> {
     let _user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
-    let Some(r) = rule::Entity::find_by_id(id).one(&st.db).await.map_err(internal)? else {
+    let Some(r) = rule::Entity::find_by_id(id)
+        .one(&st.db)
+        .await
+        .map_err(internal)?
+    else {
         return Err(not_found("rule not found"));
     };
     Ok(Json(RuleDto {
@@ -142,7 +146,11 @@ pub(crate) async fn update_rule(
     Json(body): Json<CreateRuleReq>,
 ) -> ApiResult<&'static str> {
     let _user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
-    let Some(r) = rule::Entity::find_by_id(id).one(&st.db).await.map_err(internal)? else {
+    let Some(r) = rule::Entity::find_by_id(id)
+        .one(&st.db)
+        .await
+        .map_err(internal)?
+    else {
         return Err(not_found("rule not found"));
     };
     let spec: RuleSpecV1 =
@@ -176,7 +184,11 @@ pub(crate) async fn delete_rule(
     if used > 0 {
         return Err(forbidden("rule is in use by feeds"));
     }
-    let Some(r) = rule::Entity::find_by_id(id).one(&st.db).await.map_err(internal)? else {
+    let Some(r) = rule::Entity::find_by_id(id)
+        .one(&st.db)
+        .await
+        .map_err(internal)?
+    else {
         return Err(not_found("rule not found"));
     };
     let am: rule::ActiveModel = r.into();
@@ -324,7 +336,11 @@ pub(crate) async fn get_template(
     Path(id): Path<i64>,
 ) -> ApiResult<Json<RuleTemplateDto>> {
     let _user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
-    let Some(r) = rule::Entity::find_by_id(id).one(&st.db).await.map_err(internal)? else {
+    let Some(r) = rule::Entity::find_by_id(id)
+        .one(&st.db)
+        .await
+        .map_err(internal)?
+    else {
         return Err(not_found("rule template"));
     };
     let params = extract_params_from_yaml(&r.yaml);

@@ -232,7 +232,10 @@ pub(crate) async fn get(
     ensure_admin(&st, auth.user_id).await?;
     let by_id = id_or_name.parse::<i64>().ok();
     let user = if let Some(id) = by_id {
-        user_entity::Entity::find_by_id(id).one(&st.db).await.map_err(internal)?
+        user_entity::Entity::find_by_id(id)
+            .one(&st.db)
+            .await
+            .map_err(internal)?
     } else {
         user_entity::Entity::find()
             .filter(user_entity::Column::Username.eq(id_or_name))
@@ -293,7 +296,11 @@ pub(crate) async fn update(
 ) -> MfResult<Json<MfUserFullDto>> {
     let auth = mf_auth(&st, &headers).await.map_err(from_api_error)?;
     ensure_admin(&st, auth.user_id).await?;
-    let Some(model) = user_entity::Entity::find_by_id(id).one(&st.db).await.map_err(internal)? else {
+    let Some(model) = user_entity::Entity::find_by_id(id)
+        .one(&st.db)
+        .await
+        .map_err(internal)?
+    else {
         return Err(not_found("user").into());
     };
     let mut am: user_entity::ActiveModel = model.into();
@@ -422,7 +429,11 @@ pub(crate) async fn delete(
     if id == auth.user_id {
         return Err(bad_request("cannot delete self").into());
     }
-    let Some(u) = user_entity::Entity::find_by_id(id).one(&st.db).await.map_err(internal)? else {
+    let Some(u) = user_entity::Entity::find_by_id(id)
+        .one(&st.db)
+        .await
+        .map_err(internal)?
+    else {
         return Err(not_found("user").into());
     };
     let am: user_entity::ActiveModel = u.into();

@@ -115,9 +115,7 @@ pub(crate) struct OidcLoginResp {
 }
 
 /// 列出配置中的 OIDC Provider 名称，用于前端展示可选登录方式。
-pub(crate) async fn oidc_providers(
-    State(st): State<AppState>,
-) -> ApiResult<Json<Vec<String>>> {
+pub(crate) async fn oidc_providers(State(st): State<AppState>) -> ApiResult<Json<Vec<String>>> {
     let names: Vec<String> = st
         .cfg
         .oidc_providers

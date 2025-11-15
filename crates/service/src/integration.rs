@@ -185,9 +185,7 @@ pub async fn emit_save_entry(
             .map(|f| allowed_for_feed(integ.kind(), f))
             .unwrap_or(true)
         {
-            let _ = integ
-                .on_save_entry(&ctx, UserId(user_id), entry)
-                .await;
+            let _ = integ.on_save_entry(&ctx, UserId(user_id), entry).await;
         }
     }
 }

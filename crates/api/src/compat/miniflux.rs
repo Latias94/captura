@@ -876,7 +876,11 @@ mod it {
         assert_eq!(resp.status(), StatusCode::OK);
 
         // verify
-        let model = feed::Entity::find_by_id(f.id).one(&db).await.unwrap().unwrap();
+        let model = feed::Entity::find_by_id(f.id)
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
         assert!(model.username.is_none());
         assert!(model.password.is_none());
     }
@@ -925,7 +929,11 @@ mod it {
         assert_eq!(resp.status(), StatusCode::OK);
 
         // verify
-        let model = feed::Entity::find_by_id(f.id).one(&db).await.unwrap().unwrap();
+        let model = feed::Entity::find_by_id(f.id)
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
         assert!(model.cookies.is_none());
         assert!(model.proxy_url.is_none());
     }
@@ -973,7 +981,11 @@ mod it {
         assert_eq!(resp.status(), StatusCode::OK);
 
         // verify
-        let model = feed::Entity::find_by_id(f.id).one(&db).await.unwrap().unwrap();
+        let model = feed::Entity::find_by_id(f.id)
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
         assert!(model.user_agent.is_none());
     }
 

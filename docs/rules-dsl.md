@@ -337,6 +337,59 @@ source:
   - If `true`, the detail page URL is taken from the `link` field.
   - If `false`, the list page HTML may be reused as the content source.
 
+#### 3.3.3 `detail_extra` block (optional)
+
+For list-detail rules that need a second HTTP request per item (for example,
+to fetch JSON/GraphQL details), v1 supports an optional `detail_extra` block:
+
+```yaml
+source:
+  type: list_detail
+  # ... list/content as above ...
+
+  detail_extra:
+    request:
+      url: "https://api.example.com/item/{id}"
+      method: GET
+      # headers/timeout_ms/body follow the same schema as §3.1 Request
+    params_from:
+      id: "a@data-id"
+    root: "data"
+```
+
+Fields:
+
+- `request` (object, required):
+  - Reuses the same schema as `RequestSpec` (§3.1):
+    - `url` is treated as a template and rendered with parameters,
+      using `{name}` placeholders.
+    - `method`, `headers`, `timeout_ms`, `body` behave as in other requests.
+- `params_from` (map<string,string>, optional):
+  - Keys are parameter names; values are CSS/attribute expressions evaluated
+    relative to each list item node:
+    - e.g. `id: "a@data-id"` extracts the `data-id` attribute from the first
+      `<a>` inside the item.
+  - The resulting key/value pairs are merged into the parameter map used to
+    render `detail_extra.request.url`, in addition to `params.defaults` and
+    `feed.rule_params_json`.
+- `root` (string, optional):
+  - Dot-notation JSON path inside the extra response (e.g. `"data.item"`).
+  - If set, the value at that path is used; otherwise the full JSON body is
+    used.
+
+Semantics:
+
+- For each entry produced by the list:
+  1. Build parameters from rule defaults + feed params + `params_from` on the
+     corresponding list item element.
+  2. Render `detail_extra.request.url` with `{name}` placeholders.
+  3. Perform the HTTP request (currently treated as JSON).
+  4. Parse the response as JSON; if `root` is set, navigate to that path.
+  5. Assign the resulting JSON value to `entry.extras`.
+
+This allows expressing “HTML list + per-item JSON/GraphQL detail” patterns in
+DSL v1 without writing custom Rust handlers.
+
 ---
 
 ### 3.4 `type: single_page`
@@ -432,6 +485,43 @@ Supported mapping keys:
 
   - All fields are optional; if `url` is missing or empty, no enclosure is
     created.
+
+Multi-source example:
+
+```yaml
+source:
+  type: json
+
+  sources:
+    - request:
+        url: "https://api.example.com/listA"
+      root: "data.items"
+      mapping:
+        title: title
+        url: link
+    - request:
+        url: "https://api.example.com/listB"
+      root: "payload.results"
+      mapping:
+        title: name
+        url: url
+```
+
+When `sources` is present, the top-level `request/root/mapping/from_html`
+fields are ignored and instead each entry in `sources` defines:
+
+- `request`: per-source JSON request (same schema as above, without `from_html`).
+- `root`: optional JSON path for that source.
+- `mapping`: field mapping for that source.
+
+Semantics:
+
+- For each `sources[i]`:
+  1. Render `request.url` with params.
+  2. Fetch JSON from the rendered URL (honouring `method/headers/timeout_ms`).
+  3. Navigate to `root` (if set) or use the whole JSON value.
+  4. Expect an array at that location; apply `mapping` for each item to build entries.
+- All entries from all sources are concatenated into a single list.
 
 #### 3.5.1 Extracting JSON from HTML (optional)
 
@@ -607,6 +697,11 @@ transform:
 
   content_merge:
     mode: replace   # replace | prepend | append
+
+  description_template: |
+    <p><strong>{title}</strong></p>
+    <p>{summary}</p>
+    <p><a href="{url}">查看原文</a></p>
 ```
 
 ### 5.1 Rewrite syntax
@@ -657,6 +752,18 @@ engine:
   entries (e.g. “fetch full content” actions on already‑stored items). Rule‑type
   feeds that generate entries from scratch may ignore `content_merge` or treat
   `replace` as the default.
+
+- `description_template` (string, optional):
+  - A simple string template used to build `content_html` for each entry.
+  - Supported placeholders:
+    - `{title}` – entry title (empty if missing).
+    - `{summary}` – entry summary (empty if missing).
+    - `{url}` – entry URL (empty if missing).
+    - `{author}` – entry author (empty if missing).
+    - `{content_html}` – current HTML content (empty if missing).
+  - The engine applies this template after filters and conditional
+    full-content fetch, and overwrites `entry.content_html` with the rendered
+    and sanitized HTML.
 
 ---
 

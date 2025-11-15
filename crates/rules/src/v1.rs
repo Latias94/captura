@@ -79,6 +79,7 @@ pub struct SourceSpec {
     // list_detail
     pub list: Option<ListSourceSpec>,
     pub content: Option<ContentSpec>,
+    pub detail_extra: Option<DetailExtraSpec>,
 
     // single_page / json / xpath
     pub request: Option<RequestSpec>,
@@ -87,6 +88,7 @@ pub struct SourceSpec {
     pub root: Option<String>,
     pub mapping: Option<JsonMappingSpec>,
     pub from_html: Option<FromHtmlSpec>,
+    pub sources: Option<Vec<JsonSourceSpec>>,
 
     // xpath
     pub xpath: Option<XPathSpec>,
@@ -111,6 +113,25 @@ pub struct ListSourceSpec {
     pub title: Option<String>,
     pub summary: Option<String>,
     pub published_at: Option<TimestampSpec>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct DetailExtraSpec {
+    /// Request used to fetch per-item extra data (typically JSON).
+    pub request: RequestSpec,
+    /// Mapping from parameter name to CSS/attr expression evaluated on each list item node,
+    /// e.g. `id: "a@data-id"`.
+    #[serde(default)]
+    pub params_from: std::collections::HashMap<String, String>,
+    /// Optional JSON path inside the extra response to merge into `extras` (dot-notation).
+    pub root: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JsonSourceSpec {
+    pub request: RequestSpec,
+    pub root: Option<String>,
+    pub mapping: JsonMappingSpec,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -212,6 +233,7 @@ pub struct TransformSpec {
     pub content_rewrite: Option<Vec<String>>,
     pub content_remove_selectors: Option<Vec<String>>,
     pub content_merge: Option<ContentMergeSpec>,
+    pub description_template: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -272,18 +294,40 @@ pub fn validate_v1(spec: &RuleSpecV1) -> Result<()> {
             }
         }
         SourceType::Json => {
-            if spec.source.root.is_none() {
-                return Err(Error::Parse("source.root is required for type=json".into()));
-            }
-            if spec.source.mapping.is_none() {
-                return Err(Error::Parse(
-                    "source.mapping is required for type=json".into(),
-                ));
-            }
-            if spec.source.request.is_none() && spec.source.from_html.is_none() {
-                return Err(Error::Parse(
-                    "either source.request or source.from_html is required for type=json".into(),
-                ));
+            if let Some(sources) = &spec.source.sources {
+                if sources.is_empty() {
+                    return Err(Error::Parse(
+                        "source.sources must not be empty when provided for type=json".into(),
+                    ));
+                }
+                for src in sources {
+                    if src.mapping.title.is_none()
+                        && src.mapping.url.is_none()
+                        && src.mapping.summary.is_none()
+                        && src.mapping.content_html.is_none()
+                        && src.mapping.author.is_none()
+                        && src.mapping.enclosure.is_none()
+                    {
+                        return Err(Error::Parse(
+                            "each json source.mapping must map at least one field".into(),
+                        ));
+                    }
+                }
+            } else {
+                if spec.source.root.is_none() {
+                    return Err(Error::Parse("source.root is required for type=json".into()));
+                }
+                if spec.source.mapping.is_none() {
+                    return Err(Error::Parse(
+                        "source.mapping is required for type=json".into(),
+                    ));
+                }
+                if spec.source.request.is_none() && spec.source.from_html.is_none() {
+                    return Err(Error::Parse(
+                        "either source.request or source.from_html is required for type=json"
+                            .into(),
+                    ));
+                }
             }
         }
         SourceType::XPath => {

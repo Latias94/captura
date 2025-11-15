@@ -147,13 +147,9 @@ pub async fn run_once(db: &DatabaseConnection, max: u64) -> Result<usize> {
                         am.last_error = Set(Some(msg.clone()));
                         if let Some(fid) = j.feed_id {
                             // attempts 在运行前已 +1，这里应传入最新的 attempts 值
-                            let _ = update_feed_on_failure(
-                                &db,
-                                FeedId(fid),
-                                j.attempts + 1,
-                                Some(msg),
-                            )
-                            .await;
+                            let _ =
+                                update_feed_on_failure(&db, FeedId(fid), j.attempts + 1, Some(msg))
+                                    .await;
                         } else if matches!(j.job_type, job::JobType::Integration) {
                             // 对于集成任务，按通用回退规则设置下一次运行时间
                             let now2 = Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
@@ -497,7 +493,11 @@ mod it {
         assert!(j.last_error.unwrap_or_default().contains("rule"));
 
         // feed 应设置回退后的 next_run_at，并记录 error_count=1
-        let f2 = feed::Entity::find_by_id(f.id).one(&db).await.unwrap().unwrap();
+        let f2 = feed::Entity::find_by_id(f.id)
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
         assert!(f2.next_run_at.unwrap() > now);
         assert_eq!(f2.error_count, 1);
     }

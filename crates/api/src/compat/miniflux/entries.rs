@@ -290,7 +290,11 @@ pub(crate) async fn get(
     Path(id): Path<i64>,
 ) -> MfResult<Json<MfEntryDto>> {
     let auth = mf_auth(&st, &headers).await.map_err(from_api_error)?;
-    let Some(e) = entry::Entity::find_by_id(id).one(&st.db).await.map_err(internal)? else {
+    let Some(e) = entry::Entity::find_by_id(id)
+        .one(&st.db)
+        .await
+        .map_err(internal)?
+    else {
         return Err(not_found("entry").into());
     };
     let Some(f) = feed::Entity::find_by_id(e.feed_id)
@@ -420,7 +424,11 @@ pub(crate) async fn update(
     Json(body): Json<MfUpdateEntry>,
 ) -> MfResult<Json<MfEntryDto>> {
     let auth = mf_auth(&st, &headers).await.map_err(from_api_error)?;
-    let Some(e) = entry::Entity::find_by_id(id).one(&st.db).await.map_err(internal)? else {
+    let Some(e) = entry::Entity::find_by_id(id)
+        .one(&st.db)
+        .await
+        .map_err(internal)?
+    else {
         return Err(not_found("entry").into());
     };
     let owned = feed::Entity::find_by_id(e.feed_id)
@@ -457,7 +465,11 @@ pub(crate) async fn update(
     }
     let _ = am.update(&st.db).await.map_err(internal)?;
     // 返回更新后的条目（与 GET /v1/entries/:id 一致）
-    let Some(e) = entry::Entity::find_by_id(id).one(&st.db).await.map_err(internal)? else {
+    let Some(e) = entry::Entity::find_by_id(id)
+        .one(&st.db)
+        .await
+        .map_err(internal)?
+    else {
         return Err(not_found("entry").into());
     };
     let Some(f) = feed::Entity::find_by_id(e.feed_id)
@@ -528,7 +540,11 @@ pub(crate) async fn toggle_star(
     Path(id): Path<i64>,
 ) -> MfResult<axum::response::Response> {
     let auth = mf_auth(&st, &headers).await.map_err(from_api_error)?;
-    let Some(e) = entry::Entity::find_by_id(id).one(&st.db).await.map_err(internal)? else {
+    let Some(e) = entry::Entity::find_by_id(id)
+        .one(&st.db)
+        .await
+        .map_err(internal)?
+    else {
         return Err(not_found("entry").into());
     };
     let owned = feed::Entity::find_by_id(e.feed_id)
@@ -610,7 +626,11 @@ pub(crate) async fn fetch_content(
     Query(q): Query<MfFetchContentQuery>,
 ) -> MfResult<Json<MfEntryContentResp>> {
     let auth = mf_auth(&st, &headers).await.map_err(from_api_error)?;
-    let Some(e) = entry::Entity::find_by_id(id).one(&st.db).await.map_err(internal)? else {
+    let Some(e) = entry::Entity::find_by_id(id)
+        .one(&st.db)
+        .await
+        .map_err(internal)?
+    else {
         return Err(not_found("entry").into());
     };
     let owned = feed::Entity::find_by_id(e.feed_id)
@@ -677,7 +697,11 @@ pub(crate) async fn save(
     Path(id): Path<i64>,
 ) -> MfResult<&'static str> {
     let auth = mf_auth(&st, &headers).await.map_err(from_api_error)?;
-    let Some(e) = entry::Entity::find_by_id(id).one(&st.db).await.map_err(internal)? else {
+    let Some(e) = entry::Entity::find_by_id(id)
+        .one(&st.db)
+        .await
+        .map_err(internal)?
+    else {
         return Err(not_found("entry").into());
     };
     let owned = feed::Entity::find_by_id(e.feed_id)
@@ -696,7 +720,11 @@ pub(crate) async fn save(
     let mut am: entry::ActiveModel = e.into();
     am.extras_json = Set(Some(extras));
     let _ = am.update(&st.db).await.map_err(internal)?;
-    if let Some(model) = entry::Entity::find_by_id(id).one(&st.db).await.map_err(internal)? {
+    if let Some(model) = entry::Entity::find_by_id(id)
+        .one(&st.db)
+        .await
+        .map_err(internal)?
+    {
         let _ = captura_service::webhook::emit_save_entry(
             &st.db,
             captura_common::UserId(auth.user_id),
@@ -731,7 +759,11 @@ pub(crate) async fn add_tags(
     Json(body): Json<MfSetTagsReq>,
 ) -> MfResult<&'static str> {
     let auth = mf_auth(&st, &headers).await.map_err(from_api_error)?;
-    let Some(e) = entry::Entity::find_by_id(id).one(&st.db).await.map_err(internal)? else {
+    let Some(e) = entry::Entity::find_by_id(id)
+        .one(&st.db)
+        .await
+        .map_err(internal)?
+    else {
         return Err(not_found("entry").into());
     };
     let owned = feed::Entity::find_by_id(e.feed_id)
@@ -818,7 +850,11 @@ pub(crate) async fn remove_tags(
     Json(body): Json<MfSetTagsReq>,
 ) -> MfResult<&'static str> {
     let auth = mf_auth(&st, &headers).await?;
-    let Some(e) = entry::Entity::find_by_id(id).one(&st.db).await.map_err(internal)? else {
+    let Some(e) = entry::Entity::find_by_id(id)
+        .one(&st.db)
+        .await
+        .map_err(internal)?
+    else {
         return Err(not_found("entry").into());
     };
     let owned = feed::Entity::find_by_id(e.feed_id)

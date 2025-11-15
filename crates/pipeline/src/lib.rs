@@ -12,13 +12,13 @@ use tracing::{debug, instrument};
 use url::Url;
 
 mod handlers;
+mod http_client;
 mod hub_bridge;
 mod hub_utils;
-mod http_client;
 mod rules_engine;
 
-pub use rules_engine::{refresh_rule_v1, refresh_rule_v1_with_yaml, refresh_rule_with_yaml};
 pub use hub_bridge::execute_hub_route;
+pub use rules_engine::{refresh_rule_v1, refresh_rule_v1_with_yaml, refresh_rule_with_yaml};
 
 #[derive(Debug, Clone)]
 pub struct RefreshMeta {
@@ -377,7 +377,6 @@ async fn readability_like_strategy_async(
         .map(|raw| sanitize_html(&raw))
         .or_else(|| Some(sanitize_html(&html)))
 }
-
 
 #[cfg(test)]
 mod live_tests {

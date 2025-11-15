@@ -74,15 +74,11 @@ pub fn build_router(app_state: AppState) -> Router {
             "/feeds/{id}/enqueue-refresh",
             post(crate::feeds::enqueue_feed_refresh),
         )
-        .route(
-            "/feeds/{id}/favicon/refresh",
-            post(crate::favicon::refresh),
-        )
+        .route("/feeds/{id}/favicon/refresh", post(crate::favicon::refresh))
         .route("/favicons/{id}", get(crate::favicon::get))
         .route(
             "/categories",
-            get(crate::categories::list_categories)
-                .post(crate::categories::create_category),
+            get(crate::categories::list_categories).post(crate::categories::create_category),
         )
         .route(
             "/categories/{id}",
@@ -156,10 +152,7 @@ pub fn build_router(app_state: AppState) -> Router {
         )
         .route("/feeds/validate-hub", post(crate::hub::validate_hub))
         .route("/hub/routes", get(crate::hub::list_routes))
-        .route(
-            "/hub/routes/{namespace}/{name}",
-            get(crate::hub::get_route),
-        )
+        .route("/hub/routes/{namespace}/{name}", get(crate::hub::get_route))
         .route("/hub/preview", post(crate::hub::preview_hub));
 
     let compat_root = Router::new()
@@ -271,9 +264,8 @@ pub fn build_router(app_state: AppState) -> Router {
                 ));
             }
         } else {
-            let v = axum::http::HeaderValue::from_static(
-                "default-src 'self'; frame-ancestors 'none';",
-            );
+            let v =
+                axum::http::HeaderValue::from_static("default-src 'self'; frame-ancestors 'none';");
             app = app.layer(SetResponseHeaderLayer::overriding(
                 axum::http::header::HeaderName::from_static("content-security-policy"),
                 v,

@@ -1,13 +1,21 @@
 use crate::types::{RouteMeta, RouteRegistration};
-use crate::{github, hn, lobsters, medium, reuters, zhihu};
+use crate::{bilibili, github, hn, lobsters, medium, reuters, zhihu};
 
-static BUILTIN_ROUTE_METAS: [&RouteMeta; 6] = [
+static BUILTIN_ROUTE_METAS: [&RouteMeta; 14] = [
     github::ROUTES[0],
     hn::ROUTES[0],
     lobsters::ROUTES[0],
     zhihu::ROUTES[0],
     reuters::ROUTES[0],
     medium::ROUTES[0],
+    bilibili::ROUTES[0],
+    bilibili::ROUTES[1],
+    bilibili::ROUTES[2],
+    bilibili::ROUTES[3],
+    bilibili::ROUTES[4],
+    bilibili::ROUTES[5],
+    bilibili::ROUTES[6],
+    bilibili::ROUTES[7],
 ];
 
 /// Placeholder registry for built-in Hub routes metadata.

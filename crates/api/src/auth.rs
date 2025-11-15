@@ -62,8 +62,8 @@ pub async fn mf_auth(st: &AppState, headers: &HeaderMap) -> ApiResult<AuthUser> 
                 if let Some(b64) = s.strip_prefix("Basic ") {
                     if let Ok(raw) = base64::engine::general_purpose::STANDARD.decode(b64) {
                         if let Ok(pair) = std::str::from_utf8(&raw) {
-                                if let Some((username, password)) = pair.split_once(':') {
-                                    // 校验用户口令
+                            if let Some((username, password)) = pair.split_once(':') {
+                                // 校验用户口令
                                 let u = user::Entity::find()
                                     .filter(
                                         captura_storage::entity::user::Column::Username

@@ -1,3 +1,4 @@
+pub mod bilibili;
 pub mod github;
 pub mod hn;
 pub mod lobsters;

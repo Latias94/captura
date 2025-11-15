@@ -86,6 +86,21 @@ impl<'a> HandlerCtx<'a> {
     pub fn param_str(&self, key: &str) -> Option<&str> {
         self.params.get(key).and_then(|v| v.as_str())
     }
+
+    /// Try to read a parameter as i64.
+    ///
+    /// Accepts both JSON numbers and string-encoded integers.
+    pub fn param_i64(&self, key: &str) -> Option<i64> {
+        if let Some(v) = self.params.get(key) {
+            if let Some(n) = v.as_i64() {
+                return Some(n);
+            }
+            if let Some(s) = v.as_str() {
+                return s.parse().ok();
+            }
+        }
+        None
+    }
 }
 
 #[async_trait::async_trait]
