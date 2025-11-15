@@ -28,11 +28,25 @@ impl ApiError {
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
+        let status = self.status;
+        let code = self.code;
+        let message = self.message;
+
+        // Log server-side errors so they are visible in application logs.
+        if status.is_server_error() {
+            tracing::error!(
+                %status,
+                code,
+                message = %message,
+                "API error response"
+            );
+        }
+
         let body = ErrorBody {
-            code: self.code.to_string(),
-            message: self.message,
+            code: code.to_string(),
+            message,
         };
-        (self.status, Json(body)).into_response()
+        (status, Json(body)).into_response()
     }
 }
 

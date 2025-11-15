@@ -32,6 +32,7 @@ use axum::{
 };
 use sea_orm::{ConnectionTrait, DatabaseConnection};
 use tower_http::set_header::SetResponseHeaderLayer;
+use tower_http::trace::TraceLayer;
 
 /// Build the full application Router, including:
 /// - `/api/v1` primary API (auth/feeds/entries/jobs/...)
@@ -102,6 +103,7 @@ pub fn build_router(app_state: AppState) -> Router {
         .route("/entries/{id}/star", post(crate::entries::mark_star))
         .route("/opml/export", get(crate::opml::export))
         .route("/opml/import", post(crate::opml::import))
+        .route("/opml/validate", post(crate::opml::validate))
         // jobs
         .route("/jobs", get(crate::jobs::list_jobs))
         .route("/jobs/run-once", post(crate::jobs::run_jobs_once))
@@ -240,7 +242,8 @@ pub fn build_router(app_state: AppState) -> Router {
         }
     }
 
-    app
+    // Attach an HTTP trace layer for structured request/response logging.
+    app.layer(TraceLayer::new_for_http())
 }
 
 /// Build a Miniflux compatibility router with minimal routes (for tests)

@@ -143,6 +143,12 @@ pub async fn run_once(db: &DatabaseConnection, max: u64) -> Result<usize> {
                     }
                     Err(err) => {
                         let msg = err.to_string();
+                        tracing::error!(
+                            job_id = j.id,
+                            job_type = ?j.job_type,
+                            %msg,
+                            "scheduler job failed"
+                        );
                         am.status = Set(job::JobStatus::Failed);
                         am.last_error = Set(Some(msg.clone()));
                         if let Some(fid) = j.feed_id {

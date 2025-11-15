@@ -9,6 +9,7 @@ use crate::auth::AuthUser;
 use crate::error::{bad_request, internal, ApiResult};
 use crate::AppState;
 use captura_storage::entity::{category, feed};
+use serde::Serialize;
 
 pub(crate) async fn export(
     State(st): State<AppState>,
@@ -158,6 +159,47 @@ pub(crate) async fn import(
         }
     }
     Ok("ok")
+}
+
+/// Response payload for OPML validation endpoint.
+#[derive(Serialize)]
+pub(crate) struct OpmlValidateResp {
+    pub feeds: usize,
+    pub categories: usize,
+}
+
+/// Validate an OPML document without mutating the database.
+/// Returns counts of detected feeds and categories so the Web UI
+/// can show a pre-import summary to the user.
+pub(crate) async fn validate(
+    State(st): State<AppState>,
+    TypedHeader(Authorization(bearer)): TypedHeader<Authorization<Bearer>>,
+    body: String,
+) -> ApiResult<axum::Json<OpmlValidateResp>> {
+    // Require authentication for consistency with import/export endpoints.
+    let _user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
+
+    const MAX_OPML_BYTES: usize = 2_000_000;
+    if body.len() > MAX_OPML_BYTES {
+        return Err(bad_request("OPML too large"));
+    }
+
+    // Try full XML parsing first; fall back to the tolerant extractor.
+    let nodes = match parse_opml_quickxml(&body) {
+        Ok(nodes) => nodes,
+        Err(_) => extract_outlines(&body),
+    };
+
+    let mut feeds = 0usize;
+    let mut categories = 0usize;
+    for n in nodes {
+        match n {
+            OutlineNode::Feed { .. } => feeds += 1,
+            OutlineNode::Category { .. } => categories += 1,
+        }
+    }
+
+    Ok(axum::Json(OpmlValidateResp { feeds, categories }))
 }
 
 pub(crate) fn xml_escape(s: &str) -> String {
