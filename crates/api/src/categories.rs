@@ -13,8 +13,7 @@ use captura_storage::entity::category;
 
 use crate::auth::AuthUser;
 use crate::error::{bad_request, internal, not_found, ApiResult};
-use crate::AppState;
-use captura_api::IdResp;
+use crate::{AppState, IdResp};
 
 #[derive(Serialize)]
 pub(crate) struct CategoryDto {

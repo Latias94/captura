@@ -8,7 +8,8 @@ use chrono::{FixedOffset, Utc};
 use headers::authorization::Bearer;
 use headers::Authorization;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect, Set,
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder,
+    QuerySelect, Set,
 };
 use serde::{Deserialize, Serialize};
 use url::Url;
@@ -67,10 +68,10 @@ pub(crate) struct FeedsQuery {
     pub category_id: Option<i64>,
     pub disabled: Option<bool>,
     pub has_errors: Option<bool>,
-    pub sort_by: Option<String>,
-    pub order: Option<String>,
-    pub limit: Option<u64>,
-    pub offset: Option<u64>,
+    #[serde(flatten)]
+    pub sorting: crate::util::Sorting,
+    #[serde(flatten)]
+    pub paging: crate::util::Paging,
 }
 
 pub(crate) async fn list_feeds(
@@ -79,11 +80,11 @@ pub(crate) async fn list_feeds(
     axum::extract::Query(q): axum::extract::Query<FeedsQuery>,
 ) -> ApiResult<Json<Vec<FeedDto>>> {
     let user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
-    validate_limit_offset(q.limit, q.offset)?;
+    validate_limit_offset(q.paging.limit, q.paging.offset)?;
     validate_sort(
-        &q.sort_by,
+        &q.sorting.sort_by,
         &["updated_at", "created_at", "error_count", "title"],
-        &q.order,
+        &q.sorting.order,
     )?;
     let mut sel = feed::Entity::find().filter(feed::Column::UserId.eq(user.user_id));
     if let Some(cid) = q.category_id {
@@ -99,41 +100,41 @@ pub(crate) async fn list_feeds(
             feed::Column::ErrorCount.eq(0)
         });
     }
-    match q.sort_by.as_deref() {
+    match q.sorting.sort_by.as_deref() {
         Some("created_at") => {
-            sel = match q.order.as_deref() {
+            sel = match q.sorting.order.as_deref() {
                 Some("asc") => sel.order_by_asc(feed::Column::CreatedAt),
                 _ => sel.order_by_desc(feed::Column::CreatedAt),
             }
         }
         Some("updated_at") => {
-            sel = match q.order.as_deref() {
+            sel = match q.sorting.order.as_deref() {
                 Some("asc") => sel.order_by_asc(feed::Column::UpdatedAt),
                 _ => sel.order_by_desc(feed::Column::UpdatedAt),
             }
         }
         Some("error_count") => {
-            sel = match q.order.as_deref() {
+            sel = match q.sorting.order.as_deref() {
                 Some("asc") => sel.order_by_asc(feed::Column::ErrorCount),
                 _ => sel.order_by_desc(feed::Column::ErrorCount),
             }
         }
         Some("title") => {
-            sel = match q.order.as_deref() {
+            sel = match q.sorting.order.as_deref() {
                 Some("desc") => sel.order_by_desc(feed::Column::Title),
                 _ => sel.order_by_asc(feed::Column::Title),
             }
         }
         _ => {
-            sel = match q.order.as_deref() {
+            sel = match q.sorting.order.as_deref() {
                 Some("asc") => sel.order_by_asc(feed::Column::UpdatedAt),
                 _ => sel.order_by_desc(feed::Column::UpdatedAt),
             }
         }
     }
-    let l = q.limit.unwrap_or(100);
+    let l = q.paging.limit.unwrap_or(100);
     sel = sea_orm::QuerySelect::limit(sel, l);
-    if let Some(o) = q.offset {
+    if let Some(o) = q.paging.offset {
         sel = sea_orm::QuerySelect::offset(sel, o);
     }
     let list = sel.all(&st.db).await.map_err(internal)?;
@@ -157,15 +158,7 @@ pub(crate) async fn get_feed(
     Path(id): Path<i64>,
 ) -> ApiResult<Json<FeedDto>> {
     let user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
-    let Some(f) = feed::Entity::find()
-        .filter(feed::Column::UserId.eq(user.user_id))
-        .filter(feed::Column::Id.eq(id))
-        .one(&st.db)
-        .await
-        .map_err(internal)?
-    else {
-        return Err(not_found("feed not found"));
-    };
+    let f = load_owned_feed(&st.db, user.user_id, id).await?;
     Ok(Json(FeedDto {
         id: f.id,
         title: f.title,
@@ -204,15 +197,7 @@ pub(crate) async fn update_feed(
     Json(body): Json<UpdateFeedReq>,
 ) -> ApiResult<&'static str> {
     let user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
-    let Some(f) = feed::Entity::find()
-        .filter(feed::Column::UserId.eq(user.user_id))
-        .filter(feed::Column::Id.eq(id))
-        .one(&st.db)
-        .await
-        .map_err(internal)?
-    else {
-        return Err(not_found("feed not found"));
-    };
+    let f = load_owned_feed(&st.db, user.user_id, id).await?;
     if let Some(cid) = body.category_id {
         crate::util::assert_category_ownership(&st.db, user.user_id, cid).await?;
     }
@@ -260,15 +245,7 @@ pub(crate) async fn delete_feed(
     Path(id): Path<i64>,
 ) -> ApiResult<&'static str> {
     let user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
-    let Some(f) = feed::Entity::find()
-        .filter(feed::Column::UserId.eq(user.user_id))
-        .filter(feed::Column::Id.eq(id))
-        .one(&st.db)
-        .await
-        .map_err(internal)?
-    else {
-        return Err(not_found("feed not found"));
-    };
+    let f = load_owned_feed(&st.db, user.user_id, id).await?;
     let am: feed::ActiveModel = f.into();
     am.delete(&st.db).await.map_err(internal)?;
     Ok("ok")
@@ -366,42 +343,12 @@ pub(crate) async fn create_feed(
             feed_url: Set(body.feed_url.clone()),
             rule_id: Set(Some(tpl.id)),
             rule_params_json: Set(Some(params)),
-            user_agent: Set(body.user_agent.clone().and_then(|s| {
-                if s.trim().is_empty() {
-                    None
-                } else {
-                    Some(s)
-                }
-            })),
-            username: Set(body.username.clone().and_then(|s| {
-                if s.trim().is_empty() {
-                    None
-                } else {
-                    Some(s)
-                }
-            })),
-            password: Set(body.password.clone().and_then(|s| {
-                if s.trim().is_empty() {
-                    None
-                } else {
-                    Some(s)
-                }
-            })),
+            user_agent: Set(non_empty_opt(body.user_agent.clone())),
+            username: Set(non_empty_opt(body.username.clone())),
+            password: Set(non_empty_opt(body.password.clone())),
             headers_json: Set(body.headers_json),
-            cookies: Set(body.cookies.clone().and_then(|s| {
-                if s.trim().is_empty() {
-                    None
-                } else {
-                    Some(s)
-                }
-            })),
-            proxy_url: Set(body.proxy_url.clone().and_then(|s| {
-                if s.trim().is_empty() {
-                    None
-                } else {
-                    Some(s)
-                }
-            })),
+            cookies: Set(non_empty_opt(body.cookies.clone())),
+            proxy_url: Set(non_empty_opt(body.proxy_url.clone())),
             fetch_via_proxy: Set(body.fetch_via_proxy.unwrap_or(false)),
             disable_http2: Set(body.disable_http2.unwrap_or(false)),
             allow_invalid_certs: Set(body.allow_invalid_certs.unwrap_or(false)),
@@ -438,42 +385,12 @@ pub(crate) async fn create_feed(
         feed_url: Set(normalized_feed_url.clone()),
         rule_id: Set(body.rule_id),
         rule_params_json: Set(body.rule_params_json),
-        user_agent: Set(body.user_agent.clone().and_then(|s| {
-            if s.trim().is_empty() {
-                None
-            } else {
-                Some(s)
-            }
-        })),
-        username: Set(body.username.clone().and_then(|s| {
-            if s.trim().is_empty() {
-                None
-            } else {
-                Some(s)
-            }
-        })),
-        password: Set(body.password.clone().and_then(|s| {
-            if s.trim().is_empty() {
-                None
-            } else {
-                Some(s)
-            }
-        })),
+        user_agent: Set(non_empty_opt(body.user_agent.clone())),
+        username: Set(non_empty_opt(body.username.clone())),
+        password: Set(non_empty_opt(body.password.clone())),
         headers_json: Set(body.headers_json),
-        cookies: Set(body.cookies.clone().and_then(|s| {
-            if s.trim().is_empty() {
-                None
-            } else {
-                Some(s)
-            }
-        })),
-        proxy_url: Set(body.proxy_url.clone().and_then(|s| {
-            if s.trim().is_empty() {
-                None
-            } else {
-                Some(s)
-            }
-        })),
+        cookies: Set(non_empty_opt(body.cookies.clone())),
+        proxy_url: Set(non_empty_opt(body.proxy_url.clone())),
         fetch_via_proxy: Set(body.fetch_via_proxy.unwrap_or(false)),
         disable_http2: Set(body.disable_http2.unwrap_or(false)),
         allow_invalid_certs: Set(body.allow_invalid_certs.unwrap_or(false)),
@@ -506,15 +423,7 @@ pub(crate) async fn refresh_feed(
     Path(id): Path<i64>,
 ) -> ApiResult<Json<serde_json::Value>> {
     let user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
-    let Some(f) = feed::Entity::find()
-        .filter(feed::Column::Id.eq(id))
-        .filter(feed::Column::UserId.eq(user.user_id))
-        .one(&st.db)
-        .await
-        .map_err(internal)?
-    else {
-        return Err(not_found("feed not found"));
-    };
+    let f = load_owned_feed(&st.db, user.user_id, id).await?;
     let inserted = service::refresh_and_persist(&st.db, &f)
         .await
         .map_err(internal)?;
@@ -532,15 +441,7 @@ pub(crate) async fn enqueue_feed_refresh(
     Path(id): Path<i64>,
 ) -> ApiResult<Json<EnqueueResp>> {
     let user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
-    let Some(f) = feed::Entity::find()
-        .filter(feed::Column::Id.eq(id))
-        .filter(feed::Column::UserId.eq(user.user_id))
-        .one(&st.db)
-        .await
-        .map_err(internal)?
-    else {
-        return Err(not_found("feed not found"));
-    };
+    let f = load_owned_feed(&st.db, user.user_id, id).await?;
     let now = Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
     let am = job::ActiveModel {
         user_id: Set(user.user_id),
@@ -659,4 +560,31 @@ fn xml_escape(s: &str) -> String {
         .replace('<', "&lt;")
         .replace('>', "&gt;")
         .replace('"', "&quot;")
+}
+
+fn non_empty_opt(v: Option<String>) -> Option<String> {
+    v.and_then(|s| {
+        if s.trim().is_empty() {
+            None
+        } else {
+            Some(s)
+        }
+    })
+}
+
+async fn load_owned_feed(
+    db: &DatabaseConnection,
+    user_id: i64,
+    feed_id: i64,
+) -> ApiResult<feed::Model> {
+    let Some(f) = feed::Entity::find()
+        .filter(feed::Column::UserId.eq(user_id))
+        .filter(feed::Column::Id.eq(feed_id))
+        .one(db)
+        .await
+        .map_err(internal)?
+    else {
+        return Err(not_found("feed not found"));
+    };
+    Ok(f)
 }

@@ -1,6 +1,6 @@
+use captura_common::UserId;
 use captura_storage::entity::webhook;
 use hmac::{Hmac, Mac};
-use reqwest::Client;
 use sea_orm::{
     ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QuerySelect, RelationTrait,
 };
@@ -8,7 +8,7 @@ use sha2::Sha256;
 
 pub async fn emit_new_entries(
     db: &DatabaseConnection,
-    user_id: i64,
+    user_id: UserId,
     feed: &captura_storage::entity::feed::Model,
     entry_ids: &[i64],
 ) -> captura_common::Result<()> {
@@ -16,7 +16,7 @@ pub async fn emit_new_entries(
         return Ok(());
     }
     let hooks = webhook::Entity::find()
-        .filter(webhook::Column::UserId.eq(user_id))
+        .filter(webhook::Column::UserId.eq(user_id.0))
         .filter(webhook::Column::Enabled.eq(true))
         .all(db)
         .await
@@ -44,7 +44,7 @@ pub async fn emit_new_entries(
             .or_default()
             .push(serde_json::json!({
                 "id": e.id,
-                "user_id": user_id,
+                "user_id": user_id.0,
                 "entry_id": e.entry_id,
                 "url": e.url,
                 "mime_type": e.mime.unwrap_or_default(),
@@ -59,7 +59,7 @@ pub async fn emit_new_entries(
             entry_label::Relation::Label.def(),
         )
         .filter(entry_label::Column::EntryId.is_in(entry_ids.to_vec()))
-        .filter(label::Column::UserId.eq(user_id))
+        .filter(label::Column::UserId.eq(user_id.0))
         .select_only()
         .column(entry_label::Column::EntryId)
         .column(label::Column::Name)
@@ -86,7 +86,7 @@ pub async fn emit_new_entries(
             let reading_time = std::cmp::max(1, words.div_ceil(wpm)) as i32;
             serde_json::json!({
                 "id": e.id,
-                "user_id": user_id,
+                "user_id": user_id.0,
                 "feed_id": e.feed_id,
                 "status": if e.is_read { "read" } else { "unread" },
                 "hash": e.hash,
@@ -108,7 +108,7 @@ pub async fn emit_new_entries(
 
     let feed_json = serde_json::json!({
         "id": feed.id,
-        "user_id": user_id,
+        "user_id": user_id.0,
         "feed_url": feed.feed_url,
         "site_url": feed.site_url,
         "title": feed.title,
@@ -119,12 +119,12 @@ pub async fn emit_new_entries(
         "feed": feed_json,
         "entries": entries_json,
     });
-    deliver(db, user_id, "new_entries", &payload).await
+    deliver(db, user_id.0, "new_entries", &payload).await
 }
 
 pub async fn emit_save_entry(
     db: &DatabaseConnection,
-    user_id: i64,
+    user_id: UserId,
     entry: &captura_storage::entity::entry::Model,
 ) -> captura_common::Result<()> {
     // load feed
@@ -170,7 +170,7 @@ pub async fn emit_save_entry(
             "feed": feed_json,
         }
     });
-    deliver(db, user_id, "save_entry", &payload).await
+    deliver(db, user_id.0, "save_entry", &payload).await
 }
 
 async fn deliver(
@@ -189,10 +189,7 @@ async fn deliver(
         return Ok(());
     }
     let body = serde_json::to_vec(payload).unwrap_or_default();
-    let cli = Client::builder()
-        .user_agent("captura/0.1")
-        .build()
-        .map_err(|e| captura_common::Error::Network(e.to_string()))?;
+    let cli = crate::http_client_basic()?;
     for h in hooks {
         if let Some(ref ev) = h.events {
             let mut allow = false;

@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use captura_common::UserId;
 use captura_storage::entity::integration;
 use reqwest::Client;
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
@@ -15,7 +16,7 @@ pub trait Integration: Send + Sync {
     async fn on_new_entries(
         &self,
         _ctx: &IntegrationCtx<'_>,
-        _user_id: i64,
+        _user_id: UserId,
         _feed: &captura_storage::entity::feed::Model,
         _entry_ids: &[i64],
     ) -> anyhow::Result<()> {
@@ -24,7 +25,7 @@ pub trait Integration: Send + Sync {
     async fn on_save_entry(
         &self,
         _ctx: &IntegrationCtx<'_>,
-        _user_id: i64,
+        _user_id: UserId,
         _entry: &captura_storage::entity::entry::Model,
     ) -> anyhow::Result<()> {
         Ok(())
@@ -47,7 +48,7 @@ impl Integration for Wallabag {
     async fn on_save_entry(
         &self,
         ctx: &IntegrationCtx<'_>,
-        user_id: i64,
+        user_id: UserId,
         entry: &captura_storage::entity::entry::Model,
     ) -> anyhow::Result<()> {
         let cfg: WallabagCfg = ctx_cfg(ctx.db, user_id, self.kind()).await?;
@@ -81,7 +82,7 @@ impl Integration for Telegram {
     async fn on_new_entries(
         &self,
         ctx: &IntegrationCtx<'_>,
-        user_id: i64,
+        user_id: UserId,
         _feed: &captura_storage::entity::feed::Model,
         entry_ids: &[i64],
     ) -> anyhow::Result<()> {
@@ -111,11 +112,11 @@ impl Integration for Telegram {
 
 async fn ctx_cfg<T: for<'de> serde::Deserialize<'de>>(
     db: &DatabaseConnection,
-    user_id: i64,
+    user_id: UserId,
     kind: &str,
 ) -> anyhow::Result<T> {
     let cfg = integration::Entity::find()
-        .filter(integration::Column::UserId.eq(user_id))
+        .filter(integration::Column::UserId.eq(user_id.0))
         .filter(integration::Column::Kind.eq(kind))
         .filter(integration::Column::Enabled.eq(true))
         .one(db)
@@ -134,7 +135,7 @@ pub async fn emit_new_entries(
     feed: &captura_storage::entity::feed::Model,
     entry_ids: &[i64],
 ) {
-    let http = Client::new();
+    let http = crate::http_client_basic().unwrap_or_else(|_| Client::new());
     let ctx = IntegrationCtx { db, http: &http };
     let impls: Vec<Box<dyn Integration>> = vec![
         Box::new(Wallabag),
@@ -148,7 +149,9 @@ pub async fn emit_new_entries(
     ];
     for integ in impls {
         if allowed_for_feed(integ.kind(), feed) {
-            let _ = integ.on_new_entries(&ctx, user_id, feed, entry_ids).await;
+            let _ = integ
+                .on_new_entries(&ctx, UserId(user_id), feed, entry_ids)
+                .await;
         }
     }
 }
@@ -158,7 +161,7 @@ pub async fn emit_save_entry(
     user_id: i64,
     entry: &captura_storage::entity::entry::Model,
 ) {
-    let http = Client::new();
+    let http = crate::http_client_basic().unwrap_or_else(|_| Client::new());
     let ctx = IntegrationCtx { db, http: &http };
     let impls: Vec<Box<dyn Integration>> = vec![
         Box::new(Wallabag),
@@ -182,7 +185,9 @@ pub async fn emit_save_entry(
             .map(|f| allowed_for_feed(integ.kind(), f))
             .unwrap_or(true)
         {
-            let _ = integ.on_save_entry(&ctx, user_id, entry).await;
+            let _ = integ
+                .on_save_entry(&ctx, UserId(user_id), entry)
+                .await;
         }
     }
 }
@@ -228,7 +233,7 @@ impl Integration for Ntfy {
     async fn on_new_entries(
         &self,
         ctx: &IntegrationCtx<'_>,
-        user_id: i64,
+        user_id: UserId,
         _feed: &captura_storage::entity::feed::Model,
         entry_ids: &[i64],
     ) -> anyhow::Result<()> {
@@ -264,7 +269,7 @@ impl Integration for Ntfy {
     async fn on_save_entry(
         &self,
         ctx: &IntegrationCtx<'_>,
-        user_id: i64,
+        user_id: UserId,
         entry: &captura_storage::entity::entry::Model,
     ) -> anyhow::Result<()> {
         let cfg: NtfyCfg = ctx_cfg(ctx.db, user_id, self.kind()).await?;
@@ -310,7 +315,7 @@ impl Integration for Pocket {
     async fn on_save_entry(
         &self,
         ctx: &IntegrationCtx<'_>,
-        user_id: i64,
+        user_id: UserId,
         entry: &captura_storage::entity::entry::Model,
     ) -> anyhow::Result<()> {
         let cfg: PocketCfg = ctx_cfg(ctx.db, user_id, self.kind()).await?;
@@ -349,7 +354,7 @@ impl Integration for Instapaper {
     async fn on_save_entry(
         &self,
         ctx: &IntegrationCtx<'_>,
-        user_id: i64,
+        user_id: UserId,
         entry: &captura_storage::entity::entry::Model,
     ) -> anyhow::Result<()> {
         let cfg: InstapaperCfg = ctx_cfg(ctx.db, user_id, self.kind()).await?;
@@ -389,7 +394,7 @@ impl Integration for Pushover {
     async fn on_new_entries(
         &self,
         ctx: &IntegrationCtx<'_>,
-        user_id: i64,
+        user_id: UserId,
         _feed: &captura_storage::entity::feed::Model,
         entry_ids: &[i64],
     ) -> anyhow::Result<()> {
@@ -442,7 +447,7 @@ impl Integration for Matrix {
     async fn on_new_entries(
         &self,
         ctx: &IntegrationCtx<'_>,
-        user_id: i64,
+        user_id: UserId,
         _feed: &captura_storage::entity::feed::Model,
         entry_ids: &[i64],
     ) -> anyhow::Result<()> {
@@ -488,7 +493,7 @@ impl Integration for Slack {
     async fn on_new_entries(
         &self,
         ctx: &IntegrationCtx<'_>,
-        user_id: i64,
+        user_id: UserId,
         _feed: &captura_storage::entity::feed::Model,
         entry_ids: &[i64],
     ) -> anyhow::Result<()> {
@@ -520,7 +525,7 @@ impl Integration for Slack {
     async fn on_save_entry(
         &self,
         ctx: &IntegrationCtx<'_>,
-        user_id: i64,
+        user_id: UserId,
         entry: &captura_storage::entity::entry::Model,
     ) -> anyhow::Result<()> {
         let cfg: SlackCfg = ctx_cfg(ctx.db, user_id, self.kind()).await?;

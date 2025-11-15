@@ -3,7 +3,7 @@ use captura_storage::entity::feed;
 use scraper::{ElementRef, Html, Selector};
 use url::Url;
 
-use crate::{extract_attr, extract_text, sanitize_html};
+use crate::sanitize_html;
 use crate::rules_engine::{fetch_html_strategy, FetchCfg};
 
 /// Hub 级 HTTP 选项封装，便于在 handler 中复用。
@@ -64,25 +64,6 @@ where
         f(el);
     }
     Ok(())
-}
-
-/// 便捷函数：从 html 中按 selector 提取首个元素的文本内容。
-pub(crate) fn first_text(html: &str, selector: &str) -> Option<String> {
-    let doc = Html::parse_document(html);
-    let sel = Selector::parse(selector).ok()?;
-    doc.select(&sel)
-        .next()
-        .and_then(|el| extract_text(&el, selector))
-}
-
-/// 便捷函数：从 html 中按 selector@attr 语法提取首个属性值。
-pub(crate) fn first_attr_expr(html: &str, expr: &str) -> Option<String> {
-    let doc = Html::parse_document(html);
-    let (sel, attr) = expr.split_once('@')?;
-    let sel_parsed = Selector::parse(sel).ok()?;
-    doc.select(&sel_parsed)
-        .next()
-        .and_then(|el| extract_attr(&el, &format!("{}@{}", sel, attr)))
 }
 
 /// 便捷函数：对元素 HTML 做 sanitize。

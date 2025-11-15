@@ -17,8 +17,6 @@ mod hub_utils;
 mod http_client;
 mod rules_engine;
 
-use rules_engine::{fetch_html_strategy, FetchCfg};
-
 pub use rules_engine::{refresh_rule_v1, refresh_rule_v1_with_yaml, refresh_rule_with_yaml};
 pub use hub_bridge::execute_hub_route;
 

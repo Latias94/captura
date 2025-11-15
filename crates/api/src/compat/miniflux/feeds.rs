@@ -401,7 +401,7 @@ pub(crate) async fn refresh_one(
     Path(id): Path<i64>,
 ) -> MfResult<axum::response::Response> {
     let _auth = mf_auth(&st, &headers).await.map_err(from_api_error)?;
-    let _n = service::refresh_and_persist_by_id(&st.db, id)
+    let _n = service::refresh_and_persist_by_id(&st.db, captura_common::FeedId(id))
         .await
         .map_err(internal)?;
     Ok((

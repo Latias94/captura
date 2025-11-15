@@ -1,26 +1,288 @@
 pub mod auth;
 pub mod auth_endpoints;
+pub mod categories;
 pub mod compat;
 pub mod entries;
 pub mod entry_options;
 pub mod error;
+pub mod favicon;
 pub mod feed_options;
 pub mod feeds;
 pub mod hub;
+pub mod integrations;
+pub mod jobs;
+pub mod media;
+pub mod oidc;
+pub mod opml;
+pub mod rules;
 pub mod search;
 pub mod state;
 pub mod users;
 pub mod util;
+pub mod webhooks;
 
-pub use state::AppState;
+pub use state::{AppConfig, AppState};
 
 use axum::body::Body as AxumBody;
 use axum::{
+    extract::State,
     routing::{get, post},
     Router,
 };
-use sea_orm::DatabaseConnection;
+use sea_orm::{ConnectionTrait, DatabaseConnection};
 use serde::Serialize;
+use tower_http::set_header::SetResponseHeaderLayer;
+
+/// 构建完整的应用 Router，包括：
+/// - `/api/v1` 主 API（auth/feeds/entries/jobs/...）
+/// - `/v1` Miniflux 兼容层
+/// - `/fever` / Reader 兼容层
+/// - WebUI SSR 路由
+pub fn build_router(app_state: AppState) -> Router {
+    let api_v1 = Router::new()
+        .route("/healthz", get(|| async { "ok" }))
+        // users & auth
+        .route("/users", post(crate::users::create_user))
+        .route("/users/{id}/fever-key", post(crate::users::set_fever_key))
+        .route("/auth/login", post(crate::auth_endpoints::auth_login))
+        .route(
+            "/auth/proxy/token",
+            get(crate::auth_endpoints::auth_proxy_token),
+        )
+        .route("/auth/oidc/start", get(crate::oidc::start))
+        .route("/auth/oidc/callback", get(crate::oidc::callback))
+        .route("/auth/oidc/providers", get(crate::oidc::oidc_providers))
+        .route("/auth/oidc/{name}/start", get(crate::oidc::start_named))
+        .route(
+            "/auth/oidc/{name}/callback",
+            get(crate::oidc::callback_named),
+        )
+        // feeds & entries
+        .route(
+            "/feeds",
+            post(crate::feeds::create_feed).get(crate::feeds::list_feeds),
+        )
+        .route(
+            "/feeds/{id}",
+            get(crate::feeds::get_feed)
+                .patch(crate::feeds::update_feed)
+                .delete(crate::feeds::delete_feed),
+        )
+        .route("/feeds/{id}/rss", get(crate::feeds::rss_feed))
+        .route("/feeds/{id}/refresh", post(crate::feeds::refresh_feed))
+        .route(
+            "/feeds/{id}/enqueue-refresh",
+            post(crate::feeds::enqueue_feed_refresh),
+        )
+        .route(
+            "/feeds/{id}/favicon/refresh",
+            post(crate::favicon::refresh),
+        )
+        .route("/favicons/{id}", get(crate::favicon::get))
+        .route(
+            "/categories",
+            get(crate::categories::list_categories)
+                .post(crate::categories::create_category),
+        )
+        .route(
+            "/categories/{id}",
+            get(crate::categories::get_category)
+                .put(crate::categories::update_category)
+                .delete(crate::categories::delete_category),
+        )
+        .route("/entries", get(crate::entries::list_entries))
+        .route(
+            "/entries/mark-all-read",
+            post(crate::entries::mark_all_read),
+        )
+        .route("/entries/{id}/read", post(crate::entries::mark_read))
+        .route("/entries/{id}/star", post(crate::entries::mark_star))
+        .route("/opml/export", get(crate::opml::export))
+        .route("/opml/import", post(crate::opml::import))
+        // jobs
+        .route("/jobs", get(crate::jobs::list_jobs))
+        .route("/jobs/run-once", post(crate::jobs::run_jobs_once))
+        .route(
+            "/jobs/enqueue-due-feeds",
+            post(crate::jobs::enqueue_due_feeds),
+        )
+        // media proxy
+        .route("/media", get(crate::media::proxy))
+        // webhooks
+        .route(
+            "/webhooks",
+            get(crate::webhooks::list).post(crate::webhooks::create),
+        )
+        .route(
+            "/webhooks/{id}",
+            get(crate::webhooks::get).delete(crate::webhooks::delete),
+        )
+        // integrations
+        .route(
+            "/integrations",
+            get(crate::integrations::list).post(crate::integrations::create),
+        )
+        .route(
+            "/integrations/{id}",
+            get(crate::integrations::get)
+                .put(crate::integrations::update)
+                .delete(crate::integrations::delete),
+        )
+        .route(
+            "/integrations/jobs",
+            get(crate::jobs::list_integration_jobs),
+        )
+        // rules
+        .route(
+            "/rules",
+            get(crate::rules::list_rules).post(crate::rules::create_rule),
+        )
+        .route(
+            "/rules/{id}",
+            get(crate::rules::get_rule)
+                .put(crate::rules::update_rule)
+                .delete(crate::rules::delete_rule),
+        )
+        .route("/rules/try", post(crate::rules::try_rule))
+        .route("/rules/templates", get(crate::rules::list_templates))
+        .route("/rules/templates/{id}", get(crate::rules::get_template))
+        .route(
+            "/rules/sync-from-fs",
+            post(crate::rules::sync_rules_from_fs),
+        )
+        .route(
+            "/feeds/from-template",
+            post(crate::rules::create_feed_from_template),
+        )
+        .route("/feeds/validate-hub", post(crate::hub::validate_hub))
+        .route("/hub/routes", get(crate::hub::list_routes))
+        .route(
+            "/hub/routes/{namespace}/{name}",
+            get(crate::hub::get_route),
+        )
+        .route("/hub/preview", post(crate::hub::preview_hub));
+
+    let compat_root = Router::new()
+        .route(
+            "/fever",
+            get(crate::compat::fever::endpoint).post(crate::compat::fever::endpoint),
+        )
+        .route(
+            "/reader/api/0/subscription/list",
+            get(crate::compat::reader::subscription_list),
+        )
+        .route(
+            "/reader/api/0/stream/contents/user/-/state/com.google/reading-list",
+            get(crate::compat::reader::stream_contents),
+        )
+        .route(
+            "/reader/api/0/edit-tag",
+            post(crate::compat::reader::edit_tag),
+        )
+        .route(
+            "/reader/api/0/mark-all-as-read",
+            post(crate::compat::reader::mark_all_read),
+        )
+        .route(
+            "/reader/api/0/unread-count",
+            get(crate::compat::reader::unread_count),
+        )
+        .route(
+            "/reader/api/0/subscription/quickadd",
+            post(crate::compat::reader::subscription_quickadd),
+        )
+        .route(
+            "/reader/api/0/subscription/edit",
+            post(crate::compat::reader::subscription_edit),
+        )
+        .route(
+            "/reader/api/0/stream/items/ids",
+            get(crate::compat::reader::items_ids),
+        )
+        .route(
+            "/reader/api/0/stream/items/contents",
+            get(crate::compat::reader::items_contents),
+        );
+
+    let mut app = Router::new()
+        .route("/healthz", get(|| async { "OK" }))
+        .route("/liveness", get(|| async { "OK" }))
+        .route(
+            "/healthcheck",
+            get(|State(st): State<AppState>| async move {
+                let _ = st.db.execute_unprepared("SELECT 1").await;
+                "OK"
+            }),
+        )
+        .route(
+            "/readyz",
+            get(|State(st): State<AppState>| async move {
+                let _ = st.db.execute_unprepared("SELECT 1").await;
+                "OK"
+            }),
+        )
+        .route(
+            "/readiness",
+            get(|State(st): State<AppState>| async move {
+                let _ = st.db.execute_unprepared("SELECT 1").await;
+                "OK"
+            }),
+        )
+        .merge(compat_root)
+        // Web UI (SSR): mounted at root and /ui/static/*
+        .merge(captura_webui::router())
+        .nest("/api/v1", api_v1)
+        .nest("/v1", crate::compat::miniflux::router())
+        .with_state(app_state.clone());
+
+    if app_state.cfg.security_headers_enabled {
+        let rp = axum::http::HeaderValue::from_str(&app_state.cfg.referrer_policy)
+            .unwrap_or(axum::http::HeaderValue::from_static("no-referrer"));
+        app = app.layer(SetResponseHeaderLayer::overriding(
+            axum::http::header::HeaderName::from_static("referrer-policy"),
+            rp,
+        ));
+        app = app.layer(SetResponseHeaderLayer::overriding(
+            axum::http::header::HeaderName::from_static("x-content-type-options"),
+            axum::http::HeaderValue::from_static("nosniff"),
+        ));
+        app = app.layer(SetResponseHeaderLayer::overriding(
+            axum::http::header::HeaderName::from_static("x-frame-options"),
+            axum::http::HeaderValue::from_static("DENY"),
+        ));
+        if let Some(csp) = &app_state.cfg.content_security_policy {
+            if !csp.is_empty() {
+                let v = axum::http::HeaderValue::from_str(csp).unwrap_or_else(|_| {
+                    axum::http::HeaderValue::from_static(
+                        "default-src 'self'; frame-ancestors 'none';",
+                    )
+                });
+                app = app.layer(SetResponseHeaderLayer::overriding(
+                    axum::http::header::HeaderName::from_static("content-security-policy"),
+                    v,
+                ));
+            } else {
+                let v = axum::http::HeaderValue::from_static(
+                    "default-src 'self'; frame-ancestors 'none';",
+                );
+                app = app.layer(SetResponseHeaderLayer::overriding(
+                    axum::http::header::HeaderName::from_static("content-security-policy"),
+                    v,
+                ));
+            }
+        } else {
+            let v = axum::http::HeaderValue::from_static(
+                "default-src 'self'; frame-ancestors 'none';",
+            );
+            app = app.layer(SetResponseHeaderLayer::overriding(
+                axum::http::header::HeaderName::from_static("content-security-policy"),
+                v,
+            ));
+        }
+    }
+
+    app
+}
 
 /// 构造带有最小路由的 Miniflux 兼容层 Router（用于测试）
 pub fn miniflux_router_with_state(db: DatabaseConnection) -> axum::Router<AppState> {

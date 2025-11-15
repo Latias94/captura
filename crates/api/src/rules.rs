@@ -12,15 +12,13 @@ use sea_orm::{
 };
 use serde::{Deserialize, Serialize};
 
-use captura_crawler::{self as crawler, CrawlOptions};
 use captura_rules::v1::{parse_rule_v1, RuleSpecV1, SourceType};
 use captura_storage::entity::{feed, rule};
 
 use crate::auth::AuthUser;
 use crate::error::{bad_request, forbidden, internal, not_found, ApiResult};
 use crate::util::validate_limit_offset;
-use crate::AppState;
-use captura_api::IdResp;
+use crate::{AppState, IdResp};
 use regex::Regex;
 
 use captura_service::rules_sync::{self as rules_sync_svc, RulesSyncReport};
@@ -75,8 +73,8 @@ pub(crate) async fn create_rule(
 #[derive(Deserialize)]
 pub(crate) struct RulesQuery {
     pub q: Option<String>,
-    pub limit: Option<u64>,
-    pub offset: Option<u64>,
+    #[serde(flatten)]
+    pub paging: crate::util::Paging,
 }
 
 pub(crate) async fn list_rules(
@@ -85,7 +83,7 @@ pub(crate) async fn list_rules(
     Query(q): Query<RulesQuery>,
 ) -> ApiResult<Json<Vec<RuleDto>>> {
     let _user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
-    validate_limit_offset(q.limit, q.offset)?;
+    validate_limit_offset(q.paging.limit, q.paging.offset)?;
     let mut sel = rule::Entity::find();
     if let Some(ref s) = q.q {
         let like = format!("%{}%", s);
@@ -95,10 +93,10 @@ pub(crate) async fn list_rules(
                 .add(rule::Column::Description.like(like.as_str())),
         );
     }
-    if let Some(l) = q.limit {
+    if let Some(l) = q.paging.limit {
         sel = sel.limit(l);
     }
-    if let Some(o) = q.offset {
+    if let Some(o) = q.paging.offset {
         sel = sel.offset(o);
     }
     let list = sel
@@ -264,8 +262,8 @@ fn extract_params_from_url(url: &str) -> Vec<String> {
 pub(crate) struct TemplatesQuery {
     pub ns: Option<String>,
     pub q: Option<String>,
-    pub limit: Option<u64>,
-    pub offset: Option<u64>,
+    #[serde(flatten)]
+    pub paging: crate::util::Paging,
 }
 
 pub(crate) async fn list_templates(
@@ -274,7 +272,7 @@ pub(crate) async fn list_templates(
     Query(q): Query<TemplatesQuery>,
 ) -> ApiResult<Json<Vec<RuleTemplateDto>>> {
     let _user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
-    validate_limit_offset(q.limit, q.offset)?;
+    validate_limit_offset(q.paging.limit, q.paging.offset)?;
     // 简单策略：按 namespace 过滤或按 rule_id/description 模糊匹配
     let mut sel = rule::Entity::find();
     if let Some(ref ns) = q.ns {
@@ -288,12 +286,12 @@ pub(crate) async fn list_templates(
                 .add(rule::Column::Description.like(like.as_str())),
         );
     }
-    let sel = if let Some(l) = q.limit {
+    let sel = if let Some(l) = q.paging.limit {
         sel.limit(l)
     } else {
         sel
     };
-    let sel = if let Some(o) = q.offset {
+    let sel = if let Some(o) = q.paging.offset {
         sel.offset(o)
     } else {
         sel
@@ -429,7 +427,7 @@ pub(crate) async fn create_feed_from_template(
         ..Default::default()
     };
     let res = am.insert(&st.db).await.map_err(internal)?;
-    Ok(Json(captura_api::IdResp { id: res.id }))
+    Ok(Json(crate::IdResp { id: res.id }))
 }
 
 #[derive(Deserialize)]

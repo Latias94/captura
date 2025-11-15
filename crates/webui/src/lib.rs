@@ -337,6 +337,7 @@ async fn resolve_lang(headers: &HeaderMap) -> String {
     "en_US".into()
 }
 
+#[allow(dead_code)]
 #[derive(Deserialize, Clone)]
 struct UiHubRoute {
     hub_id: String,
@@ -350,6 +351,7 @@ struct UiHubRoute {
     description: String,
 }
 
+#[allow(dead_code)]
 #[derive(Deserialize, Clone)]
 struct UiHubItem {
     title: String,
@@ -361,6 +363,7 @@ struct UiHubItem {
     author: Option<String>,
 }
 
+#[allow(dead_code)]
 #[derive(Deserialize, Clone)]
 struct UiHubPreview {
     title: String,
@@ -421,7 +424,7 @@ async fn ui_hub_routes(headers: HeaderMap, Query(q): Query<UiHubQuery>) -> impl 
 
     // Optional preview.
     let mut preview: Option<UiHubPreview> = None;
-    let mut preview_url = q.url.unwrap_or_default();
+    let preview_url = q.url.unwrap_or_default();
     if !preview_url.is_empty() {
         #[derive(Deserialize)]
         struct PreviewResp {

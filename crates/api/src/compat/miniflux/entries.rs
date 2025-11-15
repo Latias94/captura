@@ -697,11 +697,19 @@ pub(crate) async fn save(
     am.extras_json = Set(Some(extras));
     let _ = am.update(&st.db).await.map_err(internal)?;
     if let Some(model) = entry::Entity::find_by_id(id).one(&st.db).await.map_err(internal)? {
-        let _ = captura_service::webhook::emit_save_entry(&st.db, auth.user_id, &model).await;
-        let payload = serde_json::json!({"event_type":"save_entry","entry_id": model.id});
+        let _ = captura_service::webhook::emit_save_entry(
+            &st.db,
+            captura_common::UserId(auth.user_id),
+            &model,
+        )
+        .await;
+        let payload = captura_common::IntegrationEvent::SaveEntry {
+            entry_id: model.id,
+            feed_id: Some(model.feed_id),
+        };
         let _ = captura_scheduler::enqueue_integration_event(
             &st.db,
-            auth.user_id,
+            captura_common::UserId(auth.user_id),
             Some(model.feed_id),
             payload,
         )

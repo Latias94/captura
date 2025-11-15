@@ -1,24 +1,75 @@
 //! Service layer: feed refresh orchestration and persistence
 
-use captura_common::Result;
+use anyhow::anyhow;
+use captura_common::{FeedId, IntegrationEvent, Result};
 use captura_pipeline::{refresh_feed_with_meta, refresh_rule_with_yaml, RefreshMeta};
 use captura_storage::entity::{entry, feed, rule};
 use chrono::{FixedOffset, Utc};
+use reqwest::Client;
 use sea_orm::sea_query::OnConflict;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QuerySelect, Set,
     TransactionTrait,
 };
+use std::env;
+use std::time::Duration;
 use tracing::debug;
 
 pub mod integration;
 pub mod rules_sync;
 pub mod webhook;
 
+/// Build a basic HTTP client used by scheduler/service integrations and webhooks.
+///
+/// Behavior can be tuned via environment variables:
+/// - `CAPTURA_HTTP_USER_AGENT`: overrides default User-Agent (`captura/0.1`).
+/// - `CAPTURA_HTTP_TIMEOUT_MS`: request timeout in milliseconds (no timeout if unset or invalid).
+/// - `CAPTURA_HTTP_PROXY`: optional proxy URL applied to all requests.
+pub fn http_client_basic() -> Result<Client> {
+    let mut builder = Client::builder();
+
+    // User-Agent
+    let ua = env::var("CAPTURA_HTTP_USER_AGENT")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| "captura/0.1".to_string());
+    builder = builder.user_agent(ua);
+
+    // Global request timeout
+    if let Ok(v) = env::var("CAPTURA_HTTP_TIMEOUT_MS") {
+        if let Ok(ms) = v.parse::<u64>() {
+            if ms > 0 {
+                builder = builder.timeout(Duration::from_millis(ms));
+            }
+        }
+    }
+
+    // Optional proxy
+    if let Ok(proxy_url) = env::var("CAPTURA_HTTP_PROXY") {
+        let proxy_url = proxy_url.trim();
+        if !proxy_url.is_empty() {
+            match reqwest::Proxy::all(proxy_url) {
+                Ok(p) => {
+                    builder = builder.proxy(p);
+                }
+                Err(e) => {
+                    return Err(captura_common::Error::Config(format!(
+                        "invalid CAPTURA_HTTP_PROXY: {e}"
+                    )));
+                }
+            }
+        }
+    }
+
+    builder
+        .build()
+        .map_err(|e| captura_common::Error::Network(e.to_string()))
+}
+
 /// Refresh a feed by id and persist new entries, update feed metadata.
 /// Returns number of inserted entries.
-pub async fn refresh_and_persist_by_id(db: &DatabaseConnection, feed_id: i64) -> Result<usize> {
-    let Some(f) = feed::Entity::find_by_id(feed_id)
+pub async fn refresh_and_persist_by_id(db: &DatabaseConnection, feed_id: FeedId) -> Result<usize> {
+    let Some(f) = feed::Entity::find_by_id(feed_id.0)
         .one(db)
         .await
         .map_err(|e| captura_common::Error::Storage(e.to_string()))?
@@ -224,11 +275,12 @@ pub async fn refresh_and_persist(db: &DatabaseConnection, f: &feed::Model) -> Re
         // Enqueue integration job for new entries within the transaction.
         if inserted > 0 && !new_entry_ids.is_empty() {
             use captura_storage::entity::job::{self, JobStatus, JobType};
-            let payload = serde_json::json!({
-                "event_type": "new_entries",
-                "feed_id": f.id,
-                "entry_ids": new_entry_ids,
-            });
+            let ev = IntegrationEvent::NewEntries {
+                feed_id: f.id,
+                entry_ids: new_entry_ids.clone(),
+            };
+            let payload =
+                serde_json::to_value(ev).map_err(|e| captura_common::Error::Other(anyhow!(e)))?;
             let jam = job::ActiveModel {
                 user_id: Set(f.user_id),
                 feed_id: Set(Some(f.id)),
@@ -269,7 +321,13 @@ pub async fn refresh_and_persist(db: &DatabaseConnection, f: &feed::Model) -> Re
             // Fire webhooks outside the transaction; webhook failures should not
             // affect database state.
             if visible_inserted > 0 && !new_entry_ids.is_empty() {
-                let _ = crate::webhook::emit_new_entries(db, f.user_id, f, &new_entry_ids).await;
+                let _ = crate::webhook::emit_new_entries(
+                    db,
+                    captura_common::UserId(f.user_id),
+                    f,
+                    &new_entry_ids,
+                )
+                .await;
             }
             Ok(visible_inserted)
         }

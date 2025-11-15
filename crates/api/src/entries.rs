@@ -5,10 +5,9 @@ use axum::{
 use axum_extra::typed_header::TypedHeader;
 use headers::authorization::Bearer;
 use headers::Authorization;
-use sea_orm::Order;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, Condition, EntityTrait, JoinType, QueryFilter, QueryOrder,
-    QuerySelect, RelationTrait,
+    ActiveModelTrait, ColumnTrait, Condition, DatabaseConnection, EntityTrait, JoinType,
+    Order, QueryFilter, QueryOrder, QuerySelect, RelationTrait,
 };
 use serde::{Deserialize, Serialize};
 
@@ -34,11 +33,11 @@ pub(crate) struct EntriesQuery {
     pub feed_id: Option<i64>,
     pub category_id: Option<i64>,
     pub status: Option<StatusFilter>,
-    pub limit: Option<u64>,
-    pub offset: Option<u64>,
     pub q: Option<String>,
-    pub sort_by: Option<String>,
-    pub order: Option<String>,
+    #[serde(flatten)]
+    pub sorting: crate::util::Sorting,
+    #[serde(flatten)]
+    pub paging: crate::util::Paging,
 }
 
 #[derive(Serialize)]
@@ -61,11 +60,11 @@ pub(crate) async fn list_entries(
     Query(q): Query<EntriesQuery>,
 ) -> ApiResult<Json<Vec<EntryDto>>> {
     let user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
-    validate_limit_offset(q.limit, q.offset)?;
+    validate_limit_offset(q.paging.limit, q.paging.offset)?;
     validate_sort(
-        &q.sort_by,
+        &q.sorting.sort_by,
         &["published_at", "created_at", "relevance"],
-        &q.order,
+        &q.sorting.order,
     )?;
     if let Some(ref s) = q.q {
         if s.len() > 256 {
@@ -96,12 +95,13 @@ pub(crate) async fn list_entries(
                 sel = sel.filter(search::fts_filter_expr_pg(g));
                 // Miniflux 对齐：有搜索时默认按相关性排序；若显式指定 sort_by 则按指定排序
                 let want_rank = q
+                    .sorting
                     .sort_by
                     .as_deref()
                     .map(|s| s == "relevance")
                     .unwrap_or(true);
                 if want_rank {
-                    let ord = match q.order.as_deref() {
+                    let ord = match q.sorting.order.as_deref() {
                         Some("asc") => Order::Asc,
                         _ => Order::Desc,
                     };
@@ -155,24 +155,24 @@ pub(crate) async fn list_entries(
             }
         }
     }
-    match q.sort_by.as_deref() {
+    match q.sorting.sort_by.as_deref() {
         Some("created_at") => {
-            sel = match q.order.as_deref() {
+            sel = match q.sorting.order.as_deref() {
                 Some("asc") => sel.order_by_asc(entry::Column::CreatedAt),
                 _ => sel.order_by_desc(entry::Column::CreatedAt),
             };
         }
         _ => {
-            sel = match q.order.as_deref() {
+            sel = match q.sorting.order.as_deref() {
                 Some("asc") => sel.order_by_asc(entry::Column::PublishedAt),
                 _ => sel.order_by_desc(entry::Column::PublishedAt),
             };
             sel = sel.order_by_desc(entry::Column::CreatedAt);
         }
     }
-    let l = q.limit.unwrap_or(100);
+    let l = q.paging.limit.unwrap_or(100);
     sel = sel.limit(l);
-    if let Some(o) = q.offset {
+    if let Some(o) = q.paging.offset {
         sel = sel.offset(o);
     }
     let list = sel.all(&st.db).await.map_err(internal)?;
@@ -206,16 +206,7 @@ pub(crate) async fn mark_read(
     Json(body): Json<BoolBody>,
 ) -> ApiResult<&'static str> {
     let user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
-    if let Some(e) = entry::Entity::find_by_id(id).one(&st.db).await.map_err(internal)? {
-        let owned = feed::Entity::find_by_id(e.feed_id)
-            .filter(feed::Column::UserId.eq(user.user_id))
-            .one(&st.db)
-            .await
-            .map_err(internal)?
-            .is_some();
-        if !owned {
-            return Err(crate::error::forbidden("not your entry"));
-        }
+    if let Some(e) = load_owned_entry(&st.db, user.user_id, id).await? {
         let mut am: entry::ActiveModel = e.into();
         apply_entry_flags(
             &mut am,
@@ -236,16 +227,7 @@ pub(crate) async fn mark_star(
     Json(body): Json<BoolBody>,
 ) -> ApiResult<&'static str> {
     let user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
-    if let Some(e) = entry::Entity::find_by_id(id).one(&st.db).await.map_err(internal)? {
-        let owned = feed::Entity::find_by_id(e.feed_id)
-            .filter(feed::Column::UserId.eq(user.user_id))
-            .one(&st.db)
-            .await
-            .map_err(internal)?
-            .is_some();
-        if !owned {
-            return Err(crate::error::forbidden("not your entry"));
-        }
+    if let Some(e) = load_owned_entry(&st.db, user.user_id, id).await? {
         let mut am: entry::ActiveModel = e.into();
         apply_entry_flags(
             &mut am,
@@ -257,6 +239,31 @@ pub(crate) async fn mark_star(
         am.update(&st.db).await.map_err(internal)?;
     }
     Ok("ok")
+}
+
+async fn load_owned_entry(
+    db: &DatabaseConnection,
+    user_id: i64,
+    entry_id: i64,
+) -> ApiResult<Option<entry::Model>> {
+    if let Some(e) = entry::Entity::find_by_id(entry_id)
+        .one(db)
+        .await
+        .map_err(internal)?
+    {
+        let owned = feed::Entity::find_by_id(e.feed_id)
+            .filter(feed::Column::UserId.eq(user_id))
+            .one(db)
+            .await
+            .map_err(internal)?
+            .is_some();
+        if !owned {
+            return Err(crate::error::forbidden("not your entry"));
+        }
+        Ok(Some(e))
+    } else {
+        Ok(None)
+    }
 }
 
 #[derive(Deserialize)]

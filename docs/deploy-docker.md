@@ -31,6 +31,22 @@ docker compose up -d
 
 > 我们遵循“最小必要”环境变量（对齐 Miniflux 风格）。后续新增配置会在文档中补充。
 
+### HTTP 客户端（抓取 / 集成 / Webhook）
+
+以下环境变量用于统一配置 Captura 内部使用的 HTTP 客户端（包括集成、Webhook 和 Scheduler favicon 抓取）：
+
+- `CAPTURA_HTTP_USER_AGENT`  
+  自定义全局 User-Agent，例如：`captura/1.0 (+https://example.com)`。  
+  未设置时默认使用 `captura/0.1`。
+
+- `CAPTURA_HTTP_TIMEOUT_MS`  
+  全局请求超时时间（毫秒），例如：`15000` 表示 15 秒。  
+  未设置或解析失败时不设置超时（使用 reqwest 默认行为）。
+
+- `CAPTURA_HTTP_PROXY`  
+  可选的代理地址，应用于所有内部 HTTP 请求，例如：`http://127.0.0.1:7890`。  
+  若值非法，将导致启动时出现配置错误（便于尽早发现问题）。
+
 ## 数据持久化与备份
 
 - PostgreSQL 持久化卷：`pgdata`
@@ -104,4 +120,3 @@ services:
   - 检查 `DATABASE_URL` 与 `db` 容器健康状态；等待健康检查通过后 API 才会启动。
 - 调度器不需要
   - 设置 `SCHEDULER_ENABLED=false` 关闭。
-

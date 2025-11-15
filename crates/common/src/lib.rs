@@ -51,6 +51,67 @@ pub struct NormalizedEntry {
     pub extras: serde_json::Value,
 }
 
+/// Strongly-typed identifiers used across the workspace.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub struct UserId(pub i64);
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub struct FeedId(pub i64);
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub struct EntryId(pub i64);
+
+impl From<i64> for UserId {
+    fn from(v: i64) -> Self {
+        Self(v)
+    }
+}
+
+impl From<i64> for FeedId {
+    fn from(v: i64) -> Self {
+        Self(v)
+    }
+}
+
+impl From<i64> for EntryId {
+    fn from(v: i64) -> Self {
+        Self(v)
+    }
+}
+
+impl From<UserId> for i64 {
+    fn from(id: UserId) -> Self {
+        id.0
+    }
+}
+
+impl From<FeedId> for i64 {
+    fn from(id: FeedId) -> Self {
+        id.0
+    }
+}
+
+impl From<EntryId> for i64 {
+    fn from(id: EntryId) -> Self {
+        id.0
+    }
+}
+
+/// Integration job payload used between service and scheduler.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "event_type", rename_all = "snake_case")]
+pub enum IntegrationEvent {
+    NewEntries {
+        feed_id: i64,
+        entry_ids: Vec<i64>,
+    },
+    SaveEntry {
+        entry_id: i64,
+        #[serde(default)]
+        feed_id: Option<i64>,
+    },
+}
+
 /// 从 HTML 文本中去除标签，保留纯文本（简单实现）
 pub fn strip_html_simple(s: &str) -> String {
     let mut out = String::with_capacity(s.len());

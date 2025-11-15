@@ -6,6 +6,7 @@ use regex::Regex;
 use reqwest::Client;
 use scraper::{Html, Selector};
 use serde_json::Value as JsonValue;
+use std::time::Duration;
 use tracing::{debug, instrument};
 
 use crate::{apply_entry_filters, extractor, render_with_params, sanitize_html};
@@ -57,6 +58,11 @@ pub(crate) async fn fetch_html_strategy(
 
     // Fallback to plain HTTP using the provided client.
     let mut req = client.get(url);
+
+    // Per-request timeout override if provided.
+    if let Some(ms) = fetch.timeout_ms {
+        req = req.timeout(Duration::from_millis(ms));
+    }
 
     // Attach per-request headers from FetchCfg.
     if let Some(headers) = &fetch.headers {

@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::auth::AuthUser;
 use crate::error::{bad_request, internal, not_found, ApiResult};
-use crate::AppState;
+use crate::{AppState, IdResp};
 use captura_storage::entity::webhook;
 use rand_core::RngCore;
 
@@ -80,7 +80,7 @@ pub(crate) async fn create(
     State(st): State<AppState>,
     TypedHeader(Authorization(bearer)): TypedHeader<Authorization<Bearer>>,
     Json(body): Json<CreateWebhookReq>,
-) -> ApiResult<Json<captura_api::IdResp>> {
+) -> ApiResult<Json<IdResp>> {
     let user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
     if body.url.trim().is_empty() {
         return Err(bad_request("url required"));
@@ -101,7 +101,7 @@ pub(crate) async fn create(
         ..Default::default()
     };
     let w = am.insert(&st.db).await.map_err(internal)?;
-    Ok(Json(captura_api::IdResp { id: w.id }))
+    Ok(Json(IdResp { id: w.id }))
 }
 
 pub(crate) async fn delete(

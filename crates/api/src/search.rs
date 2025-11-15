@@ -82,7 +82,6 @@ pub(crate) fn fts_filter_expr_pg(q: &str) -> SimpleExpr {
     )
 }
 
-#[allow(dead_code)]
 pub(crate) fn fts_rank_expr_pg(q: &str) -> SimpleExpr {
     Expr::cust_with_values(
         "ts_rank_cd(entry.tsv, websearch_to_tsquery('simple', ?))",
