@@ -1,10 +1,17 @@
-//! Rules DSL crate.
+//! Rules + Hub crate.
 //!
-//! This crate exposes Rules DSL v1 schema (`v1` module),
-//! matching `docs/rules-dsl.md`. Older minimal DSL support
-//! has been removed in favour of the v1 design.
+//! This crate exposes:
+//! - Rules DSL v1 schema (`v1` module) and helpers;
+//! - Built-in rules implementations for specific sites (e.g. Bilibili);
+//! - Hub route metadata (`hub` module), mirroring RSSHub-style routes.
 
-pub mod bilibili;
+pub mod hub;
 pub mod v1;
+
+// For ergonomics, expose a top-level `bilibili` module that re-exports
+// the rule implementations living under `hub::bilibili::rules`.
+pub mod bilibili {
+    pub use crate::hub::bilibili::rules::*;
+}
 
 pub use v1::{parse_rule_v1, RuleSpecV1};

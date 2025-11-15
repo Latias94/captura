@@ -1,4 +1,4 @@
-use crate::types::{FeatureConfig, Features, Radar, RouteMeta};
+use crate::hub::types::{FeatureConfig, Features, Radar, RouteMeta};
 
 pub const META_GITHUB_TRENDING: RouteMeta = RouteMeta {
     hub_id: "github/trending",

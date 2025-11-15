@@ -1,4 +1,4 @@
-use crate::types::{Features, Radar, RouteMeta};
+use crate::hub::types::{Features, Radar, RouteMeta};
 
 pub const META_BILIBILI_USER_VIDEO: RouteMeta = RouteMeta {
     hub_id: "bilibili/user/video",

@@ -15,3 +15,4 @@ url.workspace = true
 captura-common = { path = "../common" }
 reqwest.workspace = true
 chrono.workspace = true
+async-trait.workspace = true

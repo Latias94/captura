@@ -1,4 +1,4 @@
-use crate::types::{Features, Radar, RouteMeta};
+use crate::hub::types::{Features, Radar, RouteMeta};
 
 pub const META_LOBSTERS_FRONT: RouteMeta = RouteMeta {
     hub_id: "lobsters/front",

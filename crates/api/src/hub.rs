@@ -10,7 +10,7 @@ use crate::AppState;
 
 pub(crate) fn map_hub_route_to_rule_id(route_path: &str) -> Option<String> {
     let hub_id = route_path.trim_start_matches('/');
-    let meta = captura_hub::registry::find_route_meta(hub_id)?;
+    let meta = captura_rules::hub::registry::find_route_meta(hub_id)?;
     let rule_id = format!("captura.route.{}", meta.hub_id.replace('/', "."));
     Some(rule_id)
 }
@@ -102,7 +102,7 @@ pub(crate) async fn validate_hub(
 
 #[derive(Serialize)]
 pub(crate) struct HubRouteListResp<'a> {
-    pub routes: Vec<&'a captura_hub::types::RouteMeta>,
+    pub routes: Vec<&'a captura_rules::hub::types::RouteMeta>,
 }
 
 pub(crate) async fn list_routes(
@@ -110,7 +110,7 @@ pub(crate) async fn list_routes(
     TypedHeader(Authorization(bearer)): TypedHeader<Authorization<Bearer>>,
 ) -> ApiResult<Json<HubRouteListResp<'static>>> {
     let _user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
-    let metas = captura_hub::registry::builtin_route_metas().to_vec();
+    let metas = captura_rules::hub::registry::builtin_route_metas().to_vec();
     Ok(Json(HubRouteListResp { routes: metas }))
 }
 
@@ -118,10 +118,10 @@ pub(crate) async fn get_route(
     State(st): State<AppState>,
     TypedHeader(Authorization(bearer)): TypedHeader<Authorization<Bearer>>,
     Path((namespace, name)): Path<(String, String)>,
-) -> ApiResult<Json<&'static captura_hub::types::RouteMeta>> {
+) -> ApiResult<Json<&'static captura_rules::hub::types::RouteMeta>> {
     let _user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
     let hub_id = format!("{}/{}", namespace, name);
-    let Some(meta) = captura_hub::registry::find_route_meta(&hub_id) else {
+    let Some(meta) = captura_rules::hub::registry::find_route_meta(&hub_id) else {
         return Err(not_found("hub route not found"));
     };
     Ok(Json(meta))
@@ -134,7 +134,7 @@ pub(crate) struct PreviewReq {
 
 #[derive(Serialize)]
 pub(crate) struct PreviewResp {
-    pub data: captura_hub::types::HubData,
+    pub data: captura_rules::hub::types::HubData,
 }
 
 pub(crate) async fn preview_hub(
@@ -176,6 +176,6 @@ pub(crate) async fn preview_hub(
         .map_err(internal)?;
 
     match res {
-        captura_hub::types::HubResult::Data(data) => Ok(Json(PreviewResp { data })),
+        captura_rules::hub::types::HubResult::Data(data) => Ok(Json(PreviewResp { data })),
     }
 }

@@ -4,10 +4,11 @@ pub mod hot_search;
 pub mod link_news;
 pub mod popular;
 pub mod ranking;
+pub mod rules;
 pub mod user_dynamic;
 pub mod user_video;
 
-use crate::types::RouteMeta;
+use crate::hub::types::RouteMeta;
 
 pub const ROUTES: &[&RouteMeta] = &[
     &hot_search::META_BILIBILI_HOT_SEARCH,

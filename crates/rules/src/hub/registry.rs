@@ -1,5 +1,5 @@
-use crate::types::{RouteMeta, RouteRegistration};
-use crate::{bilibili, github, hn, lobsters, medium, reuters, zhihu};
+use crate::hub::types::{RouteMeta, RouteRegistration};
+use crate::hub::{bilibili, github, hn, lobsters, medium, reuters, zhihu};
 
 static BUILTIN_ROUTE_METAS: [&RouteMeta; 14] = [
     github::ROUTES[0],

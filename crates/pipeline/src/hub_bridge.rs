@@ -1,5 +1,7 @@
 use captura_common::{NormalizedEntry, Result};
-use captura_hub::types::{HandlerCtx as HubHandlerCtx, HubData, HubHandler, HubItem, HubResult};
+use captura_rules::hub::types::{
+    HandlerCtx as HubHandlerCtx, HubData, HubHandler, HubItem, HubResult,
+};
 use captura_rules::v1::RuleSpecV1;
 use captura_storage::entity::feed;
 use tracing::debug;

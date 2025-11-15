@@ -594,7 +594,6 @@ dependencies = [
  "captura-common",
  "captura-crawler",
  "captura-fetcher",
- "captura-hub",
  "captura-migration",
  "captura-pipeline",
  "captura-rules",
@@ -672,18 +671,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "captura-hub"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "captura-common",
- "chrono",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "captura-migration"
 version = "0.1.0"
 dependencies = [
@@ -701,7 +688,6 @@ dependencies = [
  "captura-common",
  "captura-crawler",
  "captura-fetcher",
- "captura-hub",
  "captura-rules",
  "captura-storage",
  "chrono",
@@ -723,6 +709,7 @@ name = "captura-rules"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "captura-common",
  "chrono",
  "regex",
