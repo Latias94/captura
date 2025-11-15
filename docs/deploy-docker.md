@@ -28,6 +28,9 @@ docker compose up -d
 - `DATABASE_URL`：数据库连接串，默认 `postgres://captura:captura@db/captura`
 - `RUST_LOG`：日志级别，默认 `info`
 - `SCHEDULER_ENABLED`：是否启用内置调度器（定时拉取/任务队列），默认启用（设置为 `false` 或 `0` 关闭）
+- `SCHEDULER_WORKER_CONCURRENCY`：调度器每轮最多并行处理的任务数，默认等于 CPU 核心数（至少 `1`）
+- `SCHEDULER_PER_HOST_CONCURRENCY`：同一目标主机的最大并发抓取数量，默认 `2`
+- `SCHEDULER_PER_USER_CONCURRENCY`：单用户在一次调度中最多并行的任务数量，默认 `0`（关闭 per-user 限制）
 
 > 我们遵循“最小必要”环境变量（对齐 Miniflux 风格）。后续新增配置会在文档中补充。
 

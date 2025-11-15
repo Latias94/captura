@@ -48,29 +48,41 @@ pub async fn run_once(db: &DatabaseConnection, max: u64) -> Result<usize> {
         .all(db)
         .await
         .map_err(|e| captura_common::Error::Storage(e.to_string()))?;
+    // Default worker concurrency is derived from available parallelism (CPU cores),
+    // but can be overridden via SCHEDULER_WORKER_CONCURRENCY.
+    let default_workers = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(4)
+        .max(1);
     let concurrency: usize = env::var("SCHEDULER_WORKER_CONCURRENCY")
         .ok()
         .and_then(|s| s.parse().ok())
-        .unwrap_or(4);
+        .filter(|&v| v > 0)
+        .unwrap_or(default_workers);
     let per_host: usize = env::var("SCHEDULER_PER_HOST_CONCURRENCY")
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(2);
+    // Optional per-user concurrency limit for this batch.
+    // 0 or unset means disabled (no per-user gating).
     let per_user_limit: usize = env::var("SCHEDULER_PER_USER_CONCURRENCY")
         .ok()
         .and_then(|s| s.parse().ok())
-        .unwrap_or(concurrency);
+        .unwrap_or(0);
 
     use std::collections::HashMap;
     let mut per_host_count: HashMap<String, usize> = HashMap::new();
     let mut per_user_count: HashMap<i64, usize> = HashMap::new();
     let mut scheduled: Vec<job::Model> = Vec::new();
     for j in jobs {
-        // Per-user concurrency gating across this run_once batch.
-        let uid = j.user_id;
-        let current_user_count = per_user_count.get(&uid).copied().unwrap_or(0);
-        if current_user_count >= per_user_limit {
-            continue;
+        // Optional per-user concurrency gating across this run_once batch.
+        if per_user_limit > 0 {
+            let uid = j.user_id;
+            let current_user_count = per_user_count.get(&uid).copied().unwrap_or(0);
+            if current_user_count >= per_user_limit {
+                continue;
+            }
+            per_user_count.insert(uid, current_user_count + 1);
         }
 
         // Only gate per-host for feed refresh
@@ -93,8 +105,7 @@ pub async fn run_once(db: &DatabaseConnection, max: u64) -> Result<usize> {
                 }
             }
         }
-        // Passed per-user and per-host gates; schedule this job.
-        per_user_count.insert(uid, current_user_count + 1);
+        // Passed gates; schedule this job.
         scheduled.push(j);
         if scheduled.len() >= concurrency {
             break;
