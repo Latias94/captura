@@ -31,12 +31,25 @@ jobs:
   # variables/secrets CAPTURA_TEST_PG_URL / CAPTURA_TEST_MY_URL.
   # These jobs are skipped if the URL is not provided.
   pg:
-    if: ${{ env.CAPTURA_TEST_PG_URL != '' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: captura
+          POSTGRES_PASSWORD: captura
+          POSTGRES_DB: captura
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U captura"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     env:
       RUST_BACKTRACE: "1"
-      CAPTURA_TEST_PG_URL: ${{ env.CAPTURA_TEST_PG_URL }}
+      CAPTURA_TEST_PG_URL: postgres://captura:captura@postgres:5432/captura
     steps:
       - uses: actions/checkout@v4
       - uses: actions-rs/toolchain@v1
@@ -48,12 +61,26 @@ jobs:
         run: cargo test -p captura-api --test db_backends -- --ignored --nocapture
 
   mysql:
-    if: ${{ env.CAPTURA_TEST_MY_URL != '' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    services:
+      mysql:
+        image: mysql:8
+        env:
+          MYSQL_DATABASE: captura
+          MYSQL_USER: captura
+          MYSQL_PASSWORD: captura
+          MYSQL_ROOT_PASSWORD: root
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
     env:
       RUST_BACKTRACE: "1"
-      CAPTURA_TEST_MY_URL: ${{ env.CAPTURA_TEST_MY_URL }}
+      CAPTURA_TEST_MY_URL: mysql://captura:captura@mysql:3306/captura
     steps:
       - uses: actions/checkout@v4
       - uses: actions-rs/toolchain@v1
