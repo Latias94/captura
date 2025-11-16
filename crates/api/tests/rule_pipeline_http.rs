@@ -1,4 +1,5 @@
 use axum::{routing::get, Router};
+use captura_rules::v1::parse_rule_v1;
 use captura_service::refresh_and_persist;
 use captura_storage::entity::{entry, feed, rule};
 use chrono::{FixedOffset, Utc};
@@ -56,14 +57,23 @@ source:
         base = base
     );
 
+    let spec = parse_rule_v1(&yaml).expect("parse rule yaml");
+    let spec_json =
+        serde_json::to_value(&spec).expect("encode rule spec_json in rule_feed_pipeline");
+    let examples_json = serde_json::to_value(&spec.examples)
+        .expect("encode rule examples_json in rule_feed_pipeline");
+    let namespace = spec.id.rsplit_once('.').map(|(ns, _)| ns.to_string());
+
     let rule_am = rule::ActiveModel {
-        rule_id: Set("test.rule".to_string()),
+        rule_id: Set(spec.id.clone()),
+        kind: Set("dsl".to_string()),
         version: Set(None),
-        namespace: Set(Some("test".to_string())),
-        description: Set(Some("rule pipeline e2e".to_string())),
-        yaml: Set(yaml),
-        examples_json: Set(None),
-        verified_at: Set(None),
+        namespace: Set(namespace),
+        description: Set(spec.description.clone()),
+        spec_json: Set(Some(spec_json)),
+        handler_target: Set(None),
+        examples_json: Set(Some(examples_json)),
+        verified_at: Set(Some(now)),
         maintainer: Set(None),
         created_at: Set(now),
         updated_at: Set(now),
@@ -190,14 +200,23 @@ source:
         base = base
     );
 
+    let spec = parse_rule_v1(&yaml).expect("parse json-from-html rule yaml");
+    let spec_json =
+        serde_json::to_value(&spec).expect("encode rule spec_json in json_from_html test");
+    let examples_json = serde_json::to_value(&spec.examples)
+        .expect("encode rule examples_json in json_from_html test");
+    let namespace = spec.id.rsplit_once('.').map(|(ns, _)| ns.to_string());
+
     let rule_am = rule::ActiveModel {
-        rule_id: Set("test.rule.json_from_html".to_string()),
+        rule_id: Set(spec.id.clone()),
+        kind: Set("dsl".to_string()),
         version: Set(None),
-        namespace: Set(Some("test".to_string())),
-        description: Set(Some("json from html rule pipeline e2e".to_string())),
-        yaml: Set(yaml),
-        examples_json: Set(None),
-        verified_at: Set(None),
+        namespace: Set(namespace),
+        description: Set(spec.description.clone()),
+        spec_json: Set(Some(spec_json)),
+        handler_target: Set(None),
+        examples_json: Set(Some(examples_json)),
+        verified_at: Set(Some(now)),
         maintainer: Set(None),
         created_at: Set(now),
         updated_at: Set(now),
@@ -352,14 +371,23 @@ transform:
         base = base
     );
 
+    let spec = parse_rule_v1(&yaml).expect("parse full_content rule yaml");
+    let spec_json =
+        serde_json::to_value(&spec).expect("encode rule spec_json in full_content test");
+    let examples_json = serde_json::to_value(&spec.examples)
+        .expect("encode rule examples_json in full_content test");
+    let namespace = spec.id.rsplit_once('.').map(|(ns, _)| ns.to_string());
+
     let rule_am = rule::ActiveModel {
-        rule_id: Set("test.rule.full_content".to_string()),
+        rule_id: Set(spec.id.clone()),
+        kind: Set("dsl".to_string()),
         version: Set(None),
-        namespace: Set(Some("test".to_string())),
-        description: Set(Some("full content rule pipeline e2e".to_string())),
-        yaml: Set(yaml),
-        examples_json: Set(None),
-        verified_at: Set(None),
+        namespace: Set(namespace),
+        description: Set(spec.description.clone()),
+        spec_json: Set(Some(spec_json)),
+        handler_target: Set(None),
+        examples_json: Set(Some(examples_json)),
+        verified_at: Set(Some(now)),
         maintainer: Set(None),
         created_at: Set(now),
         updated_at: Set(now),
@@ -493,14 +521,22 @@ source:
         base = base
     );
 
+    let spec = parse_rule_v1(&yaml).expect("parse xpath rule yaml");
+    let spec_json = serde_json::to_value(&spec).expect("encode rule spec_json in xpath test");
+    let examples_json =
+        serde_json::to_value(&spec.examples).expect("encode rule examples_json in xpath test");
+    let namespace = spec.id.rsplit_once('.').map(|(ns, _)| ns.to_string());
+
     let rule_am = rule::ActiveModel {
-        rule_id: Set("test.rule.xpath".to_string()),
+        rule_id: Set(spec.id.clone()),
+        kind: Set("dsl".to_string()),
         version: Set(None),
-        namespace: Set(Some("test".to_string())),
-        description: Set(Some("xpath rule pipeline e2e".to_string())),
-        yaml: Set(yaml),
-        examples_json: Set(None),
-        verified_at: Set(None),
+        namespace: Set(namespace),
+        description: Set(spec.description.clone()),
+        spec_json: Set(Some(spec_json)),
+        handler_target: Set(None),
+        examples_json: Set(Some(examples_json)),
+        verified_at: Set(Some(now)),
         maintainer: Set(None),
         created_at: Set(now),
         updated_at: Set(now),

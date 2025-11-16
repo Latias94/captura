@@ -1,0 +1,39 @@
+{% extends "layout.html" %}
+{% block body %}
+<div class="view view--hub">
+  <h1 class="title">{{ dict["hub.test.title"] }}</h1>
+  <p class="muted">{{ dict["hub.test.desc"] }}</p>
+
+  <section class="panel mt-2">
+    <h2 class="title">{{ dict["hub.preview.title"] }}</h2>
+    <form method="get" action="/hub/test" class="actions">
+      <label class="label" for="hubUrl">{{ dict["hub.preview.label_url"] }}</label>
+      <input id="hubUrl" class="input" name="url" value="{{ preview_url }}" placeholder="captura_hub://github/trending?since=daily&amp;language=rust" />
+      <button class="button ml-2" type="submit">{{ dict["btn.preview"] }}</button>
+      <a href="/hub" class="button button--ghost ml-2">{{ dict["hub.routes.list_title"] }}</a>
+    </form>
+  </section>
+
+  {% if preview.is_some() %}
+  {% let p = preview.as_ref().unwrap() %}
+  <section class="panel mt-4">
+    <h2 class="title">{{ p.title }}</h2>
+    {% if p.description.is_some() %}
+    <p class="muted">{{ p.description.as_ref().unwrap() }}</p>
+    {% endif %}
+    <ul class="list">
+      {% for it in p.items %}
+      <li class="list__item">
+        {% if it.link.is_some() %}
+        <a class="link" href="{{ it.link.as_ref().unwrap() }}">{{ it.title }}</a>
+        {% else %}
+        {{ it.title }}
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+</div>
+{% endblock %}
+

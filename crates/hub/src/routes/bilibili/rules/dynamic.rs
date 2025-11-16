@@ -2,7 +2,7 @@ use captura_common::{Error, NormalizedEntry, Result};
 use chrono::{TimeZone, Utc};
 use serde_json::Value as JsonValue;
 
-use crate::hub::bilibili::rules::utils::{
+use crate::routes::bilibili::rules::utils::{
     bilibili_get_json, normalize_cover_url, render_ugc_description,
 };
 

@@ -1,5 +1,5 @@
-use crate::hub::types::{Features, HubCtx, HubData, HubItem, Radar, Route, RouteMeta};
-use crate::hub::util;
+use crate::routes::types::{Features, HubCtx, HubData, HubItem, Radar, Route, RouteMeta};
+use crate::routes::util;
 use captura_hub_macros::register_hub_route;
 
 pub const META_ZHIHU_HOTLIST: RouteMeta = RouteMeta {
@@ -59,7 +59,7 @@ pub async fn handler(_ctx: &mut HubCtx<'_>) -> captura_common::Result<HubData> {
     })
 }
 
-fn handler_fn<'a>(ctx: &'a mut HubCtx<'a>) -> crate::hub::types::HubHandlerFuture<'a> {
+fn handler_fn<'a>(ctx: &'a mut HubCtx<'a>) -> crate::routes::types::HubHandlerFuture<'a> {
     Box::pin(handler(ctx))
 }
 

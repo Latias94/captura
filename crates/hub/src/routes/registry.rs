@@ -1,4 +1,4 @@
-use crate::hub::types::{Route, RouteMeta, RouteWrapper};
+use crate::routes::types::{Route, RouteMeta, RouteWrapper};
 use once_cell::sync::Lazy;
 
 // Collect all registered routes via `inventory`.

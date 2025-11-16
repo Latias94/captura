@@ -1,5 +1,5 @@
-use crate::hub::bilibili::rules as bilibili;
-use crate::hub::types::{Features, HubCtx, HubData, HubItem, Radar, Route, RouteMeta};
+use crate::routes::bilibili::rules as bilibili;
+use crate::routes::types::{Features, HubCtx, HubData, HubItem, Radar, Route, RouteMeta};
 use crate::v1::merge_rule_params_v1;
 use captura_extract::{execute_json_v1_stateless, RuleExecCtx, RuleExecHttpCtx};
 use captura_hub_macros::register_hub_route;
@@ -89,7 +89,7 @@ pub async fn handler(ctx: &mut HubCtx<'_>) -> captura_common::Result<HubData> {
     })
 }
 
-fn handler_fn<'a>(ctx: &'a mut HubCtx<'a>) -> crate::hub::types::HubHandlerFuture<'a> {
+fn handler_fn<'a>(ctx: &'a mut HubCtx<'a>) -> crate::routes::types::HubHandlerFuture<'a> {
     Box::pin(handler(ctx))
 }
 

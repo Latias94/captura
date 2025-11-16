@@ -1,5 +1,5 @@
-use crate::hub::bilibili::rules::dynamic::{fetch_user_dynamic, DynamicOptions};
-use crate::hub::types::{Features, HubCtx, HubData, HubItem, Radar, Route, RouteMeta};
+use crate::routes::bilibili::rules::dynamic::{fetch_user_dynamic, DynamicOptions};
+use crate::routes::types::{Features, HubCtx, HubData, HubItem, Radar, Route, RouteMeta};
 use captura_hub_macros::register_hub_route;
 use tracing::debug;
 
@@ -9,13 +9,13 @@ pub const META_BILIBILI_USER_DYNAMIC: RouteMeta = RouteMeta {
     categories: &["social-media"],
     example: "/bilibili/user/dynamic/2267573",
     params: &[
-        crate::hub::types::ParamMeta {
+        crate::routes::types::ParamMeta {
             name: "uid",
             description: "Bilibili user id (mid), e.g. 2267573",
             default: None,
             options: &[],
         },
-        crate::hub::types::ParamMeta {
+        crate::routes::types::ParamMeta {
             name: "embed",
             description: "Enable inline player (default on; any value disables)",
             default: Some(""),
@@ -121,7 +121,7 @@ pub async fn handler(ctx: &mut HubCtx<'_>) -> captura_common::Result<HubData> {
     Ok(data)
 }
 
-fn handler_fn<'a>(ctx: &'a mut HubCtx<'a>) -> crate::hub::types::HubHandlerFuture<'a> {
+fn handler_fn<'a>(ctx: &'a mut HubCtx<'a>) -> crate::routes::types::HubHandlerFuture<'a> {
     Box::pin(handler(ctx))
 }
 

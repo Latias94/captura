@@ -1,5 +1,5 @@
-use crate::hub::types::{Features, HubCtx, HubData, HubItem, Radar, Route, RouteMeta};
-use crate::hub::util;
+use crate::routes::types::{Features, HubCtx, HubData, HubItem, Radar, Route, RouteMeta};
+use crate::routes::util;
 use captura_hub_macros::register_hub_route;
 
 pub const META_MEDIUM_TAG: RouteMeta = RouteMeta {
@@ -7,7 +7,7 @@ pub const META_MEDIUM_TAG: RouteMeta = RouteMeta {
     path: "/medium/tag/:tag",
     categories: &["blog"],
     example: "/medium/tag/rust",
-    params: &[crate::hub::types::ParamMeta {
+    params: &[crate::routes::types::ParamMeta {
         name: "tag",
         description: "Medium tag slug",
         default: Some("rust"),
@@ -66,7 +66,7 @@ pub async fn handler(ctx: &mut HubCtx<'_>) -> captura_common::Result<HubData> {
     })
 }
 
-fn handler_fn<'a>(ctx: &'a mut HubCtx<'a>) -> crate::hub::types::HubHandlerFuture<'a> {
+fn handler_fn<'a>(ctx: &'a mut HubCtx<'a>) -> crate::routes::types::HubHandlerFuture<'a> {
     Box::pin(handler(ctx))
 }
 

@@ -1,4 +1,4 @@
-use crate::hub::bilibili::rules::utils::pick_bilibili_cookie;
+use crate::routes::bilibili::rules::utils::pick_bilibili_cookie;
 use crate::v1::{
     ContentMode, ContentSpec, FetchDefaults, JsonMappingSpec, ParamsSpec, RequestSpec, RuleSpecV1,
     SourceSpec, SourceType, TransformSpec,

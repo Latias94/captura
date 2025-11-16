@@ -1,0 +1,62 @@
+{% extends "layout.html" %}
+{% block body %}
+<div class="view view--settings">
+  <h1 class="title">{{ dict["rules.test.title"] }}</h1>
+  <p class="muted">{{ dict["rules.test.desc"] }}</p>
+
+  <section class="panel mt-2">
+    <h2 class="title">{{ dict["rules.test.form_title"] }}</h2>
+    <form method="post" action="/rules/test" class="stack">
+      <div class="field">
+        <label class="label" for="ruleUrl">{{ dict["rules.test.label_url"] }}</label>
+        <input
+          id="ruleUrl"
+          class="input"
+          name="url"
+          value="{{ url }}"
+          placeholder="https://example.com/list"
+          required
+        />
+      </div>
+      <div class="field">
+        <label class="label" for="ruleYaml">{{ dict["rules.test.label_yaml"] }}</label>
+        <textarea
+          id="ruleYaml"
+          name="yaml"
+          class="input h-10em"
+          placeholder="{{ dict["rules.test.yaml_placeholder"] }}"
+        >{% if yaml.is_some() %}{{ yaml.as_ref().unwrap() }}{% endif %}</textarea>
+      </div>
+      <div class="actions">
+        <button class="button" type="submit">{{ dict["btn.preview"] }}</button>
+        <a href="/settings" class="button button--ghost ml-2">{{ dict["nav.settings"] }}</a>
+      </div>
+    </form>
+  </section>
+
+  {% if result.is_some() %}
+  {% let r = result.as_ref().unwrap() %}
+  <section class="panel mt-4">
+    <h2 class="title">{{ dict["rules.test.result_title"] }}</h2>
+    <p class="muted">
+      {{ dict["rules.test.result_summary"] }}:
+      {{ r.item_count }} items,
+      {{ dict["rules.test.used_smart"] }}: {{ r.used_smart }},
+      {{ dict["rules.test.duration_ms"] }}: {{ r.duration_ms }}
+    </p>
+    <ul class="list">
+      {% for e in r.entries %}
+      <li class="list__item">
+        {% if e.url.is_some() %}
+        <a class="link" href="{{ e.url.as_ref().unwrap() }}">{{ e.title.as_ref().unwrap_or(&"".to_string()) }}</a>
+        {% else %}
+        {{ e.title.as_ref().unwrap_or(&"".to_string()) }}
+        {% endif %}
+        <span class="muted">({{ e.content_len }} bytes)</span>
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+</div>
+{% endblock %}

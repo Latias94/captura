@@ -1,7 +1,7 @@
-use crate::hub::types::{
+use crate::routes::types::{
     FeatureConfig, Features, HubCtx, HubData, HubItem, Radar, Route, RouteMeta,
 };
-use crate::hub::util;
+use crate::routes::util;
 use captura_hub_macros::register_hub_route;
 
 pub const META_GITHUB_TRENDING: RouteMeta = RouteMeta {
@@ -10,7 +10,7 @@ pub const META_GITHUB_TRENDING: RouteMeta = RouteMeta {
     categories: &["programming"],
     example: "/github/trending/daily/javascript/en",
     params: &[
-        crate::hub::types::ParamMeta {
+        crate::routes::types::ParamMeta {
             name: "since",
             description: "time range: daily / weekly / monthly",
             default: Some("daily"),
@@ -20,14 +20,14 @@ pub const META_GITHUB_TRENDING: RouteMeta = RouteMeta {
                 ("monthly", "This month"),
             ],
         },
-        crate::hub::types::ParamMeta {
+        crate::routes::types::ParamMeta {
             name: "language",
             description:
                 "repository language slug in /trending/{language}; use 'any' or empty for all languages",
             default: Some("any"),
             options: &[],
         },
-        crate::hub::types::ParamMeta {
+        crate::routes::types::ParamMeta {
             name: "spoken_language",
             description:
                 "spoken_language_code in trending URL; empty for all spoken languages",
@@ -109,7 +109,7 @@ pub async fn handler(ctx: &mut HubCtx<'_>) -> captura_common::Result<HubData> {
     })
 }
 
-fn handler_fn<'a>(ctx: &'a mut HubCtx<'a>) -> crate::hub::types::HubHandlerFuture<'a> {
+fn handler_fn<'a>(ctx: &'a mut HubCtx<'a>) -> crate::routes::types::HubHandlerFuture<'a> {
     Box::pin(handler(ctx))
 }
 

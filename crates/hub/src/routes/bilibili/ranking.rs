@@ -1,5 +1,5 @@
-use crate::hub::bilibili::rules as bilibili;
-use crate::hub::types::{Features, HubCtx, HubData, HubItem, Radar, Route, RouteMeta};
+use crate::routes::bilibili::rules as bilibili;
+use crate::routes::types::{Features, HubCtx, HubData, HubItem, Radar, Route, RouteMeta};
 use crate::v1::merge_rule_params_v1;
 use captura_extract::{execute_json_v1_stateless, RuleExecCtx, RuleExecHttpCtx};
 use captura_hub_macros::register_hub_route;
@@ -9,7 +9,7 @@ pub const META_BILIBILI_RANKING: RouteMeta = RouteMeta {
     path: "/bilibili/ranking/:rid",
     categories: &["social-media"],
     example: "/bilibili/ranking/0",
-    params: &[crate::hub::types::ParamMeta {
+    params: &[crate::routes::types::ParamMeta {
         name: "rid",
         description: "Ranking region id (numeric); 0 = all site",
         default: Some("0"),
@@ -99,7 +99,7 @@ pub async fn handler(ctx: &mut HubCtx<'_>) -> captura_common::Result<HubData> {
     })
 }
 
-fn handler_fn<'a>(ctx: &'a mut HubCtx<'a>) -> crate::hub::types::HubHandlerFuture<'a> {
+fn handler_fn<'a>(ctx: &'a mut HubCtx<'a>) -> crate::routes::types::HubHandlerFuture<'a> {
     Box::pin(handler(ctx))
 }
 

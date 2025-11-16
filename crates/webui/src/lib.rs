@@ -118,9 +118,34 @@ struct IndexTemplate<'a> {
 #[template(path = "hub_routes.html")]
 struct HubRoutesPage<'a> {
     title: &'a str,
-    routes: &'a [UiHubRoute],
+    groups: &'a [UiHubNamespaceGroup],
+    dict: &'a std::collections::HashMap<String, String>,
+    csp_nonce: &'a str,
+    custom_css: &'a str,
+    custom_js: &'a str,
+    external_font_hosts: &'a str,
+}
+
+#[derive(Template)]
+#[template(path = "hub_test.html")]
+struct HubTestPage<'a> {
+    title: &'a str,
     preview: Option<UiHubPreview>,
     preview_url: &'a str,
+    dict: &'a std::collections::HashMap<String, String>,
+    csp_nonce: &'a str,
+    custom_css: &'a str,
+    custom_js: &'a str,
+    external_font_hosts: &'a str,
+}
+
+#[derive(Template)]
+#[template(path = "rules_test.html")]
+struct RulesTestPage<'a> {
+    title: &'a str,
+    url: &'a str,
+    yaml: &'a Option<String>,
+    result: &'a Option<UiTryRuleResp>,
     dict: &'a std::collections::HashMap<String, String>,
     csp_nonce: &'a str,
     custom_css: &'a str,
@@ -235,6 +260,35 @@ where
         .route("/signup", get(signup))
         .route("/settings", get(ui_settings))
         .route("/hub", get(ui_hub_routes))
+        .route("/hub/test", get(ui_hub_test))
+        .route(
+            "/rules/test",
+            post(ui_rules_test).get(|headers: HeaderMap| async move {
+                // initial empty form render on GET
+                let lang = resolve_lang(&headers).await;
+                let dict = i18n::load(&lang);
+                let snippets = load_snippets(&headers).await;
+                let nonce = gen_csp_nonce();
+                let empty = String::new();
+                let none_yaml: Option<String> = None;
+                let none_result: Option<UiTryRuleResp> = None;
+                let tpl = RulesTestPage {
+                    title: "Test Rule",
+                    url: &empty,
+                    yaml: &none_yaml,
+                    result: &none_result,
+                    dict: &dict,
+                    csp_nonce: &nonce,
+                    custom_css: &snippets.custom_css,
+                    custom_js: &snippets.custom_js,
+                    external_font_hosts: &snippets.external_font_hosts,
+                };
+                match tpl.render() {
+                    Ok(s) => Html(s).into_response(),
+                    Err(_) => (StatusCode::INTERNAL_SERVER_ERROR, "template error").into_response(),
+                }
+            }),
+        )
         // static files: /ui/static/{*path}
         .route("/ui/static/{*path}", get(static_handler))
         // minimal SSR pages using API + token cookie
@@ -385,6 +439,12 @@ struct UiHubRoute {
     description: String,
 }
 
+#[derive(Clone)]
+struct UiHubNamespaceGroup {
+    namespace: String,
+    routes: Vec<UiHubRoute>,
+}
+
 #[allow(dead_code)]
 #[derive(Deserialize, Clone)]
 struct UiHubItem {
@@ -412,12 +472,29 @@ struct UiHubPreview {
     items: Vec<UiHubItem>,
 }
 
+#[derive(Deserialize, Clone)]
+struct UiTryRuleEntry {
+    title: Option<String>,
+    url: Option<String>,
+    content_len: usize,
+}
+
+#[derive(Deserialize, Clone)]
+struct UiTryRuleResp {
+    used_smart: bool,
+    list_url: String,
+    item_count: usize,
+    entries: Vec<UiTryRuleEntry>,
+    timeout_ms: Option<u64>,
+    duration_ms: u128,
+}
+
 #[derive(Deserialize, Default)]
 struct UiHubQuery {
     url: Option<String>,
 }
 
-async fn ui_hub_routes(headers: HeaderMap, Query(q): Query<UiHubQuery>) -> impl IntoResponse {
+async fn ui_hub_routes(headers: HeaderMap, _q: Query<UiHubQuery>) -> impl IntoResponse {
     let Some(token) = read_token_cookie(&headers) else {
         return Redirect::to("/login").into_response();
     };
@@ -441,7 +518,7 @@ async fn ui_hub_routes(headers: HeaderMap, Query(q): Query<UiHubQuery>) -> impl 
 
     // Fetch hub routes list.
     let routes_url = format!("{}/api/v1/hub/routes", api_base());
-    let routes: Vec<UiHubRoute> = match cli
+    let routes_flat: Vec<UiHubRoute> = match cli
         .get(routes_url)
         .header("Authorization", format!("Bearer {}", token))
         .send()
@@ -456,7 +533,54 @@ async fn ui_hub_routes(headers: HeaderMap, Query(q): Query<UiHubQuery>) -> impl 
         Err(_) => Vec::new(),
     };
 
-    // Optional preview.
+    // Group routes by namespace (prefix before '/')
+    use std::collections::BTreeMap;
+    let mut by_ns: BTreeMap<String, Vec<UiHubRoute>> = BTreeMap::new();
+    for r in routes_flat {
+        let ns = r.hub_id.split('/').next().unwrap_or("").to_string();
+        by_ns.entry(ns).or_default().push(r);
+    }
+    let mut groups: Vec<UiHubNamespaceGroup> = by_ns
+        .into_iter()
+        .map(|(namespace, mut routes)| {
+            routes.sort_by(|a, b| a.hub_id.cmp(&b.hub_id));
+            UiHubNamespaceGroup { namespace, routes }
+        })
+        .collect();
+    groups.sort_by(|a, b| a.namespace.cmp(&b.namespace));
+
+    let tpl = HubRoutesPage {
+        title: "Hub Routes",
+        groups: &groups,
+        dict: &dict,
+        csp_nonce: &nonce,
+        custom_css: &snippets.custom_css,
+        custom_js: &snippets.custom_js,
+        external_font_hosts: &snippets.external_font_hosts,
+    };
+    match tpl.render() {
+        Ok(s) => Html(s).into_response(),
+        Err(_) => (StatusCode::INTERNAL_SERVER_ERROR, "template error").into_response(),
+    }
+}
+
+async fn ui_hub_test(headers: HeaderMap, Query(q): Query<UiHubQuery>) -> impl IntoResponse {
+    let Some(token) = read_token_cookie(&headers) else {
+        return Redirect::to("/login").into_response();
+    };
+    let lang = resolve_lang(&headers).await;
+    let dict = i18n::load(&lang);
+    let snippets = load_snippets(&headers).await;
+    let nonce = gen_csp_nonce();
+
+    let cli = match reqwest::Client::builder()
+        .timeout(Duration::from_secs(3))
+        .build()
+    {
+        Ok(c) => c,
+        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "http client error").into_response(),
+    };
+
     let mut preview: Option<UiHubPreview> = None;
     let preview_url = q.url.unwrap_or_default();
     if !preview_url.is_empty() {
@@ -480,11 +604,87 @@ async fn ui_hub_routes(headers: HeaderMap, Query(q): Query<UiHubQuery>) -> impl 
         }
     }
 
-    let tpl = HubRoutesPage {
-        title: "Hub Routes",
-        routes: &routes,
+    let tpl = HubTestPage {
+        title: "Hub Preview",
         preview,
         preview_url: &preview_url,
+        dict: &dict,
+        csp_nonce: &nonce,
+        custom_css: &snippets.custom_css,
+        custom_js: &snippets.custom_js,
+        external_font_hosts: &snippets.external_font_hosts,
+    };
+    match tpl.render() {
+        Ok(s) => Html(s).into_response(),
+        Err(_) => (StatusCode::INTERNAL_SERVER_ERROR, "template error").into_response(),
+    }
+}
+
+use axum::Form;
+
+#[derive(Deserialize)]
+struct RulesTestForm {
+    url: String,
+    #[serde(default)]
+    yaml: String,
+}
+
+async fn ui_rules_test(headers: HeaderMap, Form(form): Form<RulesTestForm>) -> impl IntoResponse {
+    let Some(token) = read_token_cookie(&headers) else {
+        return Redirect::to("/login").into_response();
+    };
+    let lang = resolve_lang(&headers).await;
+    let dict = i18n::load(&lang);
+    let snippets = load_snippets(&headers).await;
+    let nonce = gen_csp_nonce();
+
+    let url = form.url.clone();
+    let yaml = if form.yaml.trim().is_empty() {
+        None
+    } else {
+        Some(form.yaml.clone())
+    };
+    let mut result: Option<UiTryRuleResp> = None;
+
+    if !url.trim().is_empty() && yaml.is_some() {
+        let cli = match reqwest::Client::builder()
+            .timeout(Duration::from_secs(6))
+            .build()
+        {
+            Ok(c) => c,
+            Err(_) => {
+                return (StatusCode::INTERNAL_SERVER_ERROR, "http client error").into_response();
+            }
+        };
+        #[derive(serde::Serialize)]
+        struct TryReq<'a> {
+            url: &'a str,
+            yaml: &'a str,
+        }
+        let body = TryReq {
+            url: &url,
+            yaml: yaml.as_ref().unwrap(),
+        };
+        let endpoint = format!("{}/api/v1/rules/try", api_base());
+        if let Ok(resp) = cli
+            .post(endpoint)
+            .header("Authorization", format!("Bearer {}", token))
+            .json(&body)
+            .send()
+            .await
+            .and_then(|r| r.error_for_status())
+        {
+            if let Ok(r) = resp.json::<UiTryRuleResp>().await {
+                result = Some(r);
+            }
+        }
+    }
+
+    let tpl = RulesTestPage {
+        title: "Test Rule",
+        url: &url,
+        yaml: &yaml,
+        result: &result,
         dict: &dict,
         csp_nonce: &nonce,
         custom_css: &snippets.custom_css,

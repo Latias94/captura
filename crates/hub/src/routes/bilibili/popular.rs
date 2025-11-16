@@ -1,5 +1,5 @@
-use crate::hub::bilibili::rules as bilibili;
-use crate::hub::types::{Features, HubCtx, HubData, HubItem, Radar, Route, RouteMeta};
+use crate::routes::bilibili::rules as bilibili;
+use crate::routes::types::{Features, HubCtx, HubData, HubItem, Radar, Route, RouteMeta};
 use captura_extract::{execute_json_v1_stateless, RuleExecCtx, RuleExecHttpCtx};
 use captura_hub_macros::register_hub_route;
 
@@ -8,7 +8,7 @@ pub const META_BILIBILI_POPULAR: RouteMeta = RouteMeta {
     path: "/bilibili/popular/all/:embed?",
     categories: &["social-media"],
     example: "/bilibili/popular/all",
-    params: &[crate::hub::types::ParamMeta {
+    params: &[crate::routes::types::ParamMeta {
         name: "embed",
         description: "Enable inline video by default; provide any value to disable.",
         default: Some(""),
@@ -83,7 +83,7 @@ pub async fn handler(ctx: &mut HubCtx<'_>) -> captura_common::Result<HubData> {
     })
 }
 
-fn handler_fn<'a>(ctx: &'a mut HubCtx<'a>) -> crate::hub::types::HubHandlerFuture<'a> {
+fn handler_fn<'a>(ctx: &'a mut HubCtx<'a>) -> crate::routes::types::HubHandlerFuture<'a> {
     Box::pin(handler(ctx))
 }
 

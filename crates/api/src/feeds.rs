@@ -269,7 +269,7 @@ pub(crate) async fn create_feed(
             .map(|(p, q)| (p.to_string(), q.to_string()))
             .unwrap_or((rest.to_string(), String::new()));
         let hub_id = path.trim_start_matches('/');
-        if captura_rules::hub::registry::find_route_meta(hub_id).is_none() {
+        if captura_rules::routes::registry::find_route_meta(hub_id).is_none() {
             return Err(bad_request("unknown captura_hub route"));
         }
         let mut map = serde_json::Map::new();

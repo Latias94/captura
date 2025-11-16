@@ -59,7 +59,7 @@ pub(crate) async fn validate_hub(
     let hub_id = route_path.trim_start_matches('/');
 
     // Check whether this hub route exists in the built-in registry.
-    let exists = captura_rules::hub::registry::find_route_meta(hub_id).is_some();
+    let exists = captura_rules::routes::registry::find_route_meta(hub_id).is_some();
     if !exists {
         return Ok(Json(ValidateResp {
             ok: false,
@@ -102,7 +102,7 @@ pub(crate) async fn list_routes(
     TypedHeader(Authorization(bearer)): TypedHeader<Authorization<Bearer>>,
 ) -> ApiResult<Json<HubRouteListResp>> {
     let _user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
-    let routes = captura_rules::hub::registry::builtin_routes()
+    let routes = captura_rules::routes::registry::builtin_routes()
         .into_iter()
         .map(|r| {
             let meta = r.meta;
@@ -132,7 +132,7 @@ pub(crate) async fn get_route(
 ) -> ApiResult<Json<HubRouteDto>> {
     let _user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
     let hub_id = format!("{}/{}", namespace, name);
-    let Some(r) = captura_rules::hub::registry::builtin_routes()
+    let Some(r) = captura_rules::routes::registry::builtin_routes()
         .into_iter()
         .find(|r| r.meta.hub_id == hub_id)
     else {
@@ -162,7 +162,7 @@ pub(crate) struct PreviewReq {
 
 #[derive(Serialize)]
 pub(crate) struct PreviewResp {
-    pub data: captura_rules::hub::types::HubData,
+    pub data: captura_rules::routes::types::HubData,
 }
 
 pub(crate) async fn preview_hub(

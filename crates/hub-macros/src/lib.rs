@@ -25,7 +25,7 @@ pub fn register_hub_route(_attr: TokenStream, item: TokenStream) -> TokenStream 
         #[doc(hidden)]
         #[allow(non_upper_case_globals)]
         inventory::submit! {
-            crate::hub::types::RouteWrapper(#name)
+            crate::routes::types::RouteWrapper(#name)
         }
     };
 
