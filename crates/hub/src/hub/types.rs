@@ -26,15 +26,13 @@ pub struct Radar {
     pub target: &'static str,
 }
 
-/// Implementation kind for a Hub route.
-///
-/// - `Dsl`: route is primarily implemented by a DSL rule, with a thin Rust adapter;
-/// - `Handler`: route is fully implemented in Rust code.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum RouteImplKind {
-    Dsl,
-    Handler,
+/// Parameter metadata used by Hub routes.
+#[derive(Debug, Clone, Serialize)]
+pub struct ParamMeta {
+    pub name: &'static str,
+    pub description: &'static str,
+    pub default: Option<&'static str>,
+    pub options: &'static [(&'static str, &'static str)],
 }
 
 /// Static route metadata (path/categories/parameters/etc.).
@@ -46,8 +44,8 @@ pub struct RouteMeta {
     pub path: &'static str,
     pub categories: &'static [&'static str],
     pub example: &'static str,
-    /// Simple parameter docs: (name, description).
-    pub parameters: &'static [(&'static str, &'static str)],
+    /// Parameter docs.
+    pub params: &'static [ParamMeta],
     pub features: Features,
     pub radar: &'static [Radar],
     pub name: &'static str,
@@ -79,21 +77,15 @@ pub struct HubData {
     pub allow_empty: bool,
 }
 
-/// Handler result: HubData or future extensions (e.g. HTTP responses).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum HubResult {
-    Data(HubData),
-}
-
 /// Execution context passed to Hub handlers.
 #[derive(Debug)]
-pub struct HandlerCtx<'a> {
+pub struct HubCtx<'a> {
     pub hub_id: &'a str,
     /// Route parameters (path/query merged as needed by the dispatcher).
     pub params: &'a serde_json::Map<String, serde_json::Value>,
 }
 
-impl<'a> HandlerCtx<'a> {
+impl<'a> HubCtx<'a> {
     pub fn param_str(&self, key: &str) -> Option<&str> {
         self.params.get(key).and_then(|v| v.as_str())
     }
@@ -114,19 +106,24 @@ impl<'a> HandlerCtx<'a> {
     }
 }
 
-#[async_trait::async_trait]
-pub trait HubHandler: Send + Sync + 'static {
-    async fn handle(&self, ctx: &mut HandlerCtx<'_>) -> captura_common::Result<HubResult>;
+/// Future type returned by Hub handlers.
+pub type HubHandlerFuture<'a> = std::pin::Pin<
+    Box<dyn std::future::Future<Output = captura_common::Result<HubData>> + Send + 'a>,
+>;
+
+/// Simple function pointer type used by Hub routes (async handler).
+pub type HubHandlerFn = for<'a> fn(&'a mut HubCtx<'a>) -> HubHandlerFuture<'a>;
+
+/// A complete route definition: static meta + handler function.
+#[derive(Clone, Copy)]
+pub struct Route {
+    pub meta: &'static RouteMeta,
+    pub handler: HubHandlerFn,
 }
 
-/// A complete route registration: static meta + handler object.
+/// Wrapper type used for `inventory`-based route registration.
 #[derive(Clone, Copy)]
-pub struct RouteRegistration {
-    pub meta: &'static RouteMeta,
-    pub handler: &'static dyn HubHandler,
-    pub impl_kind: RouteImplKind,
-    /// Optional built-in rule id (DSL v1) associated with this route, when applicable.
-    ///
-    /// For example: `Some("captura.route.bilibili.hot-search")`.
-    pub builtin_rule_id: Option<&'static str>,
-}
+pub struct RouteWrapper(pub Route);
+
+/// Backwards-compatibility alias for older code.
+pub use HubCtx as HandlerCtx;

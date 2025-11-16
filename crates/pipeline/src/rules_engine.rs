@@ -120,20 +120,7 @@ pub async fn refresh_rule_v1(
     feed: &feed::Model,
     spec: &RuleSpecV1,
 ) -> Result<Vec<NormalizedEntry>> {
-    // Prefer Rust handlers (Hub routes) when available.
-    if let Some(res) = crate::handlers::execute_rust_handler_if_any(feed, spec).await {
-        let mut entries = res?;
-        let cfg = ContentTransformConfig {
-            url_rewrite_rules: feed.url_rewrite_rules.clone(),
-            content_rewrite_rules: feed.rewrite_rules.clone(),
-            keep_filter_rules: feed.keep_filter_entry_rules.clone(),
-            block_filter_rules: feed.block_filter_entry_rules.clone(),
-        };
-        apply_entry_filters_with_cfg(&cfg, &mut entries);
-        return Ok(entries);
-    }
-
-    // Fallback to pure DSL execution.
+    // Execute pure DSL path for v1 rules.
     let mut entries = match spec.source.kind {
         SourceType::ListDetail => execute_list_detail_v1(feed, spec).await,
         SourceType::SinglePage => execute_single_page_v1(feed, spec).await,

@@ -685,7 +685,10 @@ dependencies = [
  "async-trait",
  "captura-common",
  "captura-extract",
+ "captura-hub-macros",
  "chrono",
+ "inventory",
+ "once_cell",
  "regex",
  "reqwest 0.12.24",
  "scraper",
@@ -695,6 +698,15 @@ dependencies = [
  "thiserror 2.0.17",
  "tracing",
  "url",
+]
+
+[[package]]
+name = "captura-hub-macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.110",
 ]
 
 [[package]]
@@ -2380,6 +2392,15 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.110",
+]
+
+[[package]]
+name = "inventory"
+version = "0.3.21"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bc61209c082fbeb19919bee74b176221b27223e27b65d781eb91af24eb1fb46e"
+dependencies = [
+ "rustversion",
 ]
 
 [[package]]

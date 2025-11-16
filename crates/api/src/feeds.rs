@@ -16,7 +16,7 @@ use url::Url;
 
 use captura_service as service;
 use captura_storage::entity::{enclosure, entry};
-use captura_storage::entity::{feed, job, rule};
+use captura_storage::entity::{feed, job};
 
 use crate::auth::AuthUser;
 use crate::error::{bad_request, internal, not_found, ApiResult};
@@ -259,15 +259,19 @@ pub(crate) async fn create_feed(
     if body.feed_url.trim().is_empty() {
         return Err(bad_request("invalid feed_url"));
     }
-    // captura_hub:// route → map to local rule template
+    // captura_hub:// route → hub-based subscription (no rule indirection)
     let normalized_feed_url = body.feed_url.clone();
-    let mut hub_mapped_rule: Option<(String, serde_json::Value)> = None;
+    let mut hub_params_json: Option<serde_json::Value> = None;
+    let mut effective_type = ftype;
     if let Some(rest) = normalized_feed_url.strip_prefix("captura_hub://") {
         let (path, params) = rest
             .split_once('?')
             .map(|(p, q)| (p.to_string(), q.to_string()))
             .unwrap_or((rest.to_string(), String::new()));
-        let rid = crate::hub::map_hub_route_to_rule_id(&path);
+        let hub_id = path.trim_start_matches('/');
+        if captura_rules::hub::registry::find_route_meta(hub_id).is_none() {
+            return Err(bad_request("unknown captura_hub route"));
+        }
         let mut map = serde_json::Map::new();
         if !params.is_empty() {
             for pair in params.split('&') {
@@ -283,15 +287,13 @@ pub(crate) async fn create_feed(
                 }
             }
         }
-        let params_json = serde_json::Value::Object(map);
-        if let Some(rid) = rid {
-            hub_mapped_rule = Some((rid, params_json));
-        } else {
-            return Err(bad_request("unknown captura_hub route"));
-        }
+        hub_params_json = Some(serde_json::Value::Object(map));
+        effective_type = feed::FeedType::Hub;
     }
     // Validate URL (only when not using captura_hub scheme)
-    if hub_mapped_rule.is_none() && Url::parse(&normalized_feed_url).is_err() {
+    if !normalized_feed_url.starts_with("captura_hub://")
+        && Url::parse(&normalized_feed_url).is_err()
+    {
         return Err(bad_request("invalid feed_url"));
     }
     if let Some(t) = body.request_timeout_ms {
@@ -316,66 +318,16 @@ pub(crate) async fn create_feed(
     if dup.is_some() {
         return Err(bad_request("feed already exists"));
     }
-    // If this is a captura_hub route, prefer creating a rule-based subscription (template + params)
-    if let Some((rid, params)) = hub_mapped_rule {
-        // Look up the matching rule template
-        let tpl = rule::Entity::find()
-            .filter(rule::Column::RuleId.eq(rid.clone()))
-            .one(&st.db)
-            .await
-            .map_err(internal)?
-            .ok_or_else(|| bad_request("rule template not found for hub route"))?;
-        let am = feed::ActiveModel {
-            user_id: Set(user.user_id),
-            category_id: Set(body.category_id),
-            r#type: Set(feed::FeedType::Rule),
-            title: Set(body.title.clone()),
-            site_url: Set(None),
-            feed_url: Set(body.feed_url.clone()),
-            rule_id: Set(Some(tpl.id)),
-            rule_params_json: Set(Some(params)),
-            user_agent: Set(non_empty_opt(body.user_agent.clone())),
-            username: Set(non_empty_opt(body.username.clone())),
-            password: Set(non_empty_opt(body.password.clone())),
-            headers_json: Set(body.headers_json),
-            cookies: Set(non_empty_opt(body.cookies.clone())),
-            proxy_url: Set(non_empty_opt(body.proxy_url.clone())),
-            fetch_via_proxy: Set(body.fetch_via_proxy.unwrap_or(false)),
-            disable_http2: Set(body.disable_http2.unwrap_or(false)),
-            allow_invalid_certs: Set(body.allow_invalid_certs.unwrap_or(false)),
-            request_timeout_ms: Set(body.request_timeout_ms),
-            checked_at: Set(None),
-            next_run_at: Set(None),
-            etag: Set(None),
-            last_modified: Set(None),
-            last_status: Set(None),
-            error_count: Set(0),
-            disabled: Set(body.disabled.unwrap_or(false)),
-            scraper_rules: Set(None),
-            rewrite_rules: Set(None),
-            blocklist_rules: Set(None),
-            keeplist_rules: Set(None),
-            url_rewrite_rules: Set(None),
-            block_filter_entry_rules: Set(None),
-            keep_filter_entry_rules: Set(None),
-            integrations_json: Set(None),
-            created_at: Set(now),
-            updated_at: Set(now),
-            ..Default::default()
-        };
-        let res = am.insert(&st.db).await.map_err(internal)?;
-        return Ok(Json(CreateFeedResp { id: res.id }));
-    }
-    // Regular feed subscription path
+    // Regular feed or hub subscription path
     let am = feed::ActiveModel {
         user_id: Set(user.user_id),
         category_id: Set(body.category_id),
-        r#type: Set(ftype),
+        r#type: Set(effective_type),
         title: Set(body.title.clone()),
         site_url: Set(body.site_url.clone()),
         feed_url: Set(normalized_feed_url.clone()),
         rule_id: Set(body.rule_id),
-        rule_params_json: Set(body.rule_params_json),
+        rule_params_json: Set(hub_params_json.or(body.rule_params_json)),
         user_agent: Set(non_empty_opt(body.user_agent.clone())),
         username: Set(non_empty_opt(body.username.clone())),
         password: Set(non_empty_opt(body.password.clone())),

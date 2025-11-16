@@ -18,3 +18,6 @@ chrono.workspace = true
 async-trait.workspace = true
 captura-extract = { path = "../extract" }
 scraper.workspace = true
+once_cell.workspace = true
+inventory.workspace = true
+captura-hub-macros = { path = "../hub-macros" }

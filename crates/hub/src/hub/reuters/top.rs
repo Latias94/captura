@@ -1,15 +1,13 @@
-use crate::hub::types::{
-    Features, HandlerCtx, HubData, HubHandler, HubItem, HubResult, Radar, RouteImplKind, RouteMeta,
-    RouteRegistration,
-};
+use crate::hub::types::{Features, HubCtx, HubData, HubItem, Radar, Route, RouteMeta};
 use crate::hub::util;
+use captura_hub_macros::register_hub_route;
 
 pub const META_REUTERS_TOP: RouteMeta = RouteMeta {
     hub_id: "reuters/top",
     path: "/reuters/top",
     categories: &["news"],
     example: "/reuters/top",
-    parameters: &[],
+    params: &[],
     features: Features {
         require_config: &[],
         require_puppeteer: false,
@@ -29,49 +27,43 @@ pub const META_REUTERS_TOP: RouteMeta = RouteMeta {
     description: "Reuters top news stories.",
 };
 
-pub struct ReutersTopHandler;
+pub async fn handler(_ctx: &mut HubCtx<'_>) -> captura_common::Result<HubData> {
+    let url = "https://www.reuters.com/world/".to_string();
 
-static REUTERS_TOP_HANDLER: ReutersTopHandler = ReutersTopHandler;
+    let html = util::get_html(&url).await?;
 
-pub const ROUTE_REUTERS_TOP: RouteRegistration = RouteRegistration {
-    meta: &META_REUTERS_TOP,
-    handler: &REUTERS_TOP_HANDLER,
-    impl_kind: RouteImplKind::Handler,
-    builtin_rule_id: None,
-};
+    let mut items = Vec::new();
+    util::for_each_element(&html, "article.story-card, article.story", |el| {
+        let link = util::extract_attr(&el, "a@href").map(|href| util::absolutize(&url, &href));
+        let title = util::extract_text(&el, "h3").or_else(|| util::extract_text(&el, "h2"));
+        let desc_html = util::element_html(&el);
+        items.push(HubItem {
+            title: title.unwrap_or_else(|| link.clone().unwrap_or_default()),
+            description: Some(desc_html),
+            link,
+            author: None,
+            pub_date: None,
+            categories: Vec::new(),
+        });
+    })?;
 
-#[async_trait::async_trait]
-impl HubHandler for ReutersTopHandler {
-    async fn handle(&self, _ctx: &mut HandlerCtx<'_>) -> captura_common::Result<HubResult> {
-        let url = "https://www.reuters.com/world/".to_string();
-
-        let html = util::get_html(&url).await?;
-
-        let mut items = Vec::new();
-        util::for_each_element(&html, "article.story-card, article.story", |el| {
-            let link = util::extract_attr(&el, "a@href").map(|href| util::absolutize(&url, &href));
-            let title = util::extract_text(&el, "h3").or_else(|| util::extract_text(&el, "h2"));
-            let desc_html = util::element_html(&el);
-            items.push(HubItem {
-                title: title.unwrap_or_else(|| link.clone().unwrap_or_default()),
-                description: Some(desc_html),
-                link,
-                author: None,
-                pub_date: None,
-                categories: Vec::new(),
-            });
-        })?;
-
-        let data = HubData {
-            title: "Reuters Top News".to_string(),
-            description: Some("Reuters top news stories.".to_string()),
-            link: Some("https://www.reuters.com/world/".to_string()),
-            image: None,
-            language: None,
-            items,
-            allow_empty: false,
-        };
-
-        Ok(HubResult::Data(data))
-    }
+    Ok(HubData {
+        title: "Reuters Top News".to_string(),
+        description: Some("Reuters top news stories.".to_string()),
+        link: Some("https://www.reuters.com/world/".to_string()),
+        image: None,
+        language: None,
+        items,
+        allow_empty: false,
+    })
 }
+
+fn handler_fn<'a>(ctx: &'a mut HubCtx<'a>) -> crate::hub::types::HubHandlerFuture<'a> {
+    Box::pin(handler(ctx))
+}
+
+#[register_hub_route]
+pub const ROUTE_REUTERS_TOP: Route = Route {
+    meta: &META_REUTERS_TOP,
+    handler: handler_fn,
+};

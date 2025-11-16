@@ -8,10 +8,4 @@
 pub mod hub;
 pub mod v1;
 
-// For ergonomics, expose a top-level `bilibili` module that re-exports
-// the rule implementations living under `hub::bilibili::rules`.
-pub mod bilibili {
-    pub use crate::hub::bilibili::rules::*;
-}
-
 pub use v1::{parse_rule_v1, RuleSpecV1};

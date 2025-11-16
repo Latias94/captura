@@ -70,36 +70,43 @@ Captura 的内容抓取层正在向“Hub routes + 规则模型”收敛，以�
 RSSHub 的路由处理方式，同时保留一个可复用的抓取 DSL 概念。
 
 - 顶层路由层：使用 Rust 定义的 Hub routes（见 `crates/hub`），每条路由包含：
-  - 静态元信息 `RouteMeta`：`hub_id/path/categories/example/parameters/features/radar/name/maintainers/url/description`。
-  - 一个实现 `HubHandler` 的异步 handler，用于执行抓取逻辑，返回 `HubData`
-   （类似 RSSHub 的 `Data`）。
+  - 静态元信息 `RouteMeta`：`hub_id/path/categories/example/params/features/radar/name/maintainers/url/description`。
+  - 一个异步 handler 函数，签名类似
+    `async fn handler(ctx: &mut HubCtx<'_>) -> Result<HubData>`，
+    用于执行抓取逻辑，返回 `HubData`（类似 RSSHub 的 `Data`）。
+  - `Route { meta, handler }` 会在 `crates/hub/src/hub/registry.rs` 中集中注册。
 - 抓取模型层：Rules DSL v1 概念（见 `docs/rules-dsl.md`），描述：
   - HTML list/detail、single-page、JSON API、XPath 抽取、filters/transform 等。
   - 这些概念在代码中通过 Rust 结构和 helper 函数体现，既可以在 Hub handler 内复用，也可以用作 legacy DSL 路径的执行器。
 
 ### Rule / Route 类型
 
-当前处于过渡阶段，规则/路由有两种来源：
+当前规则/路由有两类来源，各自职责清晰：
 
 - **Hub routes（推荐）**：
-  - 源码中定义在 `crates/hub`，通过 `RouteMeta + HubHandler` 组合注册（后续使用宏简化）。
-  - 官方/社区规则建议以 Hub route 形式贡献，类似 RSSHub 的
-    `lib/routes/*/*.ts`。
-  - Hub handler 通过 `HubData` 暴露完整 feed 级与条目级信息。
+  - 源码中定义在 `crates/hub/src/hub/*`，通过 `RouteMeta + handler` 组合注册。
+  - 官方/社区规则建议以 Hub route 形式贡献，类似 RSSHub 的 `lib/routes/*/*.ts`。
+  - 通过 `/api/v1/hub/routes` 可以枚举所有内置 Hub 路由。
+  - `captura_hub://hub_id?...` 订阅时，`feed.type = hub`，pipeline 通过
+    `execute_hub_route(hub_id, params)` 调用对应 handler，返回 `HubData`
+    后再映射为标准 `NormalizedEntry`。
 
-- **DB 规则（legacy / UI 自定义）**：
-  - 逻辑记录存于 DB 的 `rule` 表，用于：
-    - 早期的 DSL v1 YAML 规则，
+- **DB 规则（DSL / UI 自定义）**：
+  - 存在于 DB 的 `rule` 表，用于：
+    - DSL v1 YAML/JSON 规则模板；
     - Web UI/API 创建的用户自定义规则。
   - 核心字段：
-    - `rule.rule_id`：逻辑 ID，例如 `captura.route.github.trending`。
-    - `rule.version`：模板版本（与 DSL 版本无关）。
-    - `rule.yaml`：当前仍是 DSL v1 文本（YAML），由
-      `captura_rules::v1::RuleSpecV1` 解释。
-    - 运行时元数据（namespace、maintainer、examples 等）。
-  - 这些规则通过通用 DSL v1 执行器在 pipeline 中运行，主要用于兼容和用户实验场景。
+    - `rule.rule_id`：逻辑 ID（不再强绑定到 Hub id）；
+    - `rule.kind = "dsl"`：规则类型；
+    - `rule.spec_json`：序列化后的 `RuleSpecV1`；
+    - 运行时元数据：namespace、maintainer、examples 等。
+  - 这些规则通过通用 DSL v1 执行器在 pipeline 中运行（`refresh_rule_v1`），用于
+    规则实验和高级用户自定义场景。
 
-Hub routes 和 DB 规则将逐步融合：官方/社区贡献使用 Hub route 模式，DB 规则则作为用户配置入口，并在必要时映射到相同的 Hub route/抓取模型之上。
+在当前设计下，Hub routes 与 DB 规则并列存在：
+
+- Hub routes 面向“官方/社区维护”的高质量抓取；
+- DB 规则面向用户自定义/实验；必要时可以将成熟规则升级为 Hub route。
 
 ## Crawler (spider)
 

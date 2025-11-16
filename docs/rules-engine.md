@@ -72,7 +72,7 @@ Hub routes are defined in code and represent RSSHub-style routes:
     - `ROUTE_REGISTRATIONS: [RouteRegistration; N]`.
   - `crates/hub/src/hub/registry.rs` exposes:
     - `builtin_route_metas()` for discovery and validation,
-    - `builtin_routes()` → `&'static [RouteRegistration]` (meta + handler).
+    - `builtin_routes()` → `&'static [Route]` (meta + handler).
     The pipeline resolves handlers only through `builtin_routes()` and no
     longer hard-codes per-route wiring.
 - Hub routes are introspectable and debuggable via the API:
@@ -439,64 +439,58 @@ in the rule.
 
 ---
 
-## 6. Rust Handlers and External Backends
+## 6. Hub 路由与 Rust Handlers
 
-Rules DSL v1 covers a wide range of scraping scenarios, but some sites are
-better handled with custom code (multi-step flows, GraphQL, complicated
-post-processing, login/session handling). To support this, the engine now
-includes Rust-based handlers and is designed to evolve further:
+Rules DSL v1 覆盖了绝大部分“常规站点”的抓取需求，但对于一些站点（多步流程、GraphQL、
+复杂后处理、登录/会话）使用 Rust handler 会更直接。当前引擎在 Hub 层提供了统一的
+handler 接口，与 DSL 执行器并列存在。
 
-- **Hub-based Rust handlers (current state)**:
-  - The `captura_hub::types::HubHandler` trait and `HandlerCtx` provide a
-    typed interface for per-route logic, inspired by RSSHub’s `handler(ctx)`:
-    - handlers receive a logical `hub_id` and a params map,
-    - they typically use helpers in `crates/hub/src/hub/util.rs` (e.g.
-      `get_html`, `for_each_element`, `extract_text`, `extract_attr`) for HTML
-      fetching and parsing. Older handlers still use
-      `captura-pipeline::hub_utils`, which reuses `fetch_html_strategy` and
-      shared HTTP/crawler configuration; these are being migrated into the Hub
-      crate.
-  - `captura_pipeline::handlers::execute_rust_handler_if_any` and
-    `hub_bridge::execute_builtin_hub_for_rule` connect v1 rule templates
-    (`spec.id = "captura.route.*"`) to Hub handlers (`hub_id = "*/"*`).
-  - This path currently powers the built-in routes listed in §3.2.
+- **Hub-based Rust handlers（当前实现）**：
+  - Hub 路由在代码中表现为：
+    - 一个 `RouteMeta`：`hub_id/path/categories/example/params/features/radar/name/maintainers/url/description`；
+    - 一个异步 handler 函数 `async fn handler(ctx: &mut HubCtx<'_>) -> Result<HubData>`；
+    - 一个 `Route { meta, handler }` 常量，集中注册于 `crates/hub/src/hub/registry.rs`。
+  - handler 通过 `HubCtx` 读取路由参数（path + query），通常使用
+    `crates/hub/src/hub/util.rs` 中的 helper：
+    - `get_html`：带基本配置的 HTTP 抓取；
+    - `for_each_element` / `extract_text` / `extract_attr` / `absolutize` 等 HTML 工具。
+  - pipeline 提供 `execute_hub_route(hub_id, params)`，用于：
+    - Hub 预览 API（`/api/v1/hub/preview`）；
+    - Hub 类型订阅（`feed.type = hub`）的刷新。
 
-- **Future: more generic Rust rule backends**:
-  - Beyond Hub routes, the rule spec can grow a `backend` block to map a v1
-    rule to a named Rust handler (or handler module) without going through the
-    Hub route registry.
-  - A more generic `RustRuleHandler` trait could expose:
-    - the feed model,
-    - merged rule parameters,
-    - a high-level HTTP client,
-    - a cache interface,
-    - time and logging utilities.
+- **DSL 与 Hub 的关系**：
+  - Hub handler 内可以自由选择：
+    - 直接手写 HTML/JSON 解析逻辑；
+    - 或复用 DSL 规则（例如通过 `execute_json_v1_stateless` / `extract_html` 等 helper）
+      再把 `NormalizedEntry` 映射成 `HubData`。
+  - 规则 DSL v1 更适合“纯配置式”的抓取模型（list/detail、JSON API、XPath 等）；
+    Hub handler 则适合复杂站点、去中心化路由定义和对标 RSSHub 的场景。
 
-- **Future: external HTTP handlers**:
-  - Delegating rule execution to an external service that speaks a simple JSON
-    protocol remains a planned extension, enabling private scrapers and
-    out-of-process integrations.
+- **未来扩展**：
+  - 规则 spec 仍然可以在未来添加 `backend` 字段，显式映射到某个 Rust handler 模块，
+    以支持更通用的“自定义后端”而不仅限于 Hub 路由。
+  - 也预留将来通过简易 JSON 协议把规则执行委托给外部服务的可能性（私有爬虫、
+    out-of-process 集成等），当前实现保持“只读网络 + 本地执行”。
 
-These backends coexist with the DSL v1 executor. Simple and moderate sites
-remain DSL-only; complex sites can opt into a handler backend. Since Captura is
-not yet bound by backward compatibility, the engine can continue to move logic
-from DSL-only implementations to Hub/Rust handlers over time.
+DSL 执行器与 Hub handler 是并列的两个抓取入口：
+
+- Hub 路由面向“官方/社区维护”的高质量抓取；
+- DSL 规则面向规则实验和用户自定义。二者都可以复用相同的内容提取/清洗工具。
 
 ---
 
 ## 7. Summary
 
-- The rules engine exposes **Hub routes** for built-in/official routes and
-  uses **Rules DSL v1** (see `docs/rules-dsl.md`) as a reusable scraping model
-  and for DB/filesystem-backed rules.
-- Hub routes are defined as Rust modules in `crates/hub` (metadata +
-  `HubHandler`), inspired by RSSHub's route design.
-- DB rules (`rule` table) and filesystem rules (`rules/` directory) provide a
-  path for UI-created and legacy DSL v1 rules; they execute via the v1 executor
-  and share common helpers with Hub handlers.
-- Readability is powered by `dom_smoothie`, with logged fallbacks to simpler
-  heuristics and full page HTML.
-- The engine already covers most Miniflux/FreshRSS-like scenarios and a good
-  portion of RSSHub-style HTML routes. Ongoing work focuses on migrating
-  built-in rules to Hub routes and expanding handler capabilities while keeping
-  XPath support available and extensible.
+- 引擎提供两条主要抓取路径：
+  - **Hub routes**：内置/官方/社区路由，定义在 `crates/hub`，每条路由由
+    `RouteMeta + handler(ctx: &mut HubCtx<'_>) -> Result<HubData>` 组成；
+  - **Rules DSL v1**：见 `docs/rules-dsl.md`，用于 DB 中的规则（`rule` 表）以及规则试运行
+    接口 `/api/v1/rules/try`。
+- Hub 路由通过 `/api/v1/hub/routes` 枚举，通过 `captura_hub://hub_id?...` 作为订阅入口，
+  刷新时由 pipeline 调用 `execute_hub_route` + `hub_data_to_entries` 转换为标准条目。
+- DB 规则（`rule` 表）和 DSL v1 执行器为 UI 创建和高级用户配置提供了入口，未来成熟规则
+  可演进为 Hub 路由。
+- Readability 基于 `dom_smoothie` 实现，失败时回退到简单启发式与整页 HTML。
+- 当前引擎已经覆盖大部分 Miniflux/FreshRSS-like 场景，以及一部分 RSSHub 风格路由；
+  后续工作集中在：扩展 Hub 路由覆盖面、继续抽象公共抓取模型、以及完善 XPath / JSON
+  抽取能力。

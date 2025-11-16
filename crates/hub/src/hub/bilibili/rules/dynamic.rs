@@ -2,7 +2,9 @@ use captura_common::{Error, NormalizedEntry, Result};
 use chrono::{TimeZone, Utc};
 use serde_json::Value as JsonValue;
 
-use crate::bilibili::utils::{bilibili_get_json, normalize_cover_url, render_ugc_description};
+use crate::hub::bilibili::rules::utils::{
+    bilibili_get_json, normalize_cover_url, render_ugc_description,
+};
 
 /// Options for user dynamic route, simplified from RSSHub's routeParams.
 #[derive(Debug, Clone)]

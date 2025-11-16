@@ -1,15 +1,18 @@
-use crate::hub::types::{
-    Features, HandlerCtx, HubData, HubHandler, HubItem, HubResult, Radar, RouteImplKind, RouteMeta,
-    RouteRegistration,
-};
+use crate::hub::types::{Features, HubCtx, HubData, HubItem, Radar, Route, RouteMeta};
 use crate::hub::util;
+use captura_hub_macros::register_hub_route;
 
 pub const META_MEDIUM_TAG: RouteMeta = RouteMeta {
     hub_id: "medium/tag",
     path: "/medium/tag/:tag",
     categories: &["blog"],
     example: "/medium/tag/rust",
-    parameters: &[("tag", "Medium tag slug")],
+    params: &[crate::hub::types::ParamMeta {
+        name: "tag",
+        description: "Medium tag slug",
+        default: Some("rust"),
+        options: &[],
+    }],
     features: Features {
         require_config: &[],
         require_puppeteer: false,
@@ -29,52 +32,46 @@ pub const META_MEDIUM_TAG: RouteMeta = RouteMeta {
     description: "Medium posts by tag.",
 };
 
-pub struct MediumTagHandler;
+pub async fn handler(ctx: &mut HubCtx<'_>) -> captura_common::Result<HubData> {
+    let tag = ctx.param_str("tag").unwrap_or("rust");
+    let url = format!("https://medium.com/tag/{}/latest", tag);
 
-static MEDIUM_TAG_HANDLER: MediumTagHandler = MediumTagHandler;
+    let html = util::get_html(&url).await?;
 
-pub const ROUTE_MEDIUM_TAG: RouteRegistration = RouteRegistration {
-    meta: &META_MEDIUM_TAG,
-    handler: &MEDIUM_TAG_HANDLER,
-    impl_kind: RouteImplKind::Handler,
-    builtin_rule_id: None,
-};
+    let mut items = Vec::new();
+    util::for_each_element(&html, "div.postArticle", |el| {
+        let link = util::extract_attr(&el, "a.ds-link@href")
+            .or_else(|| util::extract_attr(&el, "a.link--primary@href"))
+            .map(|href| util::absolutize(&url, &href));
+        let title = util::extract_text(&el, "h3").or_else(|| util::extract_text(&el, "h2"));
+        let desc_html = util::element_html(&el);
+        items.push(HubItem {
+            title: title.unwrap_or_else(|| link.clone().unwrap_or_default()),
+            description: Some(desc_html),
+            link,
+            author: None,
+            pub_date: None,
+            categories: Vec::new(),
+        });
+    })?;
 
-#[async_trait::async_trait]
-impl HubHandler for MediumTagHandler {
-    async fn handle(&self, ctx: &mut HandlerCtx<'_>) -> captura_common::Result<HubResult> {
-        let tag = ctx.param_str("tag").unwrap_or("rust");
-        let url = format!("https://medium.com/tag/{}/latest", tag);
-
-        let html = util::get_html(&url).await?;
-
-        let mut items = Vec::new();
-        util::for_each_element(&html, "div.postArticle", |el| {
-            let link = util::extract_attr(&el, "a.ds-link@href")
-                .or_else(|| util::extract_attr(&el, "a.link--primary@href"))
-                .map(|href| util::absolutize(&url, &href));
-            let title = util::extract_text(&el, "h3").or_else(|| util::extract_text(&el, "h2"));
-            let desc_html = util::element_html(&el);
-            items.push(HubItem {
-                title: title.unwrap_or_else(|| link.clone().unwrap_or_default()),
-                description: Some(desc_html),
-                link,
-                author: None,
-                pub_date: None,
-                categories: Vec::new(),
-            });
-        })?;
-
-        let data = HubData {
-            title: format!("Medium Tag: {}", tag),
-            description: Some("Medium posts by tag.".to_string()),
-            link: Some(format!("https://medium.com/tag/{}", tag)),
-            image: None,
-            language: None,
-            items,
-            allow_empty: false,
-        };
-
-        Ok(HubResult::Data(data))
-    }
+    Ok(HubData {
+        title: format!("Medium Tag: {}", tag),
+        description: Some("Medium posts by tag.".to_string()),
+        link: Some(format!("https://medium.com/tag/{}", tag)),
+        image: None,
+        language: None,
+        items,
+        allow_empty: false,
+    })
 }
+
+fn handler_fn<'a>(ctx: &'a mut HubCtx<'a>) -> crate::hub::types::HubHandlerFuture<'a> {
+    Box::pin(handler(ctx))
+}
+
+#[register_hub_route]
+pub const ROUTE_MEDIUM_TAG: Route = Route {
+    meta: &META_MEDIUM_TAG,
+    handler: handler_fn,
+};

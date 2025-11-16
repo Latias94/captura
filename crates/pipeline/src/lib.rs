@@ -10,7 +10,6 @@ use scraper::{Html, Selector};
 use tracing::instrument;
 use url::Url;
 
-mod handlers;
 pub mod http_client;
 mod hub_bridge;
 mod rules_engine;
@@ -67,7 +66,54 @@ pub async fn refresh_feed_with_meta(
             refresh_standard_feed_with_meta(feed).await
         }
         feed::FeedType::Rule => Ok((vec![], None)),
+        feed::FeedType::Hub => {
+            let entries = refresh_hub_feed(feed).await?;
+            Ok((entries, None))
+        }
     }
+}
+
+#[instrument(skip(feed))]
+async fn refresh_hub_feed(feed: &feed::Model) -> Result<Vec<NormalizedEntry>> {
+    // Parse captura_hub:// URL into hub_id and query parameters.
+    let url = feed.feed_url.trim();
+    let rest = url.strip_prefix("captura_hub://").ok_or_else(|| {
+        captura_common::Error::Config(
+            "invalid hub feed_url (expected captura_hub:// scheme)".into(),
+        )
+    })?;
+    let (path, qs) = rest
+        .split_once('?')
+        .map(|(p, q)| (p.to_string(), Some(q.to_string())))
+        .unwrap_or((rest.to_string(), None));
+    let hub_id = path.trim_start_matches('/').to_string();
+
+    let mut params = serde_json::Map::new();
+    if let Some(qs) = qs {
+        for pair in qs.split('&') {
+            if let Some((k, v)) = pair.split_once('=') {
+                params.insert(
+                    k.to_string(),
+                    serde_json::Value::String(
+                        urlencoding::decode(v)
+                            .unwrap_or_else(|_| v.into())
+                            .into_owned(),
+                    ),
+                );
+            }
+        }
+    }
+    // Merge persisted rule_params_json for this feed as overrides.
+    if let Some(ref json) = feed.rule_params_json {
+        if let Some(obj) = json.as_object() {
+            for (k, v) in obj.iter() {
+                params.insert(k.clone(), v.clone());
+            }
+        }
+    }
+
+    let data = execute_hub_route(&hub_id, &params).await?;
+    hub_bridge::hub_data_to_entries(data)
 }
 
 #[instrument(skip(feed))]

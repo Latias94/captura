@@ -12,6 +12,8 @@ pub enum FeedType {
     Json,
     #[sea_orm(string_value = "rule")]
     Rule,
+    #[sea_orm(string_value = "hub")]
+    Hub,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]

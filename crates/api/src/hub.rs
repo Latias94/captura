@@ -8,22 +8,6 @@ use crate::auth::AuthUser;
 use crate::error::{bad_request, internal, not_found, ApiResult};
 use crate::AppState;
 
-pub(crate) fn map_hub_route_to_rule_id(route_path: &str) -> Option<String> {
-    let hub_id = route_path.trim_start_matches('/');
-    // Prefer explicit builtin_rule_id from route registration when present.
-    if let Some(reg) = captura_rules::hub::registry::builtin_routes()
-        .iter()
-        .find(|r| r.meta.hub_id == hub_id)
-    {
-        if let Some(id) = reg.builtin_rule_id {
-            return Some(id.to_string());
-        }
-    }
-    // Fallback to conventional mapping: captura.route.{hub_id with slashes replaced by dots}.
-    let meta = captura_rules::hub::registry::find_route_meta(hub_id)?;
-    Some(format!("captura.route.{}", meta.hub_id.replace('/', ".")))
-}
-
 #[derive(Deserialize)]
 pub(crate) struct ValidateReq {
     pub route: Option<String>,
@@ -72,7 +56,11 @@ pub(crate) async fn validate_hub(
         return Err(bad_request("route or url required"));
     };
 
-    let Some(rule_id) = map_hub_route_to_rule_id(&route_path) else {
+    let hub_id = route_path.trim_start_matches('/');
+
+    // Check whether this hub route exists in the built-in registry.
+    let exists = captura_rules::hub::registry::find_route_meta(hub_id).is_some();
+    if !exists {
         return Ok(Json(ValidateResp {
             ok: false,
             status: None,
@@ -80,40 +68,28 @@ pub(crate) async fn validate_hub(
             feed_type: "unknown".to_string(),
             message: Some("unknown captura_hub route".into()),
         }));
-    };
-
-    use captura_storage::entity::rule;
-    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
-    let exists = rule::Entity::find()
-        .filter(rule::Column::RuleId.eq(rule_id))
-        .one(&st.db)
-        .await
-        .map_err(internal)?
-        .is_some();
-    if exists {
-        return Ok(Json(ValidateResp {
-            ok: true,
-            status: None,
-            url: url_repr,
-            feed_type: "rule".to_string(),
-            message: None,
-        }));
     }
 
     Ok(Json(ValidateResp {
-        ok: false,
+        ok: true,
         status: None,
         url: url_repr,
-        feed_type: "unknown".to_string(),
-        message: Some("rule template not found; run migrations or import templates".into()),
+        feed_type: "hub".to_string(),
+        message: None,
     }))
 }
 
 #[derive(Serialize)]
 pub(crate) struct HubRouteDto {
-    pub meta: &'static captura_rules::hub::types::RouteMeta,
-    pub impl_kind: captura_rules::hub::types::RouteImplKind,
-    pub builtin_rule_id: Option<&'static str>,
+    pub hub_id: &'static str,
+    pub path: &'static str,
+    pub categories: &'static [&'static str],
+    pub example: &'static str,
+    #[serde(rename = "parameters")]
+    pub parameters: Vec<(String, String)>,
+    pub name: &'static str,
+    pub url: &'static str,
+    pub description: &'static str,
 }
 
 #[derive(Serialize)]
@@ -127,11 +103,23 @@ pub(crate) async fn list_routes(
 ) -> ApiResult<Json<HubRouteListResp>> {
     let _user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
     let routes = captura_rules::hub::registry::builtin_routes()
-        .iter()
-        .map(|r| HubRouteDto {
-            meta: r.meta,
-            impl_kind: r.impl_kind,
-            builtin_rule_id: r.builtin_rule_id,
+        .into_iter()
+        .map(|r| {
+            let meta = r.meta;
+            HubRouteDto {
+                hub_id: meta.hub_id,
+                path: meta.path,
+                categories: meta.categories,
+                example: meta.example,
+                parameters: meta
+                    .params
+                    .iter()
+                    .map(|p| (p.name.to_string(), p.description.to_string()))
+                    .collect(),
+                name: meta.name,
+                url: meta.url,
+                description: meta.description,
+            }
         })
         .collect();
     Ok(Json(HubRouteListResp { routes }))
@@ -144,16 +132,26 @@ pub(crate) async fn get_route(
 ) -> ApiResult<Json<HubRouteDto>> {
     let _user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
     let hub_id = format!("{}/{}", namespace, name);
-    let Some(reg) = captura_rules::hub::registry::builtin_routes()
-        .iter()
+    let Some(r) = captura_rules::hub::registry::builtin_routes()
+        .into_iter()
         .find(|r| r.meta.hub_id == hub_id)
     else {
         return Err(not_found("hub route not found"));
     };
+    let meta = r.meta;
     Ok(Json(HubRouteDto {
-        meta: reg.meta,
-        impl_kind: reg.impl_kind,
-        builtin_rule_id: reg.builtin_rule_id,
+        hub_id: meta.hub_id,
+        path: meta.path,
+        categories: meta.categories,
+        example: meta.example,
+        parameters: meta
+            .params
+            .iter()
+            .map(|p| (p.name.to_string(), p.description.to_string()))
+            .collect(),
+        name: meta.name,
+        url: meta.url,
+        description: meta.description,
     }))
 }
 
@@ -201,11 +199,9 @@ pub(crate) async fn preview_hub(
         }
     }
 
-    let res = captura_pipeline::execute_hub_route(&hub_id, &map)
+    let data = captura_pipeline::execute_hub_route(&hub_id, &map)
         .await
         .map_err(internal)?;
 
-    match res {
-        captura_rules::hub::types::HubResult::Data(data) => Ok(Json(PreviewResp { data })),
-    }
+    Ok(Json(PreviewResp { data }))
 }
