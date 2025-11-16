@@ -22,12 +22,11 @@ use crate::AppState;
 use captura_types::{IdResp, Paging};
 use regex::Regex;
 
-use captura_service::rules_sync::{self as rules_sync_svc, RulesSyncReport};
-
 #[derive(Serialize)]
 pub(crate) struct RuleDto {
     pub id: i64,
     pub rule_id: String,
+    pub kind: String,
     pub namespace: Option<String>,
     pub version: Option<String>,
     pub description: Option<String>,
@@ -35,7 +34,10 @@ pub(crate) struct RuleDto {
 
 #[derive(Deserialize)]
 pub(crate) struct CreateRuleReq {
-    pub yaml: String,
+    /// Optional YAML form of the rule spec (DSL v1).
+    pub yaml: Option<String>,
+    /// Optional JSON form of the rule spec (DSL v1).
+    pub spec_json: Option<serde_json::Value>,
     pub version: Option<String>,
     pub maintainer: Option<String>,
 }
@@ -50,16 +52,25 @@ pub(crate) async fn create_rule(
     Json(body): Json<CreateRuleReq>,
 ) -> ApiResult<Json<IdResp>> {
     let _user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
-    let spec: RuleSpecV1 =
-        parse_rule_v1(&body.yaml).map_err(|e| bad_request(format!("invalid rule yaml: {e}")))?;
+    let spec: RuleSpecV1 = if let Some(spec_json) = body.spec_json.clone() {
+        serde_json::from_value(spec_json)
+            .map_err(|e| bad_request(format!("invalid rule spec_json: {e}")))?
+    } else if let Some(yaml) = body.yaml.as_ref() {
+        parse_rule_v1(yaml).map_err(|e| bad_request(format!("invalid rule yaml: {e}")))?
+    } else {
+        return Err(bad_request("either yaml or spec_json is required"));
+    };
     let now = Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
     let examples = serde_json::to_value(&spec.examples).map_err(internal)?;
+    let spec_json = serde_json::to_value(&spec).map_err(internal)?;
     let am = rule::ActiveModel {
         rule_id: Set(spec.id.clone()),
+        kind: Set("dsl".to_string()),
         version: Set(body.version.clone()),
         namespace: Set(rule_namespace(&spec.id)),
         description: Set(spec.description.clone()),
-        yaml: Set(body.yaml.clone()),
+        spec_json: Set(Some(spec_json)),
+        handler_target: Set(None),
         examples_json: Set(Some(examples)),
         verified_at: Set(Some(now)),
         maintainer: Set(body.maintainer.clone()),
@@ -110,6 +121,7 @@ pub(crate) async fn list_rules(
             .map(|r| RuleDto {
                 id: r.id,
                 rule_id: r.rule_id,
+                kind: r.kind,
                 namespace: r.namespace,
                 version: r.version,
                 description: r.description,
@@ -134,6 +146,7 @@ pub(crate) async fn get_rule(
     Ok(Json(RuleDto {
         id: r.id,
         rule_id: r.rule_id,
+        kind: r.kind,
         namespace: r.namespace,
         version: r.version,
         description: r.description,
@@ -154,15 +167,24 @@ pub(crate) async fn update_rule(
     else {
         return Err(not_found("rule not found"));
     };
-    let spec: RuleSpecV1 =
-        parse_rule_v1(&body.yaml).map_err(|e| bad_request(format!("invalid rule yaml: {e}")))?;
+    let spec: RuleSpecV1 = if let Some(spec_json) = body.spec_json.clone() {
+        serde_json::from_value(spec_json)
+            .map_err(|e| bad_request(format!("invalid rule spec_json: {e}")))?
+    } else if let Some(yaml) = body.yaml.as_ref() {
+        parse_rule_v1(yaml).map_err(|e| bad_request(format!("invalid rule yaml: {e}")))?
+    } else {
+        return Err(bad_request("either yaml or spec_json is required"));
+    };
     let examples = serde_json::to_value(&spec.examples).map_err(internal)?;
+    let spec_json = serde_json::to_value(&spec).map_err(internal)?;
     let mut am: rule::ActiveModel = r.into();
     am.rule_id = Set(spec.id.clone());
+    am.kind = Set("dsl".to_string());
     am.version = Set(body.version.clone());
     am.namespace = Set(rule_namespace(&spec.id));
     am.description = Set(spec.description.clone());
-    am.yaml = Set(body.yaml.clone());
+    am.spec_json = Set(Some(spec_json));
+    am.handler_target = Set(None);
     am.examples_json = Set(Some(examples));
     am.updated_at = Set(Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap()));
     am.maintainer = Set(body.maintainer.clone());
@@ -197,38 +219,6 @@ pub(crate) async fn delete_rule(
     Ok("ok")
 }
 
-#[derive(Serialize)]
-pub(crate) struct SyncRulesResp {
-    pub scanned_files: usize,
-    pub created: usize,
-    pub updated: usize,
-    pub failed: usize,
-}
-
-/// Sync YAML rules from the `rules/` directory into the database.
-///
-/// Current behavior:
-/// - Scan the process working directory `rules/` (including subdirectories such as `rules/contrib`);
-/// - Validate YAML using Rule DSL v1;
-/// - Upsert by `rule_id` as logical primary key.
-pub(crate) async fn sync_rules_from_fs(
-    State(st): State<AppState>,
-    TypedHeader(Authorization(bearer)): TypedHeader<Authorization<Bearer>>,
-) -> ApiResult<Json<SyncRulesResp>> {
-    // Currently only require token-based auth; later this can be restricted to admin users by role.
-    let _user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
-    let root = std::path::Path::new("rules");
-    let report: RulesSyncReport = rules_sync_svc::sync_rules_from_fs(&st.db, root)
-        .await
-        .map_err(internal)?;
-    Ok(Json(SyncRulesResp {
-        scanned_files: report.scanned_files,
-        created: report.created,
-        updated: report.updated,
-        failed: report.failed,
-    }))
-}
-
 // ---------------- Templates (rule presets) ----------------
 
 #[derive(Serialize)]
@@ -241,11 +231,13 @@ pub(crate) struct RuleTemplateDto {
     pub params: Vec<String>,
 }
 
-fn extract_params_from_yaml(yaml: &str) -> Vec<String> {
-    if let Ok(spec_v1) = parse_rule_v1(yaml) {
-        if matches!(spec_v1.source.kind, SourceType::ListDetail) {
-            if let Some(list) = spec_v1.source.list {
-                return extract_params_from_url(&list.request.url);
+fn extract_params_from_rule(rec: &rule::Model) -> Vec<String> {
+    if let Some(spec_json) = &rec.spec_json {
+        if let Ok(spec_v1) = serde_json::from_value::<RuleSpecV1>(spec_json.clone()) {
+            if matches!(spec_v1.source.kind, SourceType::ListDetail) {
+                if let Some(list) = spec_v1.source.list {
+                    return extract_params_from_url(&list.request.url);
+                }
             }
         }
     }
@@ -317,7 +309,7 @@ pub(crate) async fn list_templates(
     let list = rows
         .into_iter()
         .map(|r| {
-            let params = extract_params_from_yaml(&r.yaml);
+            let params = extract_params_from_rule(&r);
             RuleTemplateDto {
                 id: r.id,
                 rule_id: r.rule_id,
@@ -344,7 +336,7 @@ pub(crate) async fn get_template(
     else {
         return Err(not_found("rule template"));
     };
-    let params = extract_params_from_yaml(&r.yaml);
+    let params = extract_params_from_rule(&r);
     Ok(Json(RuleTemplateDto {
         id: r.id,
         rule_id: r.rule_id,
@@ -382,7 +374,10 @@ pub(crate) async fn create_feed_from_template(
     else {
         return Err(not_found("rule template"));
     };
-    let spec: RuleSpecV1 = parse_rule_v1(&r.yaml).map_err(internal)?;
+    let spec_json = r
+        .spec_json
+        .ok_or_else(|| internal("rule missing spec_json"))?;
+    let spec: RuleSpecV1 = serde_json::from_value(spec_json).map_err(internal)?;
     // Render feed_url for easier debugging (even if rule mode does not depend on feed_url); only for list_detail use list.request.url.
     let feed_url_rendered = if matches!(spec.source.kind, SourceType::ListDetail) {
         if let Some(list) = spec.source.list {
@@ -452,6 +447,7 @@ pub(crate) struct TryRuleReq {
     pub url: String,
     pub rule_id: Option<i64>,
     pub yaml: Option<String>,
+    pub spec_json: Option<serde_json::Value>,
 }
 
 #[derive(Serialize)]
@@ -493,8 +489,11 @@ pub(crate) async fn try_rule(
     if req.url.trim().is_empty() {
         return Err(bad_request("url required"));
     }
-    let yaml = if let Some(y) = req.yaml {
-        y
+    let mut spec = if let Some(spec_json) = req.spec_json {
+        serde_json::from_value::<RuleSpecV1>(spec_json)
+            .map_err(|e| bad_request(format!("invalid rule spec_json: {e}")))?
+    } else if let Some(y) = req.yaml {
+        parse_rule_v1(&y).map_err(internal)?
     } else {
         let rid = req
             .rule_id
@@ -504,10 +503,14 @@ pub(crate) async fn try_rule(
             .await
             .map_err(internal)?
             .ok_or_else(|| not_found("rule not found"))?;
-        r.yaml
+        if r.kind != "dsl" {
+            return Err(bad_request("try_rule currently only supports dsl rules"));
+        }
+        let spec_json = r
+            .spec_json
+            .ok_or_else(|| internal("rule missing spec_json"))?;
+        serde_json::from_value::<RuleSpecV1>(spec_json).map_err(internal)?
     };
-
-    let mut spec = parse_rule_v1(&yaml).map_err(internal)?;
     if !matches!(spec.source.kind, SourceType::ListDetail) {
         return Err(bad_request(
             "try_rule currently only supports list_detail source type",

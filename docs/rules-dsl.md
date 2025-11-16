@@ -4,7 +4,7 @@ This document describes the **official v1** rule DSL for Captura.
 It is designed to absorb practices from FreshRSS, Miniflux and RSSHub, while
 remaining ergonomic for rule authors and stable for the engine.
 
-The previous minimal DSL (in `crates/rules`) is considered **legacy**
+The previous minimal DSL used before this refactor is considered **legacy**
 and will be replaced by this v1 design.
 
 ---
@@ -668,8 +668,8 @@ If both lists are empty or missing, no filter is applied at the DSL level
 
   - If the list is non‑empty and *any* condition matches for a given entry,
     engines **may** trigger a “full content fetch” for that entry (for example
-    by invoking `extractor::fetch_and_extract_entry` on the entry URL and
-    merging the result, see §5).
+    by invoking the pipeline helper `fetch_and_extract_entry` on the entry URL
+    and merging the result, see §5 of `docs/rules-engine.md`).
   - v1 implementations are allowed to ignore this block initially (best‑effort
     hint), but should treat the schema as stable.
 
@@ -772,8 +772,8 @@ engine:
 - All new rules MUST set `version: 1`.
 - Future DSL versions will increment the `version` field and keep v1 parsing
   available for backwards compatibility.
-- The legacy DSL (currently implemented in `crates/rules`) should be treated as
-  pre‑v1 and migrated to v1 over time.
+- The legacy DSL used before v1 should be treated as pre‑v1 and migrated to v1
+  over time.
 
 ---
 
@@ -783,21 +783,28 @@ This section is informational for Captura’s Rust implementation and is not par
 of the stable DSL contract.
 
 - Parsing:
-  - Define a `RuleSpecV1` struct mirroring this document.
-  - Use `serde_yaml` for YAML deserialization.
-  - Validate:
-    - `id` non‑empty.
-    - `version == 1`.
-    - Required fields for each `source.type` are present.
-    - Regex fields compile.
+  - The v1 schema is implemented in `crates/extract::v1` as `RuleSpecV1`,
+    `SourceType` and related types, and re-exported from `crates/hub` as
+    `captura_rules::v1::*` for convenience.
+  - `parse_rule_v1` / `validate_v1` use `serde_yaml` for YAML deserialization
+    and enforce:
+    - `id` non‑empty,
+    - `version == 1`,
+    - required fields for each `source.type`,
+    - regex fields compile.
 - Execution:
-  - Introduce a dedicated executor for v1 rules:
-    - `execute_rule_v1(feed, &RuleSpecV1) -> Vec<NormalizedEntry>`.
-  - Reuse existing components:
-    - `fetch_html_strategy` for HTTP/spider logic.
-    - `extractor::fetch_and_extract_entry` / readability interface.
-    - Existing URL/content rewrite and entry filter helpers where possible.
+  - Database-aware execution for rule feeds lives in
+    `crates/pipeline/src/rules_engine.rs`:
+    - `refresh_rule_v1(feed, &RuleSpecV1) -> Result<Vec<NormalizedEntry>>`.
+  - Stateless JSON execution (used by Hub handlers and tools) lives in
+    `crates/extract/src/v1_exec.rs`:
+    - `execute_json_v1_stateless(spec, ctx)`.
+  - Both reuse existing components where relevant:
+    - `fetch_html_strategy` for HTTP/spider logic (pipeline),
+    - `captura_extract::extract_from_html` / readability interface for
+      full-content extraction,
+    - existing URL/content rewrite and entry filter helpers.
 - Testing:
-  - Add sample rules under `rules/` with corresponding integration tests.
+  - Keep sample rules under `rules/` with corresponding integration tests.
   - For each rule, test at least one `examples` URL (when allowed) or mock
     responses in a local test server.

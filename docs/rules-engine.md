@@ -63,11 +63,18 @@ Hub routes are defined in code and represent RSSHub-style routes:
     - async handler that takes a `HandlerCtx` and returns `HubResult`,
     - `HubResult::Data(HubData)` is analogous to RSSHub's `Data`.
 - Built-in route metadata lives in `crates/hub`:
-  - e.g. `crates/hub/src/github/trending.rs` defines `META_GITHUB_TRENDING`.
-  - `crates/hub/src/registry.rs` exposes `builtin_route_metas()` for discovery
-    and validation; handler wiring is currently done in the pipeline layer
-    (`crates/pipeline/src/hub_bridge.rs`) and may move into `captura-hub`
-    proper in a future refactor.
+  - e.g. `crates/hub/src/hub/github/trending.rs` defines
+    `META_GITHUB_TRENDING`, a `GithubTrendingHandler`, and a
+    `RouteRegistration`.
+  - Each site module (github/hn/lobsters/zhihu/reuters/medium/bilibili)
+    exposes:
+    - `ROUTES: &[&RouteMeta]`,
+    - `ROUTE_REGISTRATIONS: [RouteRegistration; N]`.
+  - `crates/hub/src/hub/registry.rs` exposes:
+    - `builtin_route_metas()` for discovery and validation,
+    - `builtin_routes()` → `&'static [RouteRegistration]` (meta + handler).
+    The pipeline resolves handlers only through `builtin_routes()` and no
+    longer hard-codes per-route wiring.
 - Hub routes are introspectable and debuggable via the API:
   - `GET /api/v1/hub/routes` – list built-in Hub routes (`RouteMeta`),
   - `GET /api/v1/hub/routes/{namespace}/{name}` – get a single route meta,
@@ -91,8 +98,9 @@ At runtime, a DB-backed rule is represented by a record in the `rule` table:
 - `verified_at`, `maintainer`, timestamps, etc.
 
 The **DSL version** is inside the YAML (`version: 1`) and validated by
-`captura_rules::v1::parse_rule_v1`. The `rule.version` column is for template
-metadata and does not control parsing.
+`captura_rules::v1::parse_rule_v1` (re-exporting the schema from
+`captura-extract::v1`). The `rule.version` column is for template metadata and
+does not control parsing.
 
 Rule CRUD and rule templates are exposed via the API in `crates/api/src/rules.rs`:
 
@@ -191,15 +199,26 @@ Rule-type feeds can be backed by:
       - calls the corresponding `HubHandler::handle(&mut ctx)` to obtain
         `HubResult::Data(HubData)`,
       - maps `HubData` into `Vec<NormalizedEntry>` for persistence.
-  - As of now, the following “flagship” routes use this Hub handler path:
+  - As of now, the following built-in routes use this Hub handler path:
     - `github/trending`,
     - `hn/front`,
     - `lobsters/front`,
     - `zhihu/hotlist`,
     - `reuters/top`,
-    - `medium/tag`.
+    - `medium/tag`,
+    - several `bilibili/*` routes (hot-search, popular, link-news, ranking,
+      user/video, bangumi/season, bangumi/media).
   - The goal is for most built-in/official routes to eventually live in this
     layer, with the DSL used as a reusable scraping model underneath.
+  - Implementation-wise we distinguish two kinds of Hub routes:
+    - **DSL** routes: handlers are thin adapters that build a `RuleSpecV1`
+      (often from a built-in template in `crates/hub`) and delegate to the
+      DSL executor in `captura-extract`.
+    - **HANDLER** routes: handlers implement scraping logic directly in Rust;
+      they may still call DSL helpers internally, but from the engine’s
+      perspective the route is treated as “handler-backed”.
+    Exactly one of these applies to a given route; there is no separate
+    “hybrid” type at the data-model level.
 
 - **DSL v1 executor (current default for DB rules)**:
   - `refresh_rule_with_yaml(feed, yaml)`:
@@ -211,7 +230,8 @@ Rule-type feeds can be backed by:
     - otherwise dispatches on `spec.source.type`:
       - `list_detail` → `execute_list_detail_v1`,
       - `single_page` → `execute_single_page_v1`,
-      - `json` → `execute_json_v1`,
+      - `json` → the stateless JSON executor in `captura-extract`
+        (`execute_json_v1_stateless`),
       - `xpath` → `execute_xpath_v1` (subset implementation).
     - applies DSL-level filters:
       - `filters.entry_include / entry_exclude` via `apply_rule_filters_v1`,
@@ -260,9 +280,11 @@ This helper is reused by:
 
 - `execute_list_detail_v1`,
 - `execute_single_page_v1`,
-- `execute_json_v1` (when fetching HTML for `from_html`),
 - `execute_xpath_v1`,
-- Readability-based helpers.
+- Readability-based helpers and some Hub utilities.
+
+JSON rules executed via `captura-extract::execute_json_v1_stateless` use a
+separate, HTTP-only helper because they are designed to be DB-agnostic.
 
 ### 4.3 `type: list_detail`
 
@@ -278,8 +300,8 @@ Common pattern for news/blog listings:
 4. For each item, compute the detail URL (`absolutize(list_url, href)`).
 5. Extract full content according to `source.content`:
    - `mode = readability`:
-     - use `dom_smoothie::Readability` (mozilla/readability Rust port) via
-       `extractor::extract_with_dom_smoothie`,
+     - use the dom_smoothie-based readability engine from `captura-extract`
+       (invoked via the pipeline’s `readability_like_strategy_async` helper),
      - fall back to simple heuristics and finally full page HTML, logging any
        failures.
    - `mode = css | json_fragment`:
@@ -369,18 +391,21 @@ integration; it focuses on the most common patterns and can be extended later.
 
 ### 5.1 dom_smoothie integration
 
-`dom_smoothie` is used as the primary Readability implementation:
+`dom_smoothie` is used as the primary Readability implementation inside
+`captura-extract`:
 
-- `extractor::extract_with_dom_smoothie(html, url)`:
+- `captura_extract::extract_from_html(html, url, scraper_rules)`:
   - wraps `dom_smoothie::Readability::new` with a default config,
-  - returns `Article` with `title`, `content`, `text_content`, etc.
+  - returns an `ExtractResult` with `content_html` and optional `title`,
+  - falls back to simple heuristics and finally full page HTML.
 
 It is used in two main paths:
 
 - Rule-level readability:
-  - `content.mode = readability` in `list_detail` and `single_page` rules.
+  - `content.mode = readability` in `list_detail` and `single_page` rules,
+    via the pipeline helper `readability_like_strategy_async`.
 - Feed-level full-content fetching (Miniflux-like):
-  - `extractor::fetch_and_extract_entry`:
+  - `captura_pipeline::extractor::fetch_and_extract_entry`:
     - first apply `feed.scraper_rules` if present,
     - otherwise try dom_smoothie (log a warning on failure),
     - fall back to simple heuristics and full page HTML.
@@ -425,9 +450,12 @@ includes Rust-based handlers and is designed to evolve further:
   - The `captura_hub::types::HubHandler` trait and `HandlerCtx` provide a
     typed interface for per-route logic, inspired by RSSHub’s `handler(ctx)`:
     - handlers receive a logical `hub_id` and a params map,
-    - they can call helper utilities in `captura-pipeline` (e.g.
-      `hub_utils::get_html`, `for_each_element`) which reuse
-      `fetch_html_strategy` and shared HTTP/crawler configuration.
+    - they typically use helpers in `crates/hub/src/hub/util.rs` (e.g.
+      `get_html`, `for_each_element`, `extract_text`, `extract_attr`) for HTML
+      fetching and parsing. Older handlers still use
+      `captura-pipeline::hub_utils`, which reuses `fetch_html_strategy` and
+      shared HTTP/crawler configuration; these are being migrated into the Hub
+      crate.
   - `captura_pipeline::handlers::execute_rust_handler_if_any` and
     `hub_bridge::execute_builtin_hub_for_rule` connect v1 rule templates
     (`spec.id = "captura.route.*"`) to Hub handlers (`hub_id = "*/"*`).

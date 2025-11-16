@@ -20,7 +20,7 @@ chrono.workspace = true
 captura-common = { path = "../common" }
 captura-storage = { path = "../storage" }
 captura-migration = { path = "../migration" }
-captura-rules = { path = "../rules" }
+captura-rules = { package = "captura-hub", path = "../hub" }
 captura-fetcher = { path = "../fetcher" }
 captura-crawler = { path = "../crawler" }
 captura-scheduler = { path = "../scheduler" }

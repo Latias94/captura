@@ -12,7 +12,7 @@ captura-common = { path = "../common" }
 captura-storage = { path = "../storage" }
 captura-pipeline = { path = "../pipeline" }
 captura-service = { path = "../service" }
-captura-rules = { path = "../rules" }
+captura-rules = { package = "captura-hub", path = "../hub" }
 sea-orm.workspace = true
 reqwest.workspace = true
 futures = "0.3"

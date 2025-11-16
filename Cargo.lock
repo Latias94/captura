@@ -583,9 +583,9 @@ dependencies = [
  "captura-common",
  "captura-crawler",
  "captura-fetcher",
+ "captura-hub",
  "captura-migration",
  "captura-pipeline",
- "captura-rules",
  "captura-scheduler",
  "captura-service",
  "captura-storage",
@@ -647,6 +647,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "captura-extract"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "captura-common",
+ "dom_smoothie",
+ "regex",
+ "reqwest 0.12.24",
+ "scraper",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "thiserror 2.0.17",
+ "tracing",
+ "url",
+]
+
+[[package]]
 name = "captura-fetcher"
 version = "0.1.0"
 dependencies = [
@@ -660,10 +678,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "captura-hub"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "captura-common",
+ "captura-extract",
+ "chrono",
+ "regex",
+ "reqwest 0.12.24",
+ "scraper",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "thiserror 2.0.17",
+ "tracing",
+ "url",
+]
+
+[[package]]
 name = "captura-migration"
 version = "0.1.0"
 dependencies = [
  "sea-orm-migration",
+ "serde",
+ "serde_json",
+ "serde_yaml",
  "tracing",
 ]
 
@@ -676,8 +717,9 @@ dependencies = [
  "async-trait",
  "captura-common",
  "captura-crawler",
+ "captura-extract",
  "captura-fetcher",
- "captura-rules",
+ "captura-hub",
  "captura-storage",
  "chrono",
  "dom_smoothie",
@@ -694,32 +736,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "captura-rules"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "captura-common",
- "chrono",
- "regex",
- "reqwest 0.12.24",
- "serde",
- "serde_json",
- "serde_yaml",
- "thiserror 2.0.17",
- "tracing",
- "url",
-]
-
-[[package]]
 name = "captura-scheduler"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "captura-common",
+ "captura-hub",
  "captura-migration",
  "captura-pipeline",
- "captura-rules",
  "captura-service",
  "captura-storage",
  "captura-testkit",
@@ -740,8 +764,8 @@ dependencies = [
  "anyhow",
  "async-trait",
  "captura-common",
+ "captura-hub",
  "captura-pipeline",
- "captura-rules",
  "captura-storage",
  "chrono",
  "hex",

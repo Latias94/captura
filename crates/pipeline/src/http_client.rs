@@ -52,7 +52,7 @@ pub(crate) fn client_for_feed(
 }
 
 /// Build a simple HTTP client with optional user agent and timeout.
-pub(crate) fn client_basic(user_agent: Option<String>, timeout_ms: Option<u64>) -> Result<Client> {
+pub fn client_basic(user_agent: Option<String>, timeout_ms: Option<u64>) -> Result<Client> {
     let mut builder = Client::builder();
 
     // User-Agent: explicit override > env > default.

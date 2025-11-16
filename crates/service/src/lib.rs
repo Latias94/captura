@@ -2,7 +2,7 @@
 
 use anyhow::anyhow;
 use captura_common::{FeedId, IntegrationEvent, Result};
-use captura_pipeline::{refresh_feed_with_meta, refresh_rule_with_yaml, RefreshMeta};
+use captura_pipeline::{refresh_feed_with_meta, refresh_rule_v1, RefreshMeta};
 use captura_storage::entity::{entry, feed, rule};
 use chrono::{FixedOffset, Utc};
 use reqwest::Client;
@@ -11,12 +11,9 @@ use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QuerySelect, Set,
     TransactionTrait,
 };
-use std::env;
-use std::time::Duration;
 use tracing::debug;
 
 pub mod integration;
-pub mod rules_sync;
 pub mod webhook;
 
 /// Build a basic HTTP client used by scheduler/service integrations and webhooks.
@@ -26,44 +23,7 @@ pub mod webhook;
 /// - `CAPTURA_HTTP_TIMEOUT_MS`: request timeout in milliseconds (no timeout if unset or invalid).
 /// - `CAPTURA_HTTP_PROXY`: optional proxy URL applied to all requests.
 pub fn http_client_basic() -> Result<Client> {
-    let mut builder = Client::builder();
-
-    // User-Agent
-    let ua = env::var("CAPTURA_HTTP_USER_AGENT")
-        .ok()
-        .filter(|s| !s.trim().is_empty())
-        .unwrap_or_else(|| "captura/0.1".to_string());
-    builder = builder.user_agent(ua);
-
-    // Global request timeout
-    if let Ok(v) = env::var("CAPTURA_HTTP_TIMEOUT_MS") {
-        if let Ok(ms) = v.parse::<u64>() {
-            if ms > 0 {
-                builder = builder.timeout(Duration::from_millis(ms));
-            }
-        }
-    }
-
-    // Optional proxy
-    if let Ok(proxy_url) = env::var("CAPTURA_HTTP_PROXY") {
-        let proxy_url = proxy_url.trim();
-        if !proxy_url.is_empty() {
-            match reqwest::Proxy::all(proxy_url) {
-                Ok(p) => {
-                    builder = builder.proxy(p);
-                }
-                Err(e) => {
-                    return Err(captura_common::Error::Config(format!(
-                        "invalid CAPTURA_HTTP_PROXY: {e}"
-                    )));
-                }
-            }
-        }
-    }
-
-    builder
-        .build()
-        .map_err(|e| captura_common::Error::Network(e.to_string()))
+    captura_pipeline::http_client::client_basic(None, None)
 }
 
 /// Refresh a feed by id and persist new entries, update feed metadata.
@@ -86,19 +46,28 @@ pub async fn refresh_and_persist_by_id(db: &DatabaseConnection, feed_id: FeedId)
 pub async fn refresh_and_persist(db: &DatabaseConnection, f: &feed::Model) -> Result<usize> {
     let (entries, meta): (Vec<captura_common::NormalizedEntry>, Option<RefreshMeta>) =
         if matches!(f.r#type, feed::FeedType::Rule) {
-            let yaml = if let Some(rid) = f.rule_id {
+            let spec = if let Some(rid) = f.rule_id {
                 let r = rule::Entity::find_by_id(rid)
                     .one(db)
                     .await
                     .map_err(|e| captura_common::Error::Storage(e.to_string()))?
                     .ok_or_else(|| captura_common::Error::Config("rule missing".into()))?;
-                r.yaml
+                if r.kind != "dsl" {
+                    return Err(captura_common::Error::Config(
+                        "only dsl rules are supported for rule-type feeds".into(),
+                    ));
+                }
+                let spec_json = r.spec_json.ok_or_else(|| {
+                    captura_common::Error::Config("rule missing spec_json".into())
+                })?;
+                serde_json::from_value::<captura_rules::v1::RuleSpecV1>(spec_json)
+                    .map_err(|e| captura_common::Error::Config(e.to_string()))?
             } else {
                 return Err(captura_common::Error::Config(
                     "rule_id required for rule-type feed".into(),
                 ));
             };
-            (refresh_rule_with_yaml(f, &yaml).await?, None)
+            (refresh_rule_v1(f, &spec).await?, None)
         } else {
             refresh_feed_with_meta(f).await?
         };

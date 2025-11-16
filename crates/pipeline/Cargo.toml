@@ -18,8 +18,9 @@ regex.workspace = true
 captura-common = { path = "../common" }
 captura-fetcher = { path = "../fetcher" }
 captura-crawler = { path = "../crawler" }
-captura-rules = { path = "../rules" }
+captura-rules = { package = "captura-hub", path = "../hub" }
 captura-storage = { path = "../storage" }
+captura-extract = { path = "../extract" }
 dom_smoothie = "0.13"
 html-escape = "0.2"
 async-trait.workspace = true

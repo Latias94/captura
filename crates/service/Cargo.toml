@@ -10,7 +10,7 @@ sea-orm.workspace = true
 captura-common = { path = "../common" }
 captura-storage = { path = "../storage" }
 captura-pipeline = { path = "../pipeline" }
-captura-rules = { path = "../rules" }
+captura-rules = { package = "captura-hub", path = "../hub" }
 tracing.workspace = true
 reqwest.workspace = true
 ammonia.workspace = true

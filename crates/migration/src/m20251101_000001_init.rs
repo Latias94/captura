@@ -92,10 +92,17 @@ impl MigrationTrait for Migration {
                             .not_null()
                             .unique_key(),
                     )
+                    .col(
+                        ColumnDef::new(Rule::Kind)
+                            .string_len(16)
+                            .not_null()
+                            .default("dsl"),
+                    )
                     .col(ColumnDef::new(Rule::Version).string_len(64))
                     .col(ColumnDef::new(Rule::Namespace).string_len(128))
                     .col(ColumnDef::new(Rule::Description).string())
-                    .col(ColumnDef::new(Rule::Yaml).text().not_null())
+                    .col(ColumnDef::new(Rule::SpecJson).json_binary())
+                    .col(ColumnDef::new(Rule::HandlerTarget).string_len(190))
                     .col(ColumnDef::new(Rule::ExamplesJson).json_binary())
                     .col(ColumnDef::new(Rule::VerifiedAt).timestamp_with_time_zone())
                     .col(ColumnDef::new(Rule::Maintainer).string_len(190))
@@ -906,10 +913,12 @@ enum Rule {
     Table,
     Id,
     RuleId,
+    Kind,
     Version,
     Namespace,
     Description,
-    Yaml,
+    SpecJson,
+    HandlerTarget,
     ExamplesJson,
     VerifiedAt,
     Maintainer,

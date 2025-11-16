@@ -13,13 +13,6 @@ use argon2::PasswordHasher;
 use captura_storage::entity::user;
 use chrono::{FixedOffset, Utc};
 use sea_orm::{ActiveModelTrait, EntityTrait, PaginatorTrait, Set};
-// use url::Url; // no longer used in main
-// use axum::Form; // reader handlers moved to compat
-// testkit has been extracted into a dedicated crate: captura-testkit
-
-// Re-export types for tests no longer needed; keep API modules self-contained
-// OPML types for Miniflux wrappers (not used in main)
-// use crate::opml::OutlineNode;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -83,58 +76,7 @@ async fn main() -> anyhow::Result<()> {
         });
     }
 
-    // Router assembly and server startup follow below
-
-    // AppState has been moved to state.rs and re-exported here via `pub use`
-
-    // moved to compat::miniflux::router
-
-    // Miniflux/compat authentication helpers moved to auth.rs
-
-    // Miniflux main implementation moved to compat::miniflux
-
-    // v1 feed create/list handlers moved to feeds.rs
-
-    // Error helpers moved to error.rs
-
-    // create_feed moved
-
-    // tests moved; no longer re-export handlers from main
-
-    // AuthUser moved to auth.rs
-
-    // v1 entries handlers moved to entries.rs
-
-    // ----- Extended feeds & categories -----
-
-    // legacy FeedsQuery removed (moved to crates/api/src/feeds.rs)
-
-    // legacy FeedDto removed (moved to crates/api/src/feeds.rs)
-
-    // legacy list_feeds removed (moved to crates/api/src/feeds.rs)
-
-    // legacy get_feed removed (moved to crates/api/src/feeds.rs)
-
-    // legacy UpdateFeedReq removed (moved to crates/api/src/feeds.rs)
-
-    // legacy update_feed removed (moved to crates/api/src/feeds.rs)
-
-    // legacy delete_feed removed (moved to crates/api/src/feeds.rs)
-
-    // legacy ExtendedEntriesQuery removed (moved to crates/api/src/entries.rs)
-
-    // legacy _list_entries_extended removed (moved to crates/api/src/entries.rs)
-
-    // legacy mark_all_read removed (moved to crates/api/src/entries.rs)
-
-    // legacy categories handlers removed (moved to crates/api/src/categories.rs)
-
-    // OPML export/import
-    // legacy opml_export removed; use crate::opml::export
-
-    // opml_import has been moved to crates/api/src/opml.rs
-
-    // Always use captura_api::build_router as the single router construction entrypoint
+    // Assemble router and start HTTP server.
     let app = build_router(app_state.clone());
 
     let addr: SocketAddr = "0.0.0.0:8080".parse()?;

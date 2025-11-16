@@ -7,13 +7,12 @@ use captura_storage::entity::feed;
 use reqwest::header::HeaderMap;
 use reqwest::Client;
 use scraper::{Html, Selector};
-use tracing::{debug, instrument};
+use tracing::instrument;
 use url::Url;
 
 mod handlers;
-mod http_client;
+pub mod http_client;
 mod hub_bridge;
-mod hub_utils;
 mod rules_engine;
 
 pub mod content;
@@ -24,7 +23,7 @@ pub use content::{
     sanitize_html, ContentTransformConfig,
 };
 pub use hub_bridge::execute_hub_route;
-pub use rules_engine::{refresh_rule_v1, refresh_rule_v1_with_yaml, refresh_rule_with_yaml};
+pub use rules_engine::refresh_rule_v1;
 
 #[derive(Debug, Clone)]
 pub struct RefreshMeta {
@@ -219,16 +218,6 @@ pub async fn refresh_standard_feed_with_meta_dto(
     }
 }
 
-fn apply_entry_filters(feed: &feed::Model, entries: &mut Vec<NormalizedEntry>) {
-    let cfg = ContentTransformConfig {
-        url_rewrite_rules: feed.url_rewrite_rules.clone(),
-        content_rewrite_rules: feed.rewrite_rules.clone(),
-        keep_filter_rules: feed.keep_filter_entry_rules.clone(),
-        block_filter_rules: feed.block_filter_entry_rules.clone(),
-    };
-    content::apply_entry_filters(&cfg, entries);
-}
-
 pub(crate) fn extract_attr(parent: &scraper::ElementRef, expr: &str) -> Option<String> {
     if let Some((sel, attr)) = expr.split_once('@') {
         if let Ok(s) = Selector::parse(sel) {
@@ -280,20 +269,11 @@ async fn readability_like_strategy_async(
         Ok(h) => h,
         Err(_) => return None,
     };
-    // First try dom_smoothie; if readability extraction fails, log and fall back to simple heuristics.
-    if let Some(article) = crate::extractor::extract_with_dom_smoothie(&html, Some(url)) {
-        return Some(sanitize_html(&article.content));
-    } else {
-        debug!(
-            url = url,
-            "dom_smoothie readability failed in rule pipeline, falling back to simple heuristics"
-        );
+    // Use captura-extract's readability + scraper_rules/intelligent fallback.
+    match captura_extract::extract_from_html(&html, Some(url), None) {
+        Ok(result) => Some(sanitize_html(&result.content_html)),
+        Err(_) => Some(sanitize_html(&html)),
     }
-
-    let doc = Html::parse_document(&html);
-    crate::extractor::readability_pick_raw(&doc)
-        .map(|raw| sanitize_html(&raw))
-        .or_else(|| Some(sanitize_html(&html)))
 }
 
 #[cfg(test)]

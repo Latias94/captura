@@ -1,0 +1,115 @@
+use crate::hub::types::{
+    FeatureConfig, Features, HandlerCtx, HubData, HubHandler, HubItem, HubResult, Radar,
+    RouteImplKind, RouteMeta, RouteRegistration,
+};
+use crate::hub::util;
+
+pub const META_GITHUB_TRENDING: RouteMeta = RouteMeta {
+    hub_id: "github/trending",
+    path: "/github/trending/:since/:language/:spoken_language?",
+    categories: &["programming"],
+    example: "/github/trending/daily/javascript/en",
+    parameters: &[
+        (
+            "since",
+            "time range: daily / weekly / monthly",
+        ),
+        (
+            "language",
+            "repository language slug in /trending/{language}; use 'any' or empty for all languages",
+        ),
+        (
+            "spoken_language",
+            "spoken_language_code in trending URL; empty for all spoken languages",
+        ),
+    ],
+    features: Features {
+        require_config: &[
+            FeatureConfig {
+                name: "GITHUB_ACCESS_TOKEN",
+                description: "GitHub access token used by the route (optional in Captura, required in some environments)",
+                optional: true,
+            },
+        ],
+        require_puppeteer: false,
+        anti_crawler: false,
+        support_bt: false,
+        support_podcast: false,
+        support_scihub: false,
+        nsfw: false,
+    },
+    radar: &[
+        Radar {
+            source: &["github.com/trending"],
+            target: "/trending/:since",
+        },
+    ],
+    name: "Trending",
+    maintainers: &["captura"],
+    url: "https://github.com/trending",
+    description: "GitHub Trending repositories (inspired by RSSHub github/trending route).",
+};
+
+pub struct GithubTrendingHandler;
+
+static GITHUB_TRENDING_HANDLER: GithubTrendingHandler = GithubTrendingHandler;
+
+pub const ROUTE_GITHUB_TRENDING: RouteRegistration = RouteRegistration {
+    meta: &META_GITHUB_TRENDING,
+    handler: &GITHUB_TRENDING_HANDLER,
+    impl_kind: RouteImplKind::Handler,
+    builtin_rule_id: None,
+};
+
+#[async_trait::async_trait]
+impl HubHandler for GithubTrendingHandler {
+    async fn handle(&self, ctx: &mut HandlerCtx<'_>) -> captura_common::Result<HubResult> {
+        let since = ctx.param_str("since").unwrap_or("daily");
+        let language = ctx.param_str("language").unwrap_or("");
+        let spoken = ctx.param_str("spoken_language").unwrap_or("");
+
+        let mut url = if language.is_empty() || language == "any" {
+            "https://github.com/trending".to_string()
+        } else {
+            format!("https://github.com/trending/{}", language)
+        };
+        let mut qs = vec![format!("since={}", since)];
+        if !spoken.is_empty() {
+            qs.push(format!("spoken_language_code={}", spoken));
+        }
+        if !qs.is_empty() {
+            url.push('?');
+            url.push_str(&qs.join("&"));
+        }
+
+        let html = util::get_html(&url).await?;
+
+        let mut items = Vec::new();
+        util::for_each_element(&html, "article.Box-row", |el| {
+            let link =
+                util::extract_attr(&el, "h2 a@href").map(|href| util::absolutize(&url, &href));
+            let title = util::extract_text(&el, "h2 a");
+            let desc_html = util::element_html(&el);
+            items.push(HubItem {
+                title: title.unwrap_or_else(|| link.clone().unwrap_or_default()),
+                description: Some(desc_html),
+                link,
+                author: None,
+                pub_date: None,
+                categories: Vec::new(),
+            });
+        })?;
+
+        let data = HubData {
+            title: "GitHub Trending".to_string(),
+            description: Some("GitHub trending repositories".to_string()),
+            link: Some("https://github.com/trending".to_string()),
+            image: None,
+            language: None,
+            items,
+            allow_empty: false,
+        };
+
+        Ok(HubResult::Data(data))
+    }
+}

@@ -1,4 +1,6 @@
 use sea_orm_migration::prelude::*;
+use serde_json;
+use serde_yaml;
 
 #[derive(DeriveMigrationName)]
 pub struct Migration;
@@ -87,12 +89,16 @@ source:
             ),
         ];
         for (rid, ns, yaml, examples) in stmts {
-            let yaml_escaped = yaml.replace("'", "''");
+            let spec_val: serde_json::Value =
+                serde_yaml::from_str(yaml).expect("seed rule yaml must be valid yaml");
+            let spec_str =
+                serde_json::to_string(&spec_val).expect("seed rule yaml must be encodable to json");
+            let spec_escaped = spec_str.replace('\'', "''");
             let sql = format!(
-                "INSERT INTO rule (rule_id, version, namespace, description, yaml, examples_json, verified_at, maintainer, created_at, updated_at) \
-                 VALUES ('{}','0.1','{}',NULL,'{}','{}', CURRENT_TIMESTAMP, 'captura', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP) \
+                "INSERT INTO rule (rule_id, kind, version, namespace, description, spec_json, examples_json, verified_at, maintainer, created_at, updated_at) \
+                 VALUES ('{}','dsl','0.1','{}',NULL,'{}','{}', CURRENT_TIMESTAMP, 'captura', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP) \
                  ON CONFLICT(rule_id) DO NOTHING",
-                rid, ns, yaml_escaped, examples
+                rid, ns, spec_escaped, examples
             );
             db.execute_unprepared(sql.as_str()).await?;
         }

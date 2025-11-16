@@ -152,10 +152,6 @@ pub fn build_router(app_state: AppState) -> Router {
         .route("/rules/templates", get(crate::rules::list_templates))
         .route("/rules/templates/{id}", get(crate::rules::get_template))
         .route(
-            "/rules/sync-from-fs",
-            post(crate::rules::sync_rules_from_fs),
-        )
-        .route(
             "/feeds/from-template",
             post(crate::rules::create_feed_from_template),
         )
