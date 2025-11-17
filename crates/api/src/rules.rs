@@ -12,7 +12,7 @@ use sea_orm::{
 };
 use serde::{Deserialize, Serialize};
 
-use captura_rules::v1::{parse_rule_v1, RuleSpecV1, SourceType};
+use captura_hub::v1::{parse_rule_v1, RuleSpecV1, SourceType};
 use captura_storage::entity::{category, feed, rule};
 
 use crate::auth::AuthUser;

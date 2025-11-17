@@ -29,11 +29,9 @@ pub(crate) async fn proxy(
         "http" | "https" => {}
         _ => return Err(bad_request("unsupported scheme")),
     }
-    // Fetch the resource with a bounded timeout to avoid long blocking
-    let cli = reqwest::Client::builder()
-        .user_agent("captura-media-proxy/0.1")
-        .timeout(std::time::Duration::from_secs(10))
-        .build()
+    // Fetch the resource with a bounded timeout to avoid long blocking.
+    // Use the shared HTTP client builder so that proxy and global defaults are honored.
+    let cli = captura_net::client_basic(Some("captura-media-proxy/0.1".to_string()), Some(10_000))
         .map_err(internal)?;
     let resp = cli.get(parsed).send().await.map_err(internal)?;
     if !resp.status().is_success() {

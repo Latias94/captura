@@ -167,10 +167,12 @@ pub async fn execute_json_v1_stateless(
         .fetch
         .user_agent
         .clone()
-        .or_else(|| ctx.http.user_agent.clone())
-        .unwrap_or_else(|| "captura/0.1".to_string());
+        .or_else(|| ctx.http.user_agent.clone());
+    let timeout_ms = ctx.http.timeout_ms;
 
-    let mut client_builder = Client::builder().user_agent(ua);
+    // Base builder from captura-net (env UA/timeout/proxy), then apply per-rule proxy override.
+    let mut client_builder = captura_net::client_builder(ua, timeout_ms)
+        .map_err(|e| captura_common::Error::Network(e.to_string()))?;
     if let Some(proxy) = &ctx.http.proxy_url {
         if !proxy.is_empty() {
             if let Ok(p) = reqwest::Proxy::all(proxy) {

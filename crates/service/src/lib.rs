@@ -61,7 +61,7 @@ pub async fn refresh_and_persist(db: &DatabaseConnection, f: &feed::Model) -> Re
                 let spec_json = r.spec_json.ok_or_else(|| {
                     captura_common::Error::Config("rule missing spec_json".into())
                 })?;
-                serde_json::from_value::<captura_rules::v1::RuleSpecV1>(spec_json)
+                serde_json::from_value::<captura_hub::v1::RuleSpecV1>(spec_json)
                     .map_err(|e| captura_common::Error::Config(e.to_string()))?
             } else {
                 return Err(captura_common::Error::Config(

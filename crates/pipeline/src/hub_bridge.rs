@@ -1,8 +1,8 @@
 use captura_common::{NormalizedEntry, Result};
-use captura_rules::routes::types::{HubCtx, HubData, Route};
+use captura_hub::routes::types::{HubCtx, HubData, Route};
 
 fn find_builtin_route(hub_id: &str) -> Option<&'static Route> {
-    captura_rules::routes::registry::builtin_routes()
+    captura_hub::routes::registry::builtin_routes()
         .iter()
         .find(|r| r.meta.hub_id == hub_id)
 }

@@ -19,7 +19,7 @@ captura-common = { path = "../common" }
 captura-net = { path = "../net" }
 captura-fetcher = { path = "../fetcher" }
 captura-crawler = { path = "../crawler" }
-captura-rules = { package = "captura-hub", path = "../hub" }
+captura-hub = { path = "../hub" }
 captura-storage = { path = "../storage" }
 captura-extract = { path = "../extract" }
 dom_smoothie = "0.13"

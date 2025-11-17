@@ -9,10 +9,10 @@ This document summarizes the current schema intended to avoid frequent breaking 
 - category
   - id (PK), user_id (FK user), name, view (NOT NULL, preferred view for this category; same key space as feed.view), created_at
 - rule
-  - id (PK), rule_id (unique), version, namespace, description, yaml (DSL), examples_json, verified_at, maintainer, created_at, updated_at
+  - id (PK), rule_id (unique), kind, version, namespace, description, spec_json (DSL v1 schema in JSON), handler_target, examples_json, verified_at, maintainer, created_at, updated_at
 - feed
   - id (PK), user_id (FK user), category_id (FK category, nullable)
-  - type: rss | atom | json | rule
+  - type: rss | atom | json | rule | hub
   - title, site_url, feed_url (for rule-type: source URL)
   - favicon_id (FK favicon, nullable), rule_id (FK rule, nullable)
   - view (NOT NULL, preferred view for this feed: articles | pictures | videos | audios | social | notifications; stored as snake_case string)
@@ -50,7 +50,7 @@ This document summarizes the current schema intended to avoid frequent breaking 
   - created_at, updated_at
 - job
   - id (PK), user_id (FK user), feed_id (FK), rule_id (FK)
-  - job_type: feed_refresh | rule_refresh | favicon | prune
+  - job_type: feed_refresh | favicon | integration
   - status: pending | running | done | failed
   - priority, run_at, attempts, last_error, created_at, updated_at
   - index: (status, run_at)
@@ -61,7 +61,7 @@ This document summarizes the current schema intended to avoid frequent breaking 
 - headers_json and extras_json are JSON-typed in Postgres, TEXT-backed JSON in SQLite; the API normalizes I/O.
 - Filtering/rewriting fields are TEXT for portability; future versions can encode them with a richer format if needed.
 - request_timeout_ms is per-feed, while global client defaults will be configured in service settings.
-- Rule keeps YAML + examples to support validation toolchain and snapshot tests.
+- Rule keeps the parsed DSL v1 spec in `spec_json`（由 YAML/JSON 解析而来）以及 `examples_json`，用于校验工具链和快照测试；YAML 仅作为输入格式存在于 API 层。
 
 ## Future-proofing
 

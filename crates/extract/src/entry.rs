@@ -27,14 +27,9 @@ pub struct EntryExtractConfig {
 }
 
 fn build_http_client(user_agent: Option<String>, timeout_ms: Option<u64>) -> Result<Client> {
-    let mut builder = Client::builder();
-    if let Some(ua) = user_agent {
-        builder = builder.user_agent(ua);
-    }
-    if let Some(ms) = timeout_ms {
-        builder = builder.timeout(std::time::Duration::from_millis(ms));
-    }
-    builder.build().map_err(|e| Error::Network(e.to_string()))
+    // Delegate to captura-net so that User-Agent, timeout and proxy behaviour
+    // are consistent with the rest of the stack.
+    captura_net::client_basic(user_agent, timeout_ms).map_err(|e| Error::Network(e.to_string()))
 }
 
 /// Apply scraper_rules according to Miniflux semantics (one CSS selector per line).

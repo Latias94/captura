@@ -3,7 +3,6 @@ use crate::auth::mf_auth;
 use crate::AppState;
 use axum::extract::{Query, State};
 use axum::Json;
-use reqwest::Client;
 use scraper::{Html, Selector};
 use std::collections::HashSet;
 use url::Url;
@@ -34,10 +33,7 @@ pub(crate) async fn discover(
 ) -> MfResult<Json<Vec<MfSubscriptionDto>>> {
     let _auth = mf_auth(&st, &headers).await.map_err(from_api_error)?;
     let base = Url::parse(&body.url).map_err(|_| bad_request("invalid url"))?;
-    let client = Client::builder()
-        .user_agent("captura-discover/0.1")
-        .timeout(std::time::Duration::from_secs(3))
-        .build()
+    let client = captura_net::client_basic(Some("captura-discover/0.1".to_string()), Some(3_000))
         .map_err(internal)?;
     let resp = client.get(base.clone()).send().await.map_err(internal)?;
     if !resp.status().is_success() {

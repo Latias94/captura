@@ -20,13 +20,14 @@ chrono.workspace = true
 captura-common = { path = "../common" }
 captura-storage = { path = "../storage" }
 captura-migration = { path = "../migration" }
-captura-rules = { package = "captura-hub", path = "../hub" }
+captura-hub = { path = "../hub" }
 captura-fetcher = { path = "../fetcher" }
 captura-crawler = { path = "../crawler" }
 captura-scheduler = { path = "../scheduler" }
 captura-pipeline = { path = "../pipeline" }
 captura-service = { path = "../service" }
 captura-types = { path = "../types" }
+captura-net = { path = "../net" }
 sha2.workspace = true
 argon2.workspace = true
 rand_core.workspace = true

@@ -1,5 +1,5 @@
 use axum::{routing::get, Router};
-use captura_rules::v1::parse_rule_v1;
+use captura_hub::v1::parse_rule_v1;
 use captura_service::refresh_and_persist;
 use captura_storage::entity::{entry, feed, rule};
 use chrono::{FixedOffset, Utc};

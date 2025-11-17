@@ -121,6 +121,31 @@ pub struct EntryQueryFilter {
     pub view: Option<EntryView>,
 }
 
+/// Build a view-based filter condition on `feed.view` for timeline-style queries.
+///
+/// Semantics:
+/// - `None` or `Some(All)` → no additional condition;
+/// - `Some(Articles)`      → `feed.view IS NULL OR feed.view = 'articles'`;
+/// - other concrete views  → `feed.view = '<view>'` (exact match).
+pub fn view_filter_condition(view: Option<EntryView>) -> Option<Condition> {
+    let Some(view) = view else {
+        return None;
+    };
+    if matches!(view, EntryView::All) {
+        return None;
+    }
+    let view_str = view.as_str().to_string();
+    if matches!(view, EntryView::Articles) {
+        Some(
+            Condition::any()
+                .add(feed::Column::View.is_null())
+                .add(feed::Column::View.eq(view_str)),
+        )
+    } else {
+        Some(Condition::all().add(feed::Column::View.eq(view_str)))
+    }
+}
+
 async fn mark_entries_read_with_filter(
     db: &DatabaseConnection,
     user_id: i64,
@@ -137,20 +162,8 @@ async fn mark_entries_read_with_filter(
     if let Some(cid) = filter.category_id {
         sel = sel.filter(feed::Column::CategoryId.eq(cid));
     }
-    if let Some(view) = filter.view {
-        if !matches!(view, EntryView::All) {
-            // feed.view is stored as snake_case string; when unset, it is treated as the default view ("articles").
-            // For view=Articles we match both NULL and explicit "articles"; other views match by exact value.
-            let view_str = view.as_str().to_string();
-            if matches!(view, EntryView::Articles) {
-                let cond = Condition::any()
-                    .add(feed::Column::View.is_null())
-                    .add(feed::Column::View.eq(view_str));
-                sel = sel.filter(cond);
-            } else {
-                sel = sel.filter(feed::Column::View.eq(view_str));
-            }
-        }
+    if let Some(cond) = view_filter_condition(filter.view) {
+        sel = sel.filter(cond);
     }
     if !filter.label_ids.is_empty() {
         sel = sel

@@ -18,6 +18,19 @@ pub mod html;
 /// - Timeout (ms): explicit override > `CAPTURA_HTTP_TIMEOUT_MS` env; 0 or invalid means no timeout.
 /// - Proxy: optional `CAPTURA_HTTP_PROXY` URL applied to all requests.
 pub fn client_basic(user_agent: Option<String>, timeout_ms: Option<u64>) -> Result<Client> {
+    client_builder(user_agent, timeout_ms)?
+        .build()
+        .map_err(|e| Error::Network(e.to_string()))
+}
+
+/// Build a `reqwest::ClientBuilder` with env-based defaults.
+///
+/// This is useful for callers that need to further customize TLS/HTTP2/proxy
+/// behaviour but still want to honour global UA/timeout/proxy settings.
+pub fn client_builder(
+    user_agent: Option<String>,
+    timeout_ms: Option<u64>,
+) -> Result<reqwest::ClientBuilder> {
     let mut builder = Client::builder();
 
     // User-Agent: explicit override > env > default.
@@ -57,5 +70,5 @@ pub fn client_basic(user_agent: Option<String>, timeout_ms: Option<u64>) -> Resu
         }
     }
 
-    builder.build().map_err(|e| Error::Network(e.to_string()))
+    Ok(builder)
 }

@@ -71,20 +71,8 @@ pub(crate) async fn list_entries(
     if let Some(cid) = q.category_id {
         sel = sel.filter(feed::Column::CategoryId.eq(cid));
     }
-    if let Some(view) = q.view {
-        if !matches!(view, EntryView::All) {
-            // feed.view is stored as snake_case string; when unset, it is treated as the default view ("articles").
-            // For view=Articles we match both NULL and explicit "articles"; other views match by exact value.
-            let view_str = view.as_str().to_string();
-            if matches!(view, EntryView::Articles) {
-                let cond = Condition::any()
-                    .add(feed::Column::View.is_null())
-                    .add(feed::Column::View.eq(view_str));
-                sel = sel.filter(cond);
-            } else {
-                sel = sel.filter(feed::Column::View.eq(view_str));
-            }
-        }
+    if let Some(cond) = captura_service::query::view_filter_condition(q.view) {
+        sel = sel.filter(cond);
     }
     if let Some(sts) = &q.status {
         match sts {

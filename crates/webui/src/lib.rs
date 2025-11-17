@@ -23,7 +23,7 @@ mod pages_hub;
 mod pages_index;
 mod pages_settings;
 mod util;
-use util::{api_base, gen_csp_nonce, load_snippets, read_token_cookie, resolve_lang};
+use util::{api_base, gen_csp_nonce, http_client, load_snippets, read_token_cookie, resolve_lang};
 
 // ----- Templates -----
 
@@ -252,14 +252,8 @@ async fn ui_smart_view_rename(
     }
     if let Some(n) = name {
         if !n.trim().is_empty() {
-            let cli = match reqwest::Client::builder()
-                .timeout(std::time::Duration::from_secs(4))
-                .build()
-            {
-                Ok(c) => c,
-                Err(_) => {
-                    return Redirect::to(&format!("/smart-views/{}", id)).into_response();
-                }
+            let Some(cli) = http_client(4) else {
+                return Redirect::to(&format!("/smart-views/{}", id)).into_response();
             };
             let url = format!("{}/api/v1/smart-views/{}", api_base(), id);
             let _ = cli
@@ -332,14 +326,8 @@ async fn ui_smart_view_create(headers: HeaderMap, body: Bytes) -> impl IntoRespo
     if !filters.is_empty() {
         payload.insert("filters".into(), serde_json::Value::Object(filters));
     }
-    let cli = match reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(4))
-        .build()
-    {
-        Ok(c) => c,
-        Err(_) => {
-            return Redirect::to("/feeds").into_response();
-        }
+    let Some(cli) = http_client(4) else {
+        return Redirect::to("/feeds").into_response();
     };
     let url = format!("{}/api/v1/smart-views", api_base());
     let resp = cli
@@ -423,14 +411,8 @@ async fn ui_smart_view_update(
         payload.insert("filters".into(), serde_json::Value::Object(filters));
     }
     if !payload.is_empty() {
-        let cli = match reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(4))
-            .build()
-        {
-            Ok(c) => c,
-            Err(_) => {
-                return Redirect::to(&format!("/smart-views/{}", id)).into_response();
-            }
+        let Some(cli) = http_client(4) else {
+            return Redirect::to(&format!("/smart-views/{}", id)).into_response();
         };
         let url = format!("{}/api/v1/smart-views/{}", api_base(), id);
         let _ = cli
@@ -450,12 +432,8 @@ async fn ui_smart_view_delete(Path(id): Path<i64>, headers: HeaderMap) -> impl I
     let Some(token) = read_token_cookie(&headers) else {
         return Redirect::to("/login").into_response();
     };
-    let cli = match reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(4))
-        .build()
-    {
-        Ok(c) => c,
-        Err(_) => return Redirect::to("/feeds").into_response(),
+    let Some(cli) = http_client(4) else {
+        return Redirect::to("/feeds").into_response();
     };
     let url = format!("{}/api/v1/smart-views/{}", api_base(), id);
     let _ = cli
@@ -475,12 +453,8 @@ async fn ui_toggle_star(Path(id): Path<i64>, headers: HeaderMap) -> impl IntoRes
     let Some(token) = read_token_cookie(&headers) else {
         return Redirect::to("/login");
     };
-    let cli = match reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(3))
-        .build()
-    {
-        Ok(c) => c,
-        Err(_) => return Redirect::to(&format!("/entries/{}", id)),
+    let Some(cli) = http_client(3) else {
+        return Redirect::to(&format!("/entries/{}", id));
     };
     let url = format!("{}/v1/entries/{}/star", api_base(), id);
     let _ = cli.put(url).header("X-Auth-Token", token).send().await;
@@ -512,10 +486,9 @@ async fn ui_mark_status(Path(id): Path<i64>, headers: HeaderMap) -> impl IntoRes
             .map(|s| s.to_string())
             .unwrap_or_else(|| "read".to_string())
     };
-    let cli = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(3))
-        .build()
-        .unwrap();
+    let Some(cli) = http_client(3) else {
+        return Redirect::to(&format!("/entries/{}", id));
+    };
     let url = format!("{}/v1/entries/{}", api_base(), id);
     let _ = cli
         .put(url)
@@ -555,10 +528,9 @@ async fn ui_bulk_mark(headers: HeaderMap, body: Bytes) -> impl IntoResponse {
         .filter_map(|s| s.trim().parse::<i64>().ok())
         .collect();
     if !ids.is_empty() {
-        let cli = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(5))
-            .build()
-            .unwrap();
+        let Some(cli) = http_client(5) else {
+            return Redirect::to("/feeds");
+        };
         let url = format!("{}/v1/entries", api_base());
         let _ = cli
             .put(url)
@@ -579,10 +551,9 @@ async fn ui_feed_mark_all_read(Path(id): Path<i64>, headers: HeaderMap) -> impl 
     let Some(token) = read_token_cookie(&headers) else {
         return Redirect::to("/login");
     };
-    let cli = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(5))
-        .build()
-        .unwrap();
+    let Some(cli) = http_client(5) else {
+        return Redirect::to("/feeds");
+    };
     let url = format!("{}/v1/feeds/{}/mark-all-as-read", api_base(), id);
     let _ = cli.put(url).header("X-Auth-Token", token).send().await;
     let back = headers
@@ -597,10 +568,9 @@ async fn ui_feed_refresh(Path(id): Path<i64>, headers: HeaderMap) -> impl IntoRe
     let Some(token) = read_token_cookie(&headers) else {
         return Redirect::to("/login");
     };
-    let cli = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
-        .build()
-        .unwrap();
+    let Some(cli) = http_client(10) else {
+        return Redirect::to(&format!("/feeds/{}", id));
+    };
     let url = format!("{}/v1/feeds/{}/refresh", api_base(), id);
     let ok = match cli.put(url).header("X-Auth-Token", token).send().await {
         Ok(r) => r.status().is_success(),
@@ -949,10 +919,9 @@ async fn ui_feed_update(Path(id): Path<i64>, headers: HeaderMap, body: Bytes) ->
     if let Some(s) = keeplist_rules {
         payload.insert("keeplist_rules".into(), serde_json::Value::String(s));
     }
-    let cli = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(5))
-        .build()
-        .unwrap();
+    let Some(cli) = http_client(5) else {
+        return Redirect::to("/feeds").into_response();
+    };
     let url = format!("{}/v1/feeds/{}", api_base(), id);
     let _ = cli
         .put(url)
@@ -967,10 +936,9 @@ async fn ui_feed_delete(Path(id): Path<i64>, headers: HeaderMap) -> impl IntoRes
     let Some(token) = read_token_cookie(&headers) else {
         return Redirect::to("/login").into_response();
     };
-    let cli = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(5))
-        .build()
-        .unwrap();
+    let Some(cli) = http_client(5) else {
+        return Redirect::to("/feeds").into_response();
+    };
     let url = format!("{}/v1/feeds/{}", api_base(), id);
     let _ = cli.delete(url).header("X-Auth-Token", token).send().await;
     Redirect::to("/feeds").into_response()

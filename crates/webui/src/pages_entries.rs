@@ -10,7 +10,8 @@ use std::time::Duration;
 use crate::filters;
 use crate::i18n;
 use crate::util::{
-    api_base, cookie_value, gen_csp_nonce, load_snippets, read_token_cookie, resolve_lang,
+    api_base, cookie_value, gen_csp_nonce, http_client, load_snippets, read_token_cookie,
+    resolve_lang,
 };
 
 #[derive(Deserialize, Clone)]
@@ -79,18 +80,12 @@ pub async fn ui_feed_entries(
     let dict = i18n::load(&lang);
     let snippets = load_snippets(&headers).await;
     let nonce = gen_csp_nonce();
-    let cli = match reqwest::Client::builder()
-        .timeout(Duration::from_secs(4))
-        .build()
-    {
-        Ok(c) => c,
-        Err(_) => {
-            return (
-                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                "http client error",
-            )
-                .into_response();
-        }
+    let Some(cli) = http_client(4) else {
+        return (
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            "http client error",
+        )
+            .into_response();
     };
     let limit = if let Some(l) = q.limit {
         l.clamp(1, 200)
@@ -268,18 +263,12 @@ pub async fn ui_smart_view_entries(
     let dict = i18n::load(&lang);
     let snippets = load_snippets(&headers).await;
     let nonce = gen_csp_nonce();
-    let cli = match reqwest::Client::builder()
-        .timeout(Duration::from_secs(4))
-        .build()
-    {
-        Ok(c) => c,
-        Err(_) => {
-            return (
-                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                "http client error",
-            )
-                .into_response();
-        }
+    let Some(cli) = http_client(4) else {
+        return (
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            "http client error",
+        )
+            .into_response();
     };
 
     // Load smart view metadata
@@ -439,18 +428,12 @@ pub async fn ui_entry(Path(id): Path<i64>, headers: HeaderMap) -> impl IntoRespo
     let dict = i18n::load(&lang);
     let snippets = load_snippets(&headers).await;
     let nonce = gen_csp_nonce();
-    let cli = match reqwest::Client::builder()
-        .timeout(Duration::from_secs(4))
-        .build()
-    {
-        Ok(c) => c,
-        Err(_) => {
-            return (
-                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                "http client error",
-            )
-                .into_response();
-        }
+    let Some(cli) = http_client(4) else {
+        return (
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            "http client error",
+        )
+            .into_response();
     };
     let url = format!("{}/v1/entries/{}", api_base(), id);
     let res = cli

@@ -22,3 +22,4 @@ once_cell.workspace = true
 urlencoding.workspace = true
 base64.workspace = true
 rand_core.workspace = true
+captura-net = { path = "../net" }

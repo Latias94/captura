@@ -59,9 +59,7 @@ pub async fn list_jobs(
             id: j.id,
             job_type: match j.job_type {
                 job::JobType::FeedRefresh => "feed_refresh".into(),
-                job::JobType::RuleRefresh => "rule_refresh".into(),
                 job::JobType::Favicon => "favicon".into(),
-                job::JobType::Prune => "prune".into(),
                 job::JobType::Integration => "integration".into(),
             },
             status: match j.status {

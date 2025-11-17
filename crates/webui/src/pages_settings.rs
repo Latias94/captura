@@ -10,7 +10,8 @@ use serde::Deserialize;
 use crate::filters;
 use crate::i18n;
 use crate::util::{
-    api_base, cookie_value, gen_csp_nonce, load_snippets, read_token_cookie, resolve_lang,
+    api_base, cookie_value, gen_csp_nonce, http_client, load_snippets, read_token_cookie,
+    resolve_lang,
 };
 
 #[derive(Deserialize, Clone)]
@@ -67,10 +68,13 @@ pub async fn ui_settings(headers: HeaderMap) -> impl IntoResponse {
     let dict = i18n::load(&lang);
     let snippets = load_snippets(&headers).await;
     let nonce = gen_csp_nonce();
-    let cli = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(5))
-        .build()
-        .unwrap();
+    let Some(cli) = http_client(5) else {
+        return (
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            "http client error",
+        )
+            .into_response();
+    };
     let keys_url = format!("{}/v1/api-keys", api_base());
     let apikeys: Vec<UiApiKey> = match cli
         .get(keys_url)
@@ -165,10 +169,9 @@ pub async fn ui_prefs_language(headers: HeaderMap, body: Bytes) -> impl IntoResp
     };
     // Try update user prefs via /v1/me -> id, then PUT /v1/users/{id}
     if let Some(token) = read_token_cookie(&headers) {
-        let cli = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(5))
-            .build()
-            .unwrap();
+        let Some(cli) = http_client(5) else {
+            return Redirect::to("/settings").into_response();
+        };
         let me = format!("{}/v1/me", api_base());
         if let Ok(resp) = cli
             .get(me)
@@ -246,10 +249,9 @@ pub async fn ui_prefs_entries_per_page(headers: HeaderMap, body: Bytes) -> impl 
         }
     }
     // PUT /v1/users/{id}
-    let cli = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(5))
-        .build()
-        .unwrap();
+    let Some(cli) = http_client(5) else {
+        return Redirect::to("/settings").into_response();
+    };
     let me = format!("{}/v1/me", api_base());
     if let Ok(resp) = cli
         .get(&me)
@@ -288,10 +290,9 @@ pub async fn ui_prefs_sort_direction(headers: HeaderMap, body: Bytes) -> impl In
             }
         }
     }
-    let cli = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(5))
-        .build()
-        .unwrap();
+    let Some(cli) = http_client(5) else {
+        return Redirect::to("/settings").into_response();
+    };
     let me = format!("{}/v1/me", api_base());
     if let Ok(resp) = cli
         .get(&me)
@@ -328,10 +329,9 @@ pub async fn ui_prefs_keyboard_shortcuts(headers: HeaderMap, body: Bytes) -> imp
             enabled = s == "on" || s == "1" || s.eq_ignore_ascii_case("true");
         }
     }
-    let cli = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(5))
-        .build()
-        .unwrap();
+    let Some(cli) = http_client(5) else {
+        return Redirect::to("/settings").into_response();
+    };
     let me = format!("{}/v1/me", api_base());
     if let Ok(resp) = cli
         .get(&me)
@@ -368,10 +368,9 @@ pub async fn ui_prefs_show_reading_time(headers: HeaderMap, body: Bytes) -> impl
             enabled = s == "on" || s == "1" || s.eq_ignore_ascii_case("true");
         }
     }
-    let cli = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(5))
-        .build()
-        .unwrap();
+    let Some(cli) = http_client(5) else {
+        return Redirect::to("/settings").into_response();
+    };
     let me = format!("{}/v1/me", api_base());
     if let Ok(resp) = cli
         .get(&me)
@@ -410,10 +409,9 @@ pub async fn ui_prefs_open_ext_newtab(headers: HeaderMap, body: Bytes) -> impl I
         b
     };
     if let Some(token) = read_token_cookie(&headers) {
-        let cli = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(5))
-            .build()
-            .unwrap();
+        let Some(cli) = http_client(5) else {
+            return Redirect::to("/settings").into_response();
+        };
         let me = format!("{}/v1/me", api_base());
         if let Ok(resp) = cli
             .get(&me)
@@ -527,10 +525,9 @@ pub async fn ui_prefs_custom_css(headers: HeaderMap, body: Bytes) -> impl IntoRe
             }
         }
     }
-    let cli = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(5))
-        .build()
-        .unwrap();
+    let Some(cli) = http_client(5) else {
+        return Redirect::to("/settings").into_response();
+    };
     let me = format!("{}/v1/me", api_base());
     if let Ok(resp) = cli
         .get(&me)
@@ -649,10 +646,9 @@ pub async fn ui_prefs_auto_mark_read(headers: HeaderMap, body: Bytes) -> impl In
     }
     // Persist to server mark_read_on_view if possible
     if let Some(token) = read_token_cookie(&headers) {
-        let cli = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(5))
-            .build()
-            .unwrap();
+        let Some(cli) = http_client(5) else {
+            return Redirect::to("/settings").into_response();
+        };
         let me = format!("{}/v1/me", api_base());
         if let Ok(resp) = cli
             .get(&me)
@@ -683,10 +679,9 @@ pub async fn ui_opml_export(headers: HeaderMap) -> impl IntoResponse {
     let Some(token) = read_token_cookie(&headers) else {
         return Redirect::to("/login").into_response();
     };
-    let cli = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
-        .build()
-        .unwrap();
+    let Some(cli) = http_client(10) else {
+        return Redirect::to("/settings").into_response();
+    };
     let url = format!("{}/v1/export", api_base());
     match cli
         .get(url)
@@ -724,10 +719,9 @@ pub async fn ui_opml_import(headers: HeaderMap, body: Bytes) -> impl IntoRespons
     if content.trim().is_empty() {
         return Redirect::to("/settings").into_response();
     }
-    let cli = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(15))
-        .build()
-        .unwrap();
+    let Some(cli) = http_client(15) else {
+        return Redirect::to("/settings").into_response();
+    };
     let url = format!("{}/v1/import", api_base());
     let _ = cli
         .post(url)
@@ -751,10 +745,9 @@ pub async fn ui_apikey_create(headers: HeaderMap, body: Bytes) -> impl IntoRespo
         }
     }
     let payload = serde_json::json!({"description": desc});
-    let cli = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(5))
-        .build()
-        .unwrap();
+    let Some(cli) = http_client(5) else {
+        return Redirect::to("/settings").into_response();
+    };
     let url = format!("{}/v1/api-keys", api_base());
     let _ = cli
         .post(url)
@@ -769,10 +762,9 @@ pub async fn ui_apikey_delete(Path(id): Path<i64>, headers: HeaderMap) -> impl I
     let Some(token) = read_token_cookie(&headers) else {
         return Redirect::to("/login").into_response();
     };
-    let cli = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(5))
-        .build()
-        .unwrap();
+    let Some(cli) = http_client(5) else {
+        return Redirect::to("/settings").into_response();
+    };
     let url = format!("{}/v1/api-keys/{}", api_base(), id);
     let _ = cli.delete(url).header("X-Auth-Token", token).send().await;
     Redirect::to("/settings").into_response()
@@ -796,10 +788,9 @@ pub async fn ui_integration_create(headers: HeaderMap, body: Bytes) -> impl Into
     let config_json: serde_json::Value =
         serde_json::from_str(&cfg).unwrap_or(serde_json::json!({}));
     let payload = serde_json::json!({"kind": kind, "enabled": enabled, "config_json": config_json});
-    let cli = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(8))
-        .build()
-        .unwrap();
+    let Some(cli) = http_client(8) else {
+        return Redirect::to("/settings").into_response();
+    };
     let url = format!("{}/api/v1/integrations", api_base());
     let _ = cli
         .post(url)
@@ -835,10 +826,9 @@ pub async fn ui_integration_update(
     if let Some(j) = config_json {
         payload.insert("config_json".into(), j);
     }
-    let cli = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(8))
-        .build()
-        .unwrap();
+    let Some(cli) = http_client(8) else {
+        return Redirect::to("/settings").into_response();
+    };
     let url = format!("{}/api/v1/integrations/{}", api_base(), id);
     let _ = cli
         .put(url)
@@ -853,10 +843,9 @@ pub async fn ui_integration_delete(Path(id): Path<i64>, headers: HeaderMap) -> i
     let Some(token) = read_token_cookie(&headers) else {
         return Redirect::to("/login").into_response();
     };
-    let cli = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(5))
-        .build()
-        .unwrap();
+    let Some(cli) = http_client(5) else {
+        return Redirect::to("/settings").into_response();
+    };
     let url = format!("{}/api/v1/integrations/{}", api_base(), id);
     let _ = cli.delete(url).header("X-Auth-Token", token).send().await;
     Redirect::to("/settings").into_response()
@@ -882,10 +871,9 @@ pub async fn ui_webhook_create(headers: HeaderMap, body: Bytes) -> impl IntoResp
     }
     if !urlv.trim().is_empty() {
         let payload = serde_json::json!({"url": urlv, "events": events});
-        let cli = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(8))
-            .build()
-            .unwrap();
+        let Some(cli) = http_client(8) else {
+            return Redirect::to("/settings").into_response();
+        };
         let api = format!("{}/api/v1/webhooks", api_base());
         let _ = cli
             .post(api)
@@ -901,10 +889,9 @@ pub async fn ui_webhook_delete(Path(id): Path<i64>, headers: HeaderMap) -> impl 
     let Some(token) = read_token_cookie(&headers) else {
         return Redirect::to("/login").into_response();
     };
-    let cli = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(5))
-        .build()
-        .unwrap();
+    let Some(cli) = http_client(5) else {
+        return Redirect::to("/settings").into_response();
+    };
     let api = format!("{}/api/v1/webhooks/{}", api_base(), id);
     let _ = cli.delete(api).header("X-Auth-Token", token).send().await;
     Redirect::to("/settings").into_response()

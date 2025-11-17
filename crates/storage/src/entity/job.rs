@@ -6,12 +6,8 @@ use serde::{Deserialize, Serialize};
 pub enum JobType {
     #[sea_orm(string_value = "feed_refresh")]
     FeedRefresh,
-    #[sea_orm(string_value = "rule_refresh")]
-    RuleRefresh,
     #[sea_orm(string_value = "favicon")]
     Favicon,
-    #[sea_orm(string_value = "prune")]
-    Prune,
     #[sea_orm(string_value = "integration")]
     Integration,
 }

@@ -6,7 +6,7 @@ use captura_extract::{
     extract_html as extract_extract_html, json_get_path as extract_json_get_path,
     xpath_to_css_like, RuleExecCtx, RuleExecHttpCtx,
 };
-use captura_rules::v1::{
+use captura_hub::v1::{
     merge_rule_params_v1, ContentMergeMode, ContentMode, RuleSpecV1, SourceType,
 };
 use captura_storage::entity::feed;

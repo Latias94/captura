@@ -10,6 +10,23 @@ pub struct UiSnippets {
     pub external_font_hosts: String,
 }
 
+/// Build a reqwest client for WebUI → API calls.
+///
+/// Behaviour:
+/// - Prefer `captura-net` so that UA/timeout/proxy env settings are honoured;
+/// - Fall back to a plain `reqwest::Client::builder()` with the same timeout
+///   if `captura-net` configuration fails for any reason.
+pub fn http_client(timeout_secs: u64) -> Option<reqwest::Client> {
+    let timeout_ms = timeout_secs.saturating_mul(1000);
+    if let Ok(cli) = captura_net::client_basic(None, Some(timeout_ms)) {
+        return Some(cli);
+    }
+    reqwest::Client::builder()
+        .timeout(Duration::from_secs(timeout_secs))
+        .build()
+        .ok()
+}
+
 /// Generate a CSP nonce suitable for script/style tags.
 pub fn gen_csp_nonce() -> String {
     let mut buf = [0u8; 16];
@@ -22,10 +39,9 @@ pub async fn load_snippets(headers: &HeaderMap) -> UiSnippets {
     let Some(token) = cookie_value(headers, "X-Auth-Token") else {
         return UiSnippets::default();
     };
-    let cli = reqwest::Client::builder()
-        .timeout(Duration::from_secs(3))
-        .build()
-        .unwrap();
+    let Some(cli) = http_client(3) else {
+        return UiSnippets::default();
+    };
     let me = format!("{}/v1/me", api_base());
     if let Ok(resp) = cli
         .get(me)
@@ -93,10 +109,7 @@ pub async fn resolve_lang(headers: &HeaderMap) -> String {
         return lang;
     }
     if let Some(token) = cookie_value(headers, "X-Auth-Token") {
-        if let Ok(cli) = reqwest::Client::builder()
-            .timeout(Duration::from_secs(2))
-            .build()
-        {
+        if let Some(cli) = http_client(2) {
             let me = format!("{}/v1/me", api_base());
             if let Ok(resp) = cli
                 .get(me)

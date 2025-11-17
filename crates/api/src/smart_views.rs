@@ -265,17 +265,8 @@ pub(crate) async fn list_smart_view_entries(
                 .filter(entry_label::Column::LabelId.is_in(label_ids.clone()));
         }
     }
-    if !matches!(view, EntryView::All) {
-        // Same semantics as /api/v1/entries: NULL view is treated as "articles".
-        let view_str = view.as_str().to_string();
-        if matches!(view, EntryView::Articles) {
-            let cond = Condition::any()
-                .add(feed::Column::View.is_null())
-                .add(feed::Column::View.eq(view_str));
-            sel = sel.filter(cond);
-        } else {
-            sel = sel.filter(feed::Column::View.eq(view_str));
-        }
+    if let Some(cond) = captura_service::query::view_filter_condition(Some(view)) {
+        sel = sel.filter(cond);
     }
     if let Some(ref sts) = filters.status {
         match sts.as_str() {

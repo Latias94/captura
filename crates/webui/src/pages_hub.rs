@@ -9,7 +9,9 @@ use std::time::Duration;
 
 use crate::filters;
 use crate::i18n;
-use crate::util::{api_base, gen_csp_nonce, load_snippets, read_token_cookie, resolve_lang};
+use crate::util::{
+    api_base, gen_csp_nonce, http_client, load_snippets, read_token_cookie, resolve_lang,
+};
 
 #[derive(Template)]
 #[template(path = "hub_routes.html")]
@@ -126,18 +128,12 @@ pub async fn ui_hub_routes(headers: HeaderMap, _q: Query<UiHubQuery>) -> impl In
     let snippets = load_snippets(&headers).await;
     let nonce = gen_csp_nonce();
 
-    let cli = match reqwest::Client::builder()
-        .timeout(Duration::from_secs(3))
-        .build()
-    {
-        Ok(c) => c,
-        Err(_) => {
-            return (
-                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                "http client error",
-            )
-                .into_response();
-        }
+    let Some(cli) = http_client(3) else {
+        return (
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            "http client error",
+        )
+            .into_response();
     };
 
     #[derive(Deserialize)]
@@ -204,18 +200,12 @@ pub async fn ui_hub_test(headers: HeaderMap, Query(q): Query<UiHubQuery>) -> imp
     let snippets = load_snippets(&headers).await;
     let nonce = gen_csp_nonce();
 
-    let cli = match reqwest::Client::builder()
-        .timeout(Duration::from_secs(3))
-        .build()
-    {
-        Ok(c) => c,
-        Err(_) => {
-            return (
-                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                "http client error",
-            )
-                .into_response();
-        }
+    let Some(cli) = http_client(3) else {
+        return (
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            "http client error",
+        )
+            .into_response();
     };
 
     let mut preview: Option<UiHubPreview> = None;
@@ -292,18 +282,12 @@ pub async fn ui_rules_test(
 
     if !url.trim().is_empty() {
         if let Some(yaml_str) = yaml.as_ref() {
-            let cli = match reqwest::Client::builder()
-                .timeout(Duration::from_secs(6))
-                .build()
-            {
-                Ok(c) => c,
-                Err(_) => {
-                    return (
-                        axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                        "http client error",
-                    )
-                        .into_response();
-                }
+            let Some(cli) = http_client(6) else {
+                return (
+                    axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                    "http client error",
+                )
+                    .into_response();
             };
             #[derive(serde::Serialize)]
             struct TryReq<'a> {

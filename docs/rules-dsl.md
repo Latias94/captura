@@ -843,8 +843,9 @@ of the stable DSL contract.
 
 - Parsing:
   - The v1 schema is implemented in `crates/extract::v1` as `RuleSpecV1`,
-    `SourceType` and related types, and re-exported from `crates/hub` as
-    `captura_rules::v1::*` for convenience.
+    `SourceType` and related types, and re-exported from `crates/hub`
+    (crate name `captura-hub`, Rust crate id `captura_hub`) as
+    `captura_hub::v1::*` for convenience.
   - `parse_rule_v1` / `validate_v1` use `serde_yaml` for YAML deserialization
     and enforce:
     - `id` non‑empty,

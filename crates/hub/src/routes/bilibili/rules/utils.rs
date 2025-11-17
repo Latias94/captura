@@ -103,9 +103,11 @@ pub fn pick_bilibili_cookie() -> Option<String> {
 /// - Optionally attaches `BILIBILI_COOKIE` as Cookie header if present.
 /// - Checks HTTP status and Bilibili JSON `code` field.
 pub async fn bilibili_get_json(url: &str, referer: Option<&str>) -> Result<serde_json::Value> {
-    let client = reqwest::Client::builder()
-        .user_agent("captura/0.1")
-        .build()
+    // Use the shared HTTP client builder so that UA/timeout/proxy semantics
+    // match the rest of the stack. Bilibili APIs are latency-sensitive but
+    // we keep timeout flexible via env; callers can constrain at the request
+    // level if needed.
+    let client = captura_net::client_basic(Some("captura/0.1".to_string()), None)
         .map_err(|e| Error::Network(e.to_string()))?;
 
     let mut req = client.get(url);

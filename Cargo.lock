@@ -585,6 +585,7 @@ dependencies = [
  "captura-fetcher",
  "captura-hub",
  "captura-migration",
+ "captura-net",
  "captura-pipeline",
  "captura-scheduler",
  "captura-service",
@@ -652,6 +653,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "captura-common",
+ "captura-net",
  "dom_smoothie",
  "regex",
  "reqwest 0.12.24",
@@ -670,6 +672,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "captura-common",
+ "captura-net",
  "feed-rs",
  "reqwest 0.12.24",
  "tokio",
@@ -843,6 +846,7 @@ dependencies = [
  "askama",
  "axum",
  "base64 0.22.1",
+ "captura-net",
  "mime",
  "once_cell",
  "rand_core 0.6.4",

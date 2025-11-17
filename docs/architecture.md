@@ -33,7 +33,7 @@ This document describes the initial architecture and workspace layout for Captur
 - `crates/net`: shared HTTP client + HTML helpers（统一 UA/超时/代理 等行为）。
 - `crates/scheduler`: job scheduler and background workers.
 - `crates/pipeline`: Orchestrates `fetcher`/`crawler`/DSL rules into normalized entries。
-- `crates/hub`: Hub route definitions和内置规则模型（RSSHub-style routes + DSL v1 schema）。
+- `crates/hub`: Hub route definitions和内置规则模型（RSSHub-style routes + DSL v1 schema，crate 名为 `captura-hub`，Rust crate id 为 `captura_hub`）。
 - `rules/`: legacy/example DSL rule files (YAML); new official routes live in
   `crates/hub`.
 - `docs/`: documentation.

@@ -146,9 +146,6 @@ pub async fn run_once(db: &DatabaseConnection, max: u64) -> Result<usize> {
                 job::JobType::FeedRefresh => refresh_feed_job(&db, &j).await,
                 job::JobType::Favicon => refresh_favicon_job(&db, &j).await,
                 job::JobType::Integration => deliver_integration_job(&db, &j).await,
-                _ => Err(captura_common::Error::Other(anyhow::anyhow!(
-                    "unknown job type"
-                ))),
             };
             // finalize
             if let Some(model) = job::Entity::find_by_id(j.id).one(&db).await.ok().flatten() {

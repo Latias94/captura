@@ -35,10 +35,11 @@ pub struct HttpFetcher {
 
 impl HttpFetcher {
     pub fn new(options: FetchOptions) -> Result<Self> {
-        let mut builder = Client::builder();
-        if let Some(t) = options.timeout {
-            builder = builder.timeout(t);
-        }
+        // Start from a captura-net builder so that env-level UA/timeout/proxy
+        // defaults are applied, then layer per-fetch options on top.
+        let timeout_ms = options.timeout.map(|d| d.as_millis() as u64);
+        let mut builder = captura_net::client_builder(options.user_agent.clone(), timeout_ms)
+            .map_err(|e| Error::Network(e.to_string()))?;
         if options.allow_invalid_certs {
             builder = builder.danger_accept_invalid_certs(true);
         }

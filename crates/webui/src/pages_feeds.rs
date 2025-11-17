@@ -9,7 +9,9 @@ use std::time::Duration;
 
 use crate::filters;
 use crate::i18n;
-use crate::util::{api_base, gen_csp_nonce, load_snippets, read_token_cookie, resolve_lang};
+use crate::util::{
+    api_base, gen_csp_nonce, http_client, load_snippets, read_token_cookie, resolve_lang,
+};
 
 #[derive(Deserialize, Clone)]
 #[allow(dead_code)]
@@ -89,18 +91,12 @@ pub async fn ui_feeds(headers: HeaderMap, Query(fq): Query<UiFeedsQuery>) -> imp
     let dict = i18n::load(&lang);
     let snippets = load_snippets(&headers).await;
     let nonce = gen_csp_nonce();
-    let cli = match reqwest::Client::builder()
-        .timeout(Duration::from_secs(3))
-        .build()
-    {
-        Ok(c) => c,
-        Err(_) => {
-            return (
-                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                "http client error",
-            )
-                .into_response()
-        }
+    let Some(cli) = http_client(3) else {
+        return (
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            "http client error",
+        )
+            .into_response();
     };
     let mut url = format!("{}/v1/feeds?withCounters=true", api_base());
     let mut selected_category = None;

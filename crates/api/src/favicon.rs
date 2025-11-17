@@ -26,9 +26,7 @@ async fn fetch_favicon(site: &str) -> anyhow::Result<(Vec<u8>, Option<String>, S
     base.set_path("/favicon.ico");
     base.set_query(None);
     base.set_fragment(None);
-    let cli = reqwest::Client::builder()
-        .user_agent("captura/0.1")
-        .build()?;
+    let cli = captura_net::client_basic(Some("captura/0.1".to_string()), Some(5_000))?;
     let res = cli.get(base.as_str()).send().await?;
     if !res.status().is_success() {
         anyhow::bail!("http status {}", res.status());

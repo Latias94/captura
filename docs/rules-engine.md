@@ -90,16 +90,18 @@ At runtime, a DB-backed rule is represented by a record in the `rule` table:
 
 - `id` (primary key, numeric)
 - `rule_id` (string, globally unique logical ID, e.g. `captura.route.github.trending`)
+- `kind` (string, logical implementation kind: `dsl` | `handler`)
 - `version` (optional string; used for template versioning, not DSL version)
 - `namespace` (optional, usually prefix of `rule_id`, e.g. `captura.route`)
 - `description` (optional)
-- `yaml` (string, Rules DSL v1 document)
+- `spec_json` (JSON, serialized DSL v1 spec when `kind = "dsl"`)
+- `handler_target` (optional string, e.g. `hub:bilibili/hot-search`, used when `kind = "handler"`)
 - `examples_json` (optional JSON, derived from `spec.examples`)
 - `verified_at`, `maintainer`, timestamps, etc.
 
 The **DSL version** is inside the YAML (`version: 1`) and validated by
-`captura_rules::v1::parse_rule_v1` (re-exporting the schema from
-`captura-extract::v1`). The `rule.version` column is for template metadata and
+`captura_hub::v1::parse_rule_v1` (re-exporting the schema from
+`captura-extract::v1` via the `captura-hub` crate). The `rule.version` column is for template metadata and
 does not control parsing.
 
 Rule CRUD and rule templates are exposed via the API in `crates/api/src/rules.rs`:
@@ -132,7 +134,7 @@ The sync logic lives in `crates/service/src/rules_sync.rs`:
   - parses each file with `parse_rule_v1`,
   - upserts into `rule` table keyed by `rule_id`,
     - missing → `INSERT`,
-    - existing → `UPDATE` `namespace/description/yaml/examples_json/updated_at`.
+    - existing → `UPDATE` `namespace/description/spec_json/examples_json/updated_at`.
   - collects counters: `scanned_files/created/updated/failed`.
 
 This is exposed via the API:
@@ -174,8 +176,8 @@ Pipeline entry points (in `crates/pipeline/src/lib.rs`):
 - Service-layer orchestration is in `crates/service/src/lib.rs`:
   - `refresh_and_persist(db, &feed::Model)`:
     - if `feed.type` is `Rule`:
-      - loads `rule.yaml` from DB,
-      - calls `captura_pipeline::refresh_rule_with_yaml(&feed, &yaml)`,
+      - loads `rule.spec_json` from DB and deserializes it into `RuleSpecV1`,
+      - calls `captura_pipeline::refresh_rule_v1(&feed, &spec)`,
       - persists resulting `NormalizedEntry`s + enclosures + feed metadata.
     - otherwise delegates to `refresh_feed_with_meta`.
 
@@ -222,7 +224,7 @@ Rule-type feeds can be backed by:
 
 - **DSL v1 executor (current default for DB rules)**:
   - `refresh_rule_with_yaml(feed, yaml)`:
-    - parses the YAML using `captura_rules::v1::parse_rule_v1`,
+    - parses the YAML using `captura_hub::v1::parse_rule_v1`,
     - passes the resulting `RuleSpecV1` into `refresh_rule_v1(feed, &spec)`.
   - `refresh_rule_v1(feed, &spec)`:
     - may first try a Rust handler if one is registered for the given `spec.id`,
