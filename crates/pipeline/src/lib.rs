@@ -265,23 +265,11 @@ pub async fn refresh_standard_feed_with_meta_dto(
 }
 
 pub(crate) fn extract_attr(parent: &scraper::ElementRef, expr: &str) -> Option<String> {
-    if let Some((sel, attr)) = expr.split_once('@') {
-        if let Ok(s) = Selector::parse(sel) {
-            if let Some(el) = parent.select(&s).next() {
-                return el.value().attr(attr).map(|v| v.to_string());
-            }
-        }
-    }
-    None
+    captura_net::html::extract_attr(parent, expr)
 }
 
 pub(crate) fn extract_text(parent: &scraper::ElementRef, sel: &str) -> Option<String> {
-    if let Ok(s) = Selector::parse(sel) {
-        if let Some(el) = parent.select(&s).next() {
-            return Some(el.text().collect::<Vec<_>>().join("").trim().to_string());
-        }
-    }
-    None
+    captura_net::html::extract_text(parent, sel)
 }
 
 async fn fetch_and_select_strategy(

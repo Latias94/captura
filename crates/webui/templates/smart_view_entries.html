@@ -1,0 +1,69 @@
+{% extends "layout.html" %}
+{% block body %}
+<div class="view view--entries" id="entriesView" data-filter="all" data-feed-id="0" data-limit="{{ limit }}" data-pick-label="{{ dict["label.pick"] }}" data-no-title="{{ dict["misc.no_title"] }}" data-search="">
+  <div class="toolbar">
+    <a class="link" href="/feeds">← {{ dict["nav.feeds"] }}</a>
+    <span class="ml-3">{{ smart_view.name }}</span>
+  </div>
+  <div class="toolbar my-2">
+    <button type="button" class="button" id="btnSelectAll">{{ dict["btn.select_all"] }}</button>
+    <form id="formMarkRead" method="post" action="/ui/entries/bulk-mark" class="inline-block ml-2">
+      <input type="hidden" name="ids" id="idsRead" value="" />
+      <input type="hidden" name="status" value="read" />
+      <button type="submit" class="button">{{ dict["btn.mark_read"] }}</button>
+    </form>
+    <form id="formMarkUnread" method="post" action="/ui/entries/bulk-mark" class="inline-block ml-2">
+      <input type="hidden" name="ids" id="idsUnread" value="" />
+      <input type="hidden" name="status" value="unread" />
+      <button type="submit" class="button">{{ dict["btn.mark_unread"] }}</button>
+    </form>
+    <form id="formMarkPageRead" method="post" action="/ui/entries/bulk-mark" class="inline-block ml-2">
+      <input type="hidden" name="ids" id="idsPageRead" value="" />
+      <input type="hidden" name="status" value="read" />
+      <button type="submit" class="button" id="btnMarkPageRead">{{ dict["btn.mark_page_read"] }}</button>
+    </form>
+    <form id="formMarkAboveRead" method="post" action="/ui/entries/bulk-mark" class="inline-block ml-2">
+      <input type="hidden" name="ids" id="idsAboveRead" value="" />
+      <input type="hidden" name="status" value="read" />
+      <button type="submit" class="button" id="btnMarkAboveRead">{{ dict["btn.mark_above_read"] }}</button>
+    </form>
+    <form id="formMarkBelowRead" method="post" action="/ui/entries/bulk-mark" class="inline-block ml-2">
+      <input type="hidden" name="ids" id="idsBelowRead" value="" />
+      <input type="hidden" name="status" value="read" />
+      <button type="submit" class="button" id="btnMarkBelowRead">{{ dict["btn.mark_below_read"] }}</button>
+    </form>
+  </div>
+  <h1 class="title">{{ dict["title.entries"] }}</h1>
+  {% if items | length == 0 %}
+    <p class="muted">{{ dict["empty.entries"] }}</p>
+  {% else %}
+    <ul class="cards" id="cards">
+    {% for e in items %}
+      <li class="card" tabindex="0" data-entry-id="{{ e.id }}" data-status="{{ e.status }}">
+        <label class="float-right"><input type="checkbox" class="card__pick" data-id="{{ e.id }}" /> {{ dict["label.pick"] }}</label>
+        <a class="card__title" href="/entries/{{ e.id }}">{% if e.title.is_some() %}{{ e.title.as_ref().unwrap() }}{% else %}{{ dict["misc.no_title"] }}{% endif %}</a>
+        <div class="card__meta">
+          {% if e.author.is_some() %}<span class="meta-author" data-author="{{ e.author.as_ref().unwrap() }}">{{ e.author.as_ref().unwrap() }}</span>{% endif %}
+          {% if e.date.is_some() %}<span>{{ e.date.as_ref().unwrap() }}</span>{% endif %}
+          <form method="post" action="/ui/entries/{{ e.id }}/toggle-star" class="inline">
+            <button type="submit" class="button button--xs">{% if e.starred %}★{% else %}☆{% endif %}</button>
+          </form>
+        </div>
+      </li>
+    {% endfor %}
+    </ul>
+    <script src="/ui/static/js/listkeys.js" nonce="{{ csp_nonce }}" type="module"></script>
+    <script src="/ui/static/js/listbulk.js" nonce="{{ csp_nonce }}" type="module"></script>
+    <script src="/ui/static/js/actions.js" nonce="{{ csp_nonce }}" type="module"></script>
+  {% endif %}
+  <div class="toolbar mt-4">
+    {% if prev_page.is_some() %}
+    <a class="button" href="/smart-views/{{ smart_view.id }}?page={{ prev_page.as_ref().unwrap() }}&limit={{ limit }}">{{ dict["btn.prev"] }}</a>
+    {% endif %}
+    {% if next_page.is_some() %}
+    <a class="button" href="/smart-views/{{ smart_view.id }}?page={{ next_page.as_ref().unwrap() }}&limit={{ limit }}">{{ dict["btn.next"] }}</a>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+

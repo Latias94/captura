@@ -23,7 +23,7 @@ use crate::error::{bad_request, internal, not_found, ApiResult};
 use crate::feed_options::{apply_feed_update_options, FeedUpdateOptions};
 use crate::util::{validate_limit_offset, validate_sort};
 use crate::AppState;
-use captura_types::{FeedCountersDto, FeedDto, Paging, Sorting};
+use captura_types::{EntryView, FeedCountersDto, FeedDto, Paging, Sorting};
 
 #[derive(Deserialize)]
 pub(crate) struct CreateFeedReq {
@@ -47,6 +47,7 @@ pub(crate) struct CreateFeedReq {
     pub username: Option<String>,
     pub password: Option<String>,
     pub disabled: Option<bool>,
+    pub view: Option<EntryView>,
 }
 
 #[derive(Serialize)]
@@ -138,6 +139,7 @@ pub(crate) async fn list_feeds(
                 site_url: f.site_url,
                 disabled: f.disabled,
                 category_id: f.category_id,
+                view: f.view.as_deref().and_then(EntryView::from_str),
             })
             .collect(),
     ))
@@ -157,6 +159,7 @@ pub(crate) async fn get_feed(
         site_url: f.site_url,
         disabled: f.disabled,
         category_id: f.category_id,
+        view: f.view.as_deref().and_then(EntryView::from_str),
     }))
 }
 
@@ -179,6 +182,7 @@ pub(crate) struct UpdateFeedReq {
     // Basic auth (for private feeds)
     pub username: Option<String>,
     pub password: Option<String>,
+    pub view: Option<EntryView>,
 }
 
 pub(crate) async fn update_feed(
@@ -201,6 +205,10 @@ pub(crate) async fn update_feed(
     }
     if let Some(d) = body.disabled {
         am.disabled = Set(d);
+    }
+    if let Some(v) = body.view {
+        // Store as snake_case string in DB.
+        am.view = Set(Some(v.as_str().to_string()));
     }
     apply_feed_update_options(
         &mut am,
@@ -345,6 +353,7 @@ pub(crate) async fn create_feed(
         last_status: Set(None),
         error_count: Set(0),
         disabled: Set(body.disabled.unwrap_or(false)),
+        view: Set(body.view.map(|v| v.as_str().to_string())),
         scraper_rules: Set(None),
         rewrite_rules: Set(None),
         blocklist_rules: Set(None),
@@ -366,46 +375,8 @@ pub(crate) async fn feeds_counters(
     TypedHeader(Authorization(bearer)): TypedHeader<Authorization<Bearer>>,
 ) -> ApiResult<Json<FeedCountersDto>> {
     let user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
-    let feed_ids: Vec<i64> = feed::Entity::find()
-        .filter(feed::Column::UserId.eq(user.user_id))
-        .select_only()
-        .column(feed::Column::Id)
-        .into_tuple()
-        .all(&st.db)
-        .await
-        .map_err(internal)?;
-    let mut reads = std::collections::HashMap::new();
-    let mut unreads = std::collections::HashMap::new();
-    if !feed_ids.is_empty() {
-        let unread_pairs: Vec<(i64, i64)> = entry::Entity::find()
-            .filter(entry::Column::FeedId.is_in(feed_ids.clone()))
-            .filter(entry::Column::IsRead.eq(false))
-            .select_only()
-            .column(entry::Column::FeedId)
-            .column_as(entry::Column::Id.count(), "cnt")
-            .group_by(entry::Column::FeedId)
-            .into_tuple()
-            .all(&st.db)
-            .await
-            .map_err(internal)?;
-        for (fid, cnt) in unread_pairs {
-            unreads.insert(fid, cnt);
-        }
-        let read_pairs: Vec<(i64, i64)> = entry::Entity::find()
-            .filter(entry::Column::FeedId.is_in(feed_ids))
-            .filter(entry::Column::IsRead.eq(true))
-            .select_only()
-            .column(entry::Column::FeedId)
-            .column_as(entry::Column::Id.count(), "cnt")
-            .group_by(entry::Column::FeedId)
-            .into_tuple()
-            .all(&st.db)
-            .await
-            .map_err(internal)?;
-        for (fid, cnt) in read_pairs {
-            reads.insert(fid, cnt);
-        }
-    }
+    let (reads, unreads) =
+        service::query::feed_counters_for_user(&st.db, user.user_id).await.map_err(internal)?;
     Ok(Json(FeedCountersDto { reads, unreads }))
 }
 

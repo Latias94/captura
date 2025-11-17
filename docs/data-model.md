@@ -1,13 +1,13 @@
-# Data Model (Initial)
+# Data Model
 
-This document summarizes the initial schema intended to avoid frequent breaking changes while keeping room for growth. It is influenced by Miniflux, FreshRSS and RSSHub use-cases.
+This document summarizes the current schema intended to avoid frequent breaking changes while keeping room for growth. It is influenced by Miniflux, FreshRSS and RSSHub use-cases.
 
 ## Entities
 
 - user
   - id (PK), username (unique), password_hash, fever_key_md5 (nullable), created_at
 - category
-  - id (PK), user_id (FK user), name, created_at
+  - id (PK), user_id (FK user), name, view (optional, preferred view for this category), created_at
 - rule
   - id (PK), rule_id (unique), version, namespace, description, yaml (DSL), examples_json, verified_at, maintainer, created_at, updated_at
 - feed
@@ -15,6 +15,7 @@ This document summarizes the initial schema intended to avoid frequent breaking 
   - type: rss | atom | json | rule
   - title, site_url, feed_url (for rule-type: source URL)
   - favicon_id (FK favicon, nullable), rule_id (FK rule, nullable)
+  - view (optional, preferred view for this feed: articles | pictures | videos | audios | social | notifications)
   - fetch options: user_agent, headers_json, cookies, proxy_url, fetch_via_proxy, disable_http2, allow_invalid_certs, request_timeout_ms
   - scheduling & state: checked_at, next_run_at, etag, last_modified, last_status, error_count, disabled
   - rewriting & filtering: scraper_rules, rewrite_rules, blocklist_rules, keeplist_rules, url_rewrite_rules, block_filter_entry_rules, keep_filter_entry_rules
@@ -35,6 +36,15 @@ This document summarizes the initial schema intended to avoid frequent breaking 
 - entry_label
   - id (PK), entry_id (FK entry), label_id (FK label)
   - index: unique(entry_id, label_id)
+- smart_view
+  - id (PK), user_id (FK user)
+  - name (display name for this smart view)
+  - view (EntryView key: all | articles | pictures | videos | audios | social | notifications)
+  - filters_json (JSON-encoded filters: feed_ids/category_ids/label_ids/search/status)
+  - sort_by (optional: published_at | created_at)
+  - sort_order (optional: asc | desc)
+  - pinned (bool, whether highlighted in UI)
+  - created_at, updated_at
 - job
   - id (PK), user_id (FK user), feed_id (FK), rule_id (FK)
   - job_type: feed_refresh | rule_refresh | favicon | prune

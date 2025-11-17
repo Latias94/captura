@@ -69,4 +69,5 @@ pub mod entity {
     pub mod user;
     pub mod user_pref;
     pub mod webhook;
+    pub mod smart_view;
 }

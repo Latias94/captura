@@ -17,6 +17,7 @@ reqwest.workspace = true
 chrono.workspace = true
 async-trait.workspace = true
 captura-extract = { path = "../extract" }
+captura-net = { path = "../net" }
 scraper.workspace = true
 once_cell.workspace = true
 inventory.workspace = true

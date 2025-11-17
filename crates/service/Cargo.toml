@@ -11,6 +11,7 @@ captura-common = { path = "../common" }
 captura-storage = { path = "../storage" }
 captura-pipeline = { path = "../pipeline" }
 captura-rules = { package = "captura-hub", path = "../hub" }
+captura-types = { path = "../types" }
 tracing.workspace = true
 reqwest.workspace = true
 ammonia.workspace = true

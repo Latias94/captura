@@ -3,6 +3,7 @@ use crate::auth::mf_auth;
 use crate::error::bad_request;
 use crate::AppState;
 use axum::extract::{Path, State};
+use axum::response::IntoResponse;
 use axum::Json;
 use chrono::{FixedOffset, Utc};
 use sea_orm::{
@@ -203,4 +204,30 @@ pub(crate) async fn rename(
         title: l.name,
         count: cnt,
     }))
+}
+
+/// Mark all entries associated with a given tag as read.
+pub(crate) async fn mark_all_read(
+    State(st): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Path(name): Path<String>,
+) -> MfResult<axum::response::Response> {
+    let auth = mf_auth(&st, &headers).await.map_err(from_api_error)?;
+    let Some(l) = label::Entity::find()
+        .filter(label::Column::UserId.eq(auth.user_id))
+        .filter(label::Column::Name.eq(name.as_str()))
+        .one(&st.db)
+        .await
+        .map_err(internal)?
+    else {
+        return Err(not_found("tag").into());
+    };
+    let _ = captura_service::query::mark_entries_read_for_labels(&st.db, auth.user_id, &[l.id])
+        .await
+        .map_err(internal)?;
+    Ok((
+        axum::http::StatusCode::NO_CONTENT,
+        axum::body::Body::empty(),
+    )
+        .into_response())
 }

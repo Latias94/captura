@@ -21,7 +21,7 @@ use crate::AppState;
 
 use captura_pipeline::extractor;
 use captura_storage::entity::{entry, feed};
-use captura_types::{EntryContentDto, EntryDto, Paging, Sorting};
+use captura_types::{EntryContentDto, EntryDto, EntryView, Paging, Sorting};
 
 #[derive(Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -37,6 +37,7 @@ pub(crate) struct EntriesQuery {
     pub category_id: Option<i64>,
     pub status: Option<StatusFilter>,
     pub q: Option<String>,
+    pub view: Option<EntryView>,
     #[serde(flatten)]
     pub sorting: Sorting,
     #[serde(flatten)]
@@ -68,6 +69,21 @@ pub(crate) async fn list_entries(
     }
     if let Some(cid) = q.category_id {
         sel = sel.filter(feed::Column::CategoryId.eq(cid));
+    }
+    if let Some(view) = q.view {
+        if !matches!(view, EntryView::All) {
+            // feed.view is stored as snake_case string; when unset, it is treated as the default view ("articles").
+            // For view=Articles we match both NULL and explicit "articles"; other views match by exact value.
+            let view_str = view.as_str().to_string();
+            if matches!(view, EntryView::Articles) {
+                let cond = Condition::any()
+                    .add(feed::Column::View.is_null())
+                    .add(feed::Column::View.eq(view_str));
+                sel = sel.filter(cond);
+            } else {
+                sel = sel.filter(feed::Column::View.eq(view_str));
+            }
+        }
     }
     if let Some(sts) = &q.status {
         match sts {
@@ -350,6 +366,7 @@ async fn load_owned_entry(
 pub(crate) struct MarkAllReq {
     pub feed_id: Option<i64>,
     pub category_id: Option<i64>,
+    pub view: Option<EntryView>,
 }
 
 pub(crate) async fn mark_all_read(
@@ -358,32 +375,17 @@ pub(crate) async fn mark_all_read(
     Json(body): Json<MarkAllReq>,
 ) -> ApiResult<&'static str> {
     let user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
-    if body.feed_id.is_none() && body.category_id.is_none() {
-        return Err(bad_request("feed_id or category_id required"));
+    if body.feed_id.is_none() && body.category_id.is_none() && body.view.is_none() {
+        return Err(bad_request("feed_id, category_id or view required"));
     }
-    let mut sel = entry::Entity::find()
-        .join(JoinType::InnerJoin, entry::Relation::Feed.def())
-        .filter(feed::Column::UserId.eq(user.user_id));
-    if let Some(fid) = body.feed_id {
-        sel = sel.filter(entry::Column::FeedId.eq(fid));
-    }
-    if let Some(cid) = body.category_id {
-        sel = sel.filter(feed::Column::CategoryId.eq(cid));
-    }
-    let ids: Vec<i64> = sel
-        .select_only()
-        .column(entry::Column::Id)
-        .into_tuple()
-        .all(&st.db)
-        .await
-        .map_err(internal)?;
-    if !ids.is_empty() {
-        entry::Entity::update_many()
-            .col_expr(entry::Column::IsRead, sea_orm::sea_query::Expr::value(true))
-            .filter(entry::Column::Id.is_in(ids))
-            .exec(&st.db)
-            .await
-            .map_err(internal)?;
-    }
+    let _ = captura_service::query::mark_entries_read_for_user(
+        &st.db,
+        user.user_id,
+        body.feed_id,
+        body.category_id,
+        body.view,
+    )
+    .await
+    .map_err(internal)?;
     Ok("ok")
 }

@@ -53,6 +53,9 @@ pub struct Model {
     pub last_error_message: Option<String>,
     pub disabled: bool,
 
+    // Preferred view for this feed (articles/pictures/videos/...)
+    pub view: Option<String>,
+
     // Rewriting & filtering rules (text-based for portability)
     pub scraper_rules: Option<String>,
     pub rewrite_rules: Option<String>,

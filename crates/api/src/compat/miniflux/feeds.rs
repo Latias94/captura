@@ -96,22 +96,12 @@ pub(crate) async fn list(
     let list = sel.all(&st.db).await.map_err(internal)?;
     let mut out: Vec<MfFeedDto> = list.into_iter().map(|(f, c)| map_feed(f, c)).collect();
     if q.with_counters.unwrap_or(false) {
-        let feed_ids: Vec<i64> = out.iter().map(|d| d.id).collect();
-        if !feed_ids.is_empty() {
-            let pairs: Vec<(i64, i64)> = entry::Entity::find()
-                .filter(entry::Column::FeedId.is_in(feed_ids.clone()))
-                .filter(entry::Column::IsRead.eq(false))
-                .select_only()
-                .column(entry::Column::FeedId)
-                .column_as(entry::Column::Id.count(), "cnt")
-                .group_by(entry::Column::FeedId)
-                .into_tuple()
-                .all(&st.db)
+        let (_reads, unreads) =
+            captura_service::query::feed_counters_for_user(&st.db, auth.user_id)
                 .await
                 .map_err(internal)?;
-            for d in &mut out {
-                d.unread_count = pairs.iter().find(|(fid, _)| *fid == d.id).map(|p| p.1);
-            }
+        for d in &mut out {
+            d.unread_count = unreads.get(&d.id).copied();
         }
     }
     Ok(Json(out))
@@ -318,10 +308,7 @@ pub(crate) async fn mark_all_read(
     else {
         return Err(not_found("feed").into());
     };
-    let _ = entry::Entity::update_many()
-        .col_expr(entry::Column::IsRead, sea_orm::sea_query::Expr::value(true))
-        .filter(entry::Column::FeedId.eq(id))
-        .exec(&st.db)
+    let _ = captura_service::query::mark_entries_read_for_user(&st.db, auth.user_id, Some(id), None, None)
         .await
         .map_err(internal)?;
     Ok((

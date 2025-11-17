@@ -88,8 +88,14 @@ curl -sS "$BASE/v1/feeds/counters" -H "X-Auth-Token: $TOKEN" | jq .
 curl -sS "$BASE/v1/version" -H "X-Auth-Token: $TOKEN" | jq .
 ```
 
+兼容性说明
+
+- `/v1/*` 端点的设计基线是 **Miniflux 官方 API**，路径、请求参数和错误格式都尽量保持一致；
+- 为了方便客户端使用，Captura 在 `/v1` 下还会提供少量 **扩展端点**，例如：
+  - `/v1/tags/{name}/mark-all-as-read`：按标签将所有相关条目标记为已读。
+- 这些扩展并不属于 Miniflux 官方 API 规范的一部分，只在 Captura 中可用；只要客户端仅依赖官方文档中的端点，就不会受到这些扩展的影响。
+
 错误返回说明
 
 - Miniflux 兼容层（/v1/*）：错误为 `{ "error_message": "..." }`
 - 原生 API（/api/v1/*）：错误为 `{ "code": "...", "message": "..." }`
-

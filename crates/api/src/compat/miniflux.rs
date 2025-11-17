@@ -95,6 +95,10 @@ pub fn router() -> Router<AppState> {
             "/tags/{name}",
             get(tags::get).delete(tags::delete).put(tags::rename),
         )
+        .route(
+            "/tags/{name}/mark-all-as-read",
+            put(tags::mark_all_read),
+        )
 }
 
 // user/admin handlers moved to users.rs

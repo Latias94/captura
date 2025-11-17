@@ -22,6 +22,20 @@
     </form>
   </section>
   <section class="panel mt-4">
+    <h2 class="title">{{ dict["smart_views.title"] }}</h2>
+    <ul class="list">
+      {% if smart_views | length == 0 %}
+      <li class="list__item">{{ dict["smart_views.empty"] }}</li>
+      {% else %}
+      {% for sv in smart_views %}
+      <li class="list__item">
+        <a class="link" href="/smart-views/{{ sv.id }}">{{ sv.name }}</a>
+      </li>
+      {% endfor %}
+      {% endif %}
+    </ul>
+  </section>
+  <section class="panel mt-4">
     <h2 class="title">{{ dict["saved.title"] }}</h2>
     <ul class="list" id="feedsSavedSearches" data-dict-empty="{{ dict["saved.empty"] }}"></ul>
     <script src="/ui/static/js/feeds_saved_searches.js" nonce="{{ csp_nonce }}" type="module"></script>

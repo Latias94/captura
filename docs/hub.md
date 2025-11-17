@@ -5,8 +5,16 @@ Captura 支持使用本地的“Hub 路由”来快速创建基于模板的抓�
 Hub 路由在内部是一个 `Route { meta: RouteMeta, handler: HubHandlerFn }`，其中：
 
 - `RouteMeta` 描述 `hub_id/path/categories/example/params/features/radar/name/maintainers/url/description`；
-- `handler` 是一个异步函数，签名等价于：
-  `async fn handler(ctx: &mut HubCtx<'_>) -> Result<HubData>`。
+- `handler` 是一个异步函数，签名等价于：`async fn handler(ctx: &mut HubCtx<'_>) -> Result<HubData>`。
+
+在代码结构上，我们刻意把 **RouteMeta + 抓取规则 + handler 实现放在同一个模块/文件里**（例如
+`crates/hub/src/routes/github/trending.rs`），这是有意向 RSSHub 靠拢的设计选择：
+
+- 对贡献者来说，打开一个路由文件就能同时看到“路由元信息（路径、参数、示例）”和“具体如何抓取网页、如何提取正文”的完整上下文，修改体验与 RSSHub 的 `lib/routes/*/*.ts` 非常类似；
+- 规则（如何选元素、如何构造 URL）和 handler（如何组织成 HubData）本质上都是“如何抓取网页并输出条目”的一部分，放在一起更符合维护者的思维模型；
+- 这种布局也方便未来从 RSSHub 迁移/对照路由：一条路由对应一个 Rust 模块，meta 与实现紧邻，降低认知负担。
+
+因此，虽然内部还存在 DSL 抽象和规则执行引擎，但在 Hub 层我们刻意保持“贴近 RSSHub 的文件级组织”，优先服务贡献体验和路由可读性。
 
 ## 1. 订阅用法（captura_hub://）
 

@@ -15,6 +15,7 @@ use tracing::debug;
 
 pub mod integration;
 pub mod webhook;
+pub mod query;
 
 /// Build a basic HTTP client used by scheduler/service integrations and webhooks.
 ///

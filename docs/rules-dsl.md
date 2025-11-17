@@ -111,6 +111,9 @@ fetch:
   timeout_ms: 15000
   smart: false
   respect_robots: true
+  proxies:
+    - "http://proxy1.example.com:8080"
+    - "socks5://proxy2.example.com:1080"
 
 source:
   type: list_detail   # list_detail | single_page | json | xpath
@@ -210,6 +213,9 @@ Fields:
   - `false`: plain HTTP only.
 - `respect_robots` (bool, optional, default `true`): whether spider should
   respect `robots.txt` when used.
+- `proxies` (string[], optional): 一组代理 URL，用于该规则发起的 HTTP 请求；
+  如果设置，将覆盖 feed‑级别的代理配置。规则级代理主要服务于需要
+  特定出口或地区的站点（例如部分 RSSHub 路由中的地区线路）。
 
 Additional HTTP fields (per request) are listed in §3.1.
 

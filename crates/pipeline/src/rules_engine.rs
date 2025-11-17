@@ -53,11 +53,7 @@ pub(crate) async fn fetch_html_strategy(
             opts.delay_ms = d;
         }
         opts.limit = fetch.limit;
-        if let Some(proxy) = &fetch.proxy_url {
-            if !proxy.is_empty() {
-                opts.proxy_url = Some(proxy.clone());
-            }
-        }
+        opts.proxy_url = fetch.proxy_url.clone();
 
         if let Ok(html) = crawler::fetch_html(url, &opts).await {
             if !html.trim().is_empty() {
@@ -305,7 +301,17 @@ async fn execute_list_detail_v1(
         .or_else(|| feed.user_agent.clone())
         .unwrap_or_else(|| "captura/0.1".to_string());
 
-    let client = crate::http_client::client_for_feed(feed, Some(ua), spec.fetch.timeout_ms)?;
+    // Rule-level proxies override feed-level proxy when provided.
+    let effective_proxy = if let Some(pxs) = &spec.fetch.proxies {
+        pxs.first().cloned()
+    } else if feed.fetch_via_proxy {
+        feed.proxy_url.clone()
+    } else {
+        None
+    };
+
+    let client =
+        crate::http_client::client_for_feed(feed, Some(ua), spec.fetch.timeout_ms)?;
 
     let fetch_cfg = FetchCfg {
         user_agent: spec
@@ -319,7 +325,7 @@ async fn execute_list_detail_v1(
         respect_robots: spec.fetch.respect_robots,
         delay_ms: None,
         limit: None,
-        proxy_url: None,
+        proxy_url: effective_proxy,
     };
 
     let params = merge_rule_params_v1(spec, feed.rule_params_json.as_ref());
@@ -551,6 +557,14 @@ async fn execute_single_page_v1(
         .or_else(|| feed.user_agent.clone())
         .unwrap_or_else(|| "captura/0.1".to_string());
 
+    let effective_proxy = if let Some(pxs) = &spec.fetch.proxies {
+        pxs.first().cloned()
+    } else if feed.fetch_via_proxy {
+        feed.proxy_url.clone()
+    } else {
+        None
+    };
+
     let client = crate::http_client::client_for_feed(feed, Some(ua), spec.fetch.timeout_ms)?;
 
     let fetch_cfg = FetchCfg {
@@ -565,7 +579,7 @@ async fn execute_single_page_v1(
         respect_robots: spec.fetch.respect_robots,
         delay_ms: None,
         limit: None,
-        proxy_url: None,
+        proxy_url: effective_proxy,
     };
 
     let params = merge_rule_params_v1(spec, feed.rule_params_json.as_ref());
@@ -650,6 +664,14 @@ async fn execute_xpath_v1(feed: &feed::Model, spec: &RuleSpecV1) -> Result<Vec<N
         .or_else(|| feed.user_agent.clone())
         .unwrap_or_else(|| "captura/0.1".to_string());
 
+    let effective_proxy = if let Some(pxs) = &spec.fetch.proxies {
+        pxs.first().cloned()
+    } else if feed.fetch_via_proxy {
+        feed.proxy_url.clone()
+    } else {
+        None
+    };
+
     let client = crate::http_client::client_for_feed(feed, Some(ua), spec.fetch.timeout_ms)?;
 
     let fetch_cfg = FetchCfg {
@@ -664,7 +686,7 @@ async fn execute_xpath_v1(feed: &feed::Model, spec: &RuleSpecV1) -> Result<Vec<N
         respect_robots: spec.fetch.respect_robots,
         delay_ms: None,
         limit: None,
-        proxy_url: None,
+        proxy_url: effective_proxy,
     };
 
     let params = merge_rule_params_v1(spec, feed.rule_params_json.as_ref());

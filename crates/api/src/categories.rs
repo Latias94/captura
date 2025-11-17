@@ -7,7 +7,7 @@ use chrono::{FixedOffset, Utc};
 use headers::authorization::Bearer;
 use headers::Authorization;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect, Set,
+    ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, QueryOrder, Set,
 };
 use serde::Deserialize;
 
@@ -16,7 +16,7 @@ use captura_storage::entity::category;
 use crate::auth::AuthUser;
 use crate::error::{bad_request, internal, not_found, ApiResult};
 use crate::AppState;
-use captura_types::{CategoryCounterDto, CategoryDto, IdResp};
+use captura_types::{CategoryCounterDto, CategoryDto, EntryView, IdResp};
 
 pub(crate) async fn list_categories(
     State(st): State<AppState>,
@@ -34,6 +34,7 @@ pub(crate) async fn list_categories(
             .map(|c| CategoryDto {
                 id: c.id,
                 name: c.name,
+                view: c.view.as_deref().and_then(EntryView::from_str),
             })
             .collect(),
     ))
@@ -42,6 +43,7 @@ pub(crate) async fn list_categories(
 #[derive(Deserialize)]
 pub(crate) struct CreateCategoryReq {
     pub name: String,
+    pub view: Option<EntryView>,
 }
 
 pub(crate) async fn create_category(
@@ -58,6 +60,7 @@ pub(crate) async fn create_category(
     let am = category::ActiveModel {
         user_id: Set(user.user_id),
         name: Set(name.to_string()),
+        view: Set(body.view.map(|v| v.as_str().to_string())),
         created_at: Set(now),
         ..Default::default()
     };
@@ -68,6 +71,7 @@ pub(crate) async fn create_category(
 #[derive(Deserialize)]
 pub(crate) struct UpdateCategoryReq {
     pub name: String,
+    pub view: Option<EntryView>,
 }
 
 pub(crate) async fn get_category(
@@ -88,6 +92,7 @@ pub(crate) async fn get_category(
     Ok(Json(CategoryDto {
         id: c.id,
         name: c.name,
+        view: c.view.as_deref().and_then(EntryView::from_str),
     }))
 }
 
@@ -113,6 +118,9 @@ pub(crate) async fn update_category(
         return Err(bad_request("invalid category name"));
     }
     am.name = Set(name.to_string());
+    if let Some(v) = body.view {
+        am.view = Set(Some(v.as_str().to_string()));
+    }
     am.update(&st.db).await.map_err(internal)?;
     Ok("ok")
 }
@@ -142,36 +150,11 @@ pub(crate) async fn category_counters(
     State(st): State<AppState>,
     TypedHeader(Authorization(bearer)): TypedHeader<Authorization<Bearer>>,
 ) -> ApiResult<Json<Vec<CategoryCounterDto>>> {
-    use captura_storage::entity::{entry, feed};
     let user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
-    let feeds = feed::Entity::find()
-        .filter(feed::Column::UserId.eq(user.user_id))
-        .all(&st.db)
-        .await
-        .map_err(internal)?;
-    let feed_ids: Vec<i64> = feeds.iter().map(|f| f.id).collect();
-    if feed_ids.is_empty() {
-        return Ok(Json(vec![]));
-    }
-    let pairs: Vec<(i64, i64)> = entry::Entity::find()
-        .filter(entry::Column::FeedId.is_in(feed_ids.clone()))
-        .filter(entry::Column::IsRead.eq(false))
-        .select_only()
-        .column(entry::Column::FeedId)
-        .column_as(entry::Column::Id.count(), "cnt")
-        .group_by(entry::Column::FeedId)
-        .into_tuple()
-        .all(&st.db)
-        .await
-        .map_err(internal)?;
-    use std::collections::HashMap;
-    let feed_cat: HashMap<i64, Option<i64>> =
-        feeds.into_iter().map(|f| (f.id, f.category_id)).collect();
-    let mut cat_map: HashMap<Option<i64>, i64> = HashMap::new();
-    for (fid, cnt) in pairs {
-        let cat = feed_cat.get(&fid).cloned().unwrap_or(None);
-        *cat_map.entry(cat).or_insert(0) += cnt;
-    }
+    let cat_map =
+        captura_service::query::category_unread_counters_for_user(&st.db, user.user_id)
+            .await
+            .map_err(internal)?;
     let out = cat_map
         .into_iter()
         .map(|(category_id, unread)| CategoryCounterDto {

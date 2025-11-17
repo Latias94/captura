@@ -56,6 +56,7 @@ pub fn rule() -> RuleSpecV1 {
             timeout_ms: Some(15_000),
             smart: Some(false),
             respect_robots: Some(true),
+            proxies: None,
         },
         source: SourceSpec {
             kind: SourceType::Json,

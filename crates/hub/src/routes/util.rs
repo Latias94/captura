@@ -6,10 +6,7 @@ use url::Url;
 
 /// Fetch HTML with a basic reqwest client and default UA.
 pub async fn get_html(url: &str) -> Result<String> {
-    let client = reqwest::Client::builder()
-        .user_agent("captura/0.1")
-        .build()
-        .map_err(|e| Error::Network(e.to_string()))?;
+    let client = captura_net::client_basic(None, None)?;
     let resp = client
         .get(url)
         .send()
@@ -31,10 +28,7 @@ pub async fn get_json<T>(url: &str) -> Result<T>
 where
     T: DeserializeOwned,
 {
-    let client = reqwest::Client::builder()
-        .user_agent("captura/0.1")
-        .build()
-        .map_err(|e| Error::Network(e.to_string()))?;
+    let client = captura_net::client_basic(None, None)?;
     let resp = client
         .get(url)
         .send()
@@ -81,27 +75,7 @@ pub fn absolutize(base: &str, href: &str) -> String {
     href.to_string()
 }
 
-/// Extract attribute using "selector@attr" syntax.
-pub fn extract_attr(parent: &ElementRef<'_>, expr: &str) -> Option<String> {
-    if let Some((sel, attr)) = expr.split_once('@') {
-        if let Ok(s) = Selector::parse(sel) {
-            if let Some(el) = parent.select(&s).next() {
-                return el.value().attr(attr).map(|v| v.to_string());
-            }
-        }
-    }
-    None
-}
-
-/// Extract text content for the first element matching the selector.
-pub fn extract_text(parent: &ElementRef<'_>, sel: &str) -> Option<String> {
-    if let Ok(s) = Selector::parse(sel) {
-        if let Some(el) = parent.select(&s).next() {
-            return Some(el.text().collect::<Vec<_>>().join("").trim().to_string());
-        }
-    }
-    None
-}
+pub use captura_net::html::{extract_attr, extract_text};
 
 /// Best-effort parse of a date string into `DateTime<FixedOffset>`.
 ///

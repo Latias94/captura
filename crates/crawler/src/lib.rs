@@ -25,8 +25,17 @@ pub async fn fetch_html(url: &str, opts: &CrawlOptions) -> Result<String> {
     if let Some(ref ua) = opts.user_agent {
         site.with_user_agent(Some(ua.as_str()));
     }
+    if let Some(ref proxy) = opts.proxy_url {
+        if !proxy.is_empty() {
+            site.with_proxies(Some(vec![proxy.clone()]));
+        }
+    }
     // Note: smart/headless features are configured by feature flags at compile-time.
-    site.crawl().await;
+    if opts.smart {
+        site.crawl_smart().await;
+    } else {
+        site.crawl().await;
+    }
 
     // Grab the root page html from memory store (best-effort):
     if let Some(pages) = site.get_pages() {

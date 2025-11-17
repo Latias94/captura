@@ -17,8 +17,10 @@ pub mod opml;
 pub mod rules;
 pub mod search;
 pub mod state;
+pub mod smart_views;
 pub mod users;
 pub mod util;
+pub mod views;
 pub mod webhooks;
 
 pub use captura_types::IdResp;
@@ -101,6 +103,22 @@ pub fn build_router(app_state: AppState) -> Router {
         .route("/entries/{id}/content", get(crate::entries::entry_content))
         .route("/entries/{id}/read", post(crate::entries::mark_read))
         .route("/entries/{id}/star", post(crate::entries::mark_star))
+        .route(
+            "/smart-views",
+            get(crate::smart_views::list_smart_views)
+                .post(crate::smart_views::create_smart_view),
+        )
+        .route(
+            "/smart-views/{id}",
+            get(crate::smart_views::get_smart_view)
+                .put(crate::smart_views::update_smart_view)
+                .delete(crate::smart_views::delete_smart_view),
+        )
+        .route(
+            "/smart-views/{id}/entries",
+            get(crate::smart_views::list_smart_view_entries),
+        )
+        .route("/views", get(crate::views::list_views))
         .route("/opml/export", get(crate::opml::export))
         .route("/opml/import", post(crate::opml::import))
         .route("/opml/validate", post(crate::opml::validate))

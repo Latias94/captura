@@ -57,6 +57,7 @@ impl MigrationTrait for Migration {
                     )
                     .col(ColumnDef::new(Category::UserId).big_integer().not_null())
                     .col(ColumnDef::new(Category::Name).string_len(190).not_null())
+                    .col(ColumnDef::new(Category::View).string())
                     .col(
                         ColumnDef::new(Category::CreatedAt)
                             .timestamp_with_time_zone()
@@ -904,6 +905,7 @@ enum Category {
     Id,
     UserId,
     Name,
+    View,
     CreatedAt,
 }
 

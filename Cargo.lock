@@ -686,6 +686,7 @@ dependencies = [
  "captura-common",
  "captura-extract",
  "captura-hub-macros",
+ "captura-net",
  "chrono",
  "inventory",
  "once_cell",
@@ -721,6 +722,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "captura-net"
+version = "0.1.0"
+dependencies = [
+ "captura-common",
+ "reqwest 0.12.24",
+ "scraper",
+]
+
+[[package]]
 name = "captura-pipeline"
 version = "0.1.0"
 dependencies = [
@@ -732,6 +742,7 @@ dependencies = [
  "captura-extract",
  "captura-fetcher",
  "captura-hub",
+ "captura-net",
  "captura-storage",
  "chrono",
  "dom_smoothie",
@@ -779,6 +790,7 @@ dependencies = [
  "captura-hub",
  "captura-pipeline",
  "captura-storage",
+ "captura-types",
  "chrono",
  "hex",
  "hmac",

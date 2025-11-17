@@ -1,0 +1,10 @@
+[package]
+name = "captura-net"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+captura-common = { path = "../common" }
+reqwest.workspace = true
+scraper.workspace = true
+

@@ -59,6 +59,9 @@ pub struct FetchDefaults {
     pub timeout_ms: Option<u64>,
     pub smart: Option<bool>,
     pub respect_robots: Option<bool>,
+    /// Optional proxies for this rule. When set, they override feed‑level proxy
+    /// configuration for requests issued by this rule.
+    pub proxies: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

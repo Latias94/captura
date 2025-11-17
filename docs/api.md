@@ -26,21 +26,25 @@ For first-party clients maintained together with Captura (such as `captura-tui`)
   - Both `/api/v1` and `/v1` accept bearer tokens; prefer bearer over `X-Auth-Token` or `Basic` for new clients.
 - Preferred `/api/v1` endpoints:
   - Feeds:
-    - `GET /api/v1/feeds` – list feeds for the current user.
-    - `GET /api/v1/feeds/{id}` – get a single feed.
+    - `GET /api/v1/feeds` – list feeds for the current user（包含每个 feed 的 `view` 字段，用于视图过滤）。
+    - `GET /api/v1/feeds/{id}` – get a single feed（包含 `view`）。
     - `GET /api/v1/feeds/counters` – read/unread counters per feed.
     - `POST /api/v1/feeds/{id}/refresh` – synchronous refresh of a single feed.
     - `POST /api/v1/feeds/{id}/enqueue-refresh` – enqueue refresh job.
   - Categories:
-    - `GET /api/v1/categories` – list categories.
+    - `GET /api/v1/categories` – list categories（包含每个 category 的 `view` 字段，作为该组的默认视图偏好）。
     - `GET /api/v1/categories/counters` – unread counters per category (including `null` = uncategorized).
-  - Entries:
-    - `GET /api/v1/entries` – list entries with filters (`feed_id`, `category_id`, `status`, `limit`, `offset`).
+  - Entries & views:
+    - `GET /api/v1/entries` – list entries with filters (`feed_id`, `category_id`, `status`, `view`, `limit`, `offset`)。
     - `GET /api/v1/entries/{id}` – get a single entry.
     - `GET /api/v1/entries/{id}/content?update_content=bool` – fetch and optionally persist full content (readability).
     - `POST /api/v1/entries/{id}/read` – mark entry read/unread (`{ "value": true|false }`).
     - `POST /api/v1/entries/{id}/star` – mark entry starred/unstarred (`{ "value": true|false }`).
-    - `POST /api/v1/entries/mark-all-read` – mark entries as read by `feed_id` or `category_id`.
+    - `POST /api/v1/entries/mark-all-read` – mark entries as read by `feed_id`、`category_id` 或 `view`（三者至少提供其一）。
+    - `GET /api/v1/views` – 列出当前内置的视图类型，用于客户端显示视图切换选项。
+    - `GET /api/v1/smart-views` / `POST /api/v1/smart-views` – 列出/创建智能视图（基于 view + 过滤器的“保存视图”）。
+    - `GET/PUT/DELETE /api/v1/smart-views/{id}` – 读取/更新/删除单个智能视图。
+    - `GET /api/v1/smart-views/{id}/entries` – 按智能视图定义的过滤条件返回条目列表。
 - Compatibility layers:
   - `/v1/*` is a Miniflux-compatible API surface, intended for Miniflux clients and other third-party readers.
   - `/fever` and `/reader/api/0/*` are intended for Fever / Google Reader compatible clients.
@@ -73,13 +77,13 @@ For first-party clients maintained together with Captura (such as `captura-tui`)
 
 - `POST /feeds` (create)
   - Auth required
-  - Body (subset): `{ "type": "rss|atom|json|rule", "feed_url": "...", "category_id": 1, "user_agent": "...", "headers_json": {...}, "cookies": "...", "proxy_url": "...", "fetch_via_proxy": false, "disable_http2": false, "allow_invalid_certs": false, "request_timeout_ms": 15000 }`
+  - Body (subset): `{ "type": "rss|atom|json|rule", "feed_url": "...", "category_id": 1, "view?": "articles|pictures|videos|audios|social|notifications", "user_agent": "...", "headers_json": {...}, "cookies": "...", "proxy_url": "...", "fetch_via_proxy": false, "disable_http2": false, "allow_invalid_certs": false, "request_timeout_ms": 15000 }`
   - Resp: `{ "id": 1 }`
 - `GET /feeds` (list)
   - Query: `category_id?`
 - `GET /feeds/:id` (get)
 - `PATCH /feeds/:id` (update)
-  - Body (any subset): `{ "title": "...", "category_id": 1, "disabled": false, "user_agent": "...", "headers_json": {...}, "cookies": "...", "proxy_url": "...", "fetch_via_proxy": false, "disable_http2": false, "allow_invalid_certs": false, "request_timeout_ms": 15000 }`
+  - Body (any subset): `{ "title": "...", "category_id": 1, "view?": "articles|pictures|videos|audios|social|notifications", "disabled": false, "user_agent": "...", "headers_json": {...}, "cookies": "...", "proxy_url": "...", "fetch_via_proxy": false, "disable_http2": false, "allow_invalid_certs": false, "request_timeout_ms": 15000 }`
 - `DELETE /feeds/:id` (delete)
 - `POST /feeds/:id/refresh`
   - Resp: `{ "inserted": 3 }`
@@ -138,11 +142,41 @@ For first-party clients maintained together with Captura (such as `captura-tui`)
 ## Entries
 
 - `GET /entries`
-  - Query: `feed_id?`, `category_id?`, `status?=read|unread|starred`, `limit?`, `offset?`
+  - Query: `feed_id?`, `category_id?`, `status?=read|unread|starred`, `view?=all|articles|pictures|videos|audios|social|notifications`, `limit?`, `offset?`
   - Resp: `[{ id, feed_id, url, title, summary, content_html, author, published_at, is_read, is_starred }]`
 - `POST /entries/:id/read` Body: `{ "value": true }`
 - `POST /entries/:id/star` Body: `{ "value": true }`
-- `POST /entries/mark-all-read` Body: `{ "feed_id?": 1, "category_id?": 2 }`
+- `POST /entries/mark-all-read` Body: `{ "feed_id?": 1, "category_id?": 2, "view?": "all|articles|pictures|videos|audios|social|notifications" }`（至少提供 `feed_id`、`category_id`、`view` 之一）
+
+## Views
+
+- `GET /views`
+  - Auth required
+  - Resp: `[{ "key": "all|articles|pictures|videos|audios|social|notifications", "label": "Articles", "description": "..." }]`
+  - 用途：供 WebUI/TUI 等客户端发现内置的视图类型，在 feed/category 设置和条目过滤 UI 中渲染视图列表。
+
+## Smart views
+
+- `GET /smart-views`
+  - Auth required
+  - Resp: `[{ "id": 1, "name": "...", "view": "articles", "filters": { "feed_ids": [...], "category_ids": [...], "label_ids": [...], "search": "...", "status": "unread" }, "sort_by": "published_at", "sort_order": "desc", "pinned": true }]`
+- `POST /smart-views`
+  - Auth required
+  - Body: `{ "name": "...", "view": "articles|pictures|videos|audios|social|notifications", "filters": { "feed_ids?": [...], "category_ids?": [...], "label_ids?": [...], "search?": "...", "status?": "read|unread|starred" }, "sort_by?": "published_at|created_at", "sort_order?": "asc|desc", "pinned?": true }`
+  - Resp: created smart view object.
+- `GET /smart-views/{id}`
+  - Auth required
+  - Resp: 单个 smart view（同列表中的元素结构）。
+- `PUT /smart-views/{id}`
+  - Auth required
+  - Body: 与 `POST /smart-views` 类似，但所有字段均为可选，用于局部更新。
+- `DELETE /smart-views/{id}`
+  - Auth required
+  - Effect: 删除该智能视图定义，不影响任何条目状态。
+- `GET /smart-views/{id}/entries`
+  - Auth required
+  - Query: `limit?`, `offset?`, `sort_by?=published_at|created_at`, `order?=asc|desc`
+  - Resp: 与 `GET /entries` 相同的条目数组，过滤条件由该 smart view 的 `view + filters` 决定。
 
 ## Miniflux 兼容（概要）
 

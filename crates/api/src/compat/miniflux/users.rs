@@ -12,8 +12,7 @@ use sea_orm::{
 };
 
 use captura_storage::entity::user as user_entity;
-use captura_storage::entity::{entry, feed, user_pref};
-use sea_orm::QuerySelect;
+use captura_storage::entity::{user_pref};
 
 // ---------- DTO ----------
 #[derive(serde::Serialize)]
@@ -455,21 +454,14 @@ pub(crate) async fn mark_all_read(
     if auth.user_id != id {
         return Err(not_found("user").into());
     }
-    let feed_ids: Vec<i64> = feed::Entity::find()
-        .filter(feed::Column::UserId.eq(id))
-        .select_only()
-        .column(feed::Column::Id)
-        .into_tuple()
-        .all(&st.db)
-        .await
-        .map_err(internal)?;
-    if !feed_ids.is_empty() {
-        let _ = entry::Entity::update_many()
-            .col_expr(entry::Column::IsRead, sea_orm::sea_query::Expr::value(true))
-            .filter(entry::Column::FeedId.is_in(feed_ids))
-            .exec(&st.db)
-            .await
-            .map_err(internal)?;
-    }
+    let _ = captura_service::query::mark_entries_read_for_user(
+        &st.db,
+        id,
+        None,
+        None,
+        None,
+    )
+    .await
+    .map_err(internal)?;
     Ok("ok")
 }

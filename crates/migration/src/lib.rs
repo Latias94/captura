@@ -7,6 +7,9 @@ use sea_orm_migration::sea_orm::DatabaseConnection;
 mod m20251101_000001_init;
 mod m20251101_000002_seed_rule_templates;
 mod m20251101_000003_seed_more_rule_templates;
+mod m20251101_000004_add_feed_view;
+mod m20251101_000005_add_category_view;
+mod m20251101_000006_add_smart_view;
 
 pub struct Migrator;
 
@@ -17,6 +20,9 @@ impl MigratorTrait for Migrator {
             Box::new(m20251101_000001_init::Migration),
             Box::new(m20251101_000002_seed_rule_templates::Migration),
             Box::new(m20251101_000003_seed_more_rule_templates::Migration),
+            Box::new(m20251101_000004_add_feed_view::Migration),
+            Box::new(m20251101_000005_add_category_view::Migration),
+            Box::new(m20251101_000006_add_smart_view::Migration),
         ]
     }
 }

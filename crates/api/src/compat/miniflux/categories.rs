@@ -140,34 +140,10 @@ pub(crate) async fn counters(
     headers: axum::http::HeaderMap,
 ) -> MfResult<Json<Vec<MfCatCounter>>> {
     let auth = mf_auth(&st, &headers).await.map_err(from_api_error)?;
-    let feeds = feed::Entity::find()
-        .filter(feed::Column::UserId.eq(auth.user_id))
-        .all(&st.db)
-        .await
-        .map_err(internal)?;
-    let feed_ids: Vec<i64> = feeds.iter().map(|f| f.id).collect();
-    if feed_ids.is_empty() {
-        return Ok(Json(vec![]));
-    }
-    let pairs: Vec<(i64, i64)> = entry::Entity::find()
-        .filter(entry::Column::FeedId.is_in(feed_ids.clone()))
-        .filter(entry::Column::IsRead.eq(false))
-        .select_only()
-        .column(entry::Column::FeedId)
-        .column_as(entry::Column::Id.count(), "cnt")
-        .group_by(entry::Column::FeedId)
-        .into_tuple()
-        .all(&st.db)
-        .await
-        .map_err(internal)?;
-    use std::collections::HashMap;
-    let mut cat_map: HashMap<Option<i64>, i64> = HashMap::new();
-    let feed_cat: HashMap<i64, Option<i64>> =
-        feeds.into_iter().map(|f| (f.id, f.category_id)).collect();
-    for (fid, cnt) in pairs {
-        let cat = feed_cat.get(&fid).cloned().unwrap_or(None);
-        *cat_map.entry(cat).or_insert(0) += cnt;
-    }
+    let cat_map =
+        captura_service::query::category_unread_counters_for_user(&st.db, auth.user_id)
+            .await
+            .map_err(internal)?;
     let out = cat_map
         .into_iter()
         .map(|(category_id, unread)| MfCatCounter {
@@ -287,22 +263,14 @@ pub(crate) async fn mark_all_read(
     Path(id): Path<i64>,
 ) -> MfResult<&'static str> {
     let auth = mf_auth(&st, &headers).await?;
-    let feed_ids: Vec<i64> = feed::Entity::find()
-        .filter(feed::Column::UserId.eq(auth.user_id))
-        .filter(feed::Column::CategoryId.eq(id))
-        .select_only()
-        .column(feed::Column::Id)
-        .into_tuple()
-        .all(&st.db)
-        .await
-        .map_err(internal)?;
-    if !feed_ids.is_empty() {
-        let _ = entry::Entity::update_many()
-            .col_expr(entry::Column::IsRead, sea_orm::sea_query::Expr::value(true))
-            .filter(entry::Column::FeedId.is_in(feed_ids))
-            .exec(&st.db)
-            .await
-            .map_err(internal)?;
-    }
+    let _ = captura_service::query::mark_entries_read_for_user(
+        &st.db,
+        auth.user_id,
+        None,
+        Some(id),
+        None,
+    )
+    .await
+    .map_err(internal)?;
     Ok("ok")
 }

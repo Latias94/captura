@@ -16,6 +16,7 @@ ammonia.workspace = true
 urlencoding.workspace = true
 regex.workspace = true
 captura-common = { path = "../common" }
+captura-net = { path = "../net" }
 captura-fetcher = { path = "../fetcher" }
 captura-crawler = { path = "../crawler" }
 captura-rules = { package = "captura-hub", path = "../hub" }

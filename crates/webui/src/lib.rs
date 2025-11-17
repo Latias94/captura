@@ -12,13 +12,17 @@ use axum::{
     routing::{get, post},
     Router,
 };
-use rand_core::RngCore;
 use serde::Deserialize;
 use std::time::Duration;
 
 mod static_assets;
 use static_assets::static_handler;
 mod i18n;
+mod util;
+mod pages_index;
+mod pages_hub;
+mod pages_hub;
+use util::{api_base, cookie_value, gen_csp_nonce, load_snippets, read_token_cookie, resolve_lang, UiSnippets};
 
 // ----- Templates -----
 
@@ -43,70 +47,12 @@ pub mod filters {
     }
 }
 
-fn gen_csp_nonce() -> String {
-    use base64::Engine as _;
-    let mut buf = [0u8; 16];
-    rand_core::OsRng.fill_bytes(&mut buf);
-    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(buf)
-}
-
-#[derive(Default)]
-struct UiSnippets {
-    custom_css: String,
-    custom_js: String,
-    external_font_hosts: String,
-}
-
-async fn load_snippets(headers: &HeaderMap) -> UiSnippets {
-    let Some(token) = cookie_value(headers, "X-Auth-Token") else {
-        return UiSnippets::default();
-    };
-    let cli = reqwest::Client::builder()
-        .timeout(Duration::from_secs(3))
-        .build()
-        .unwrap();
-    let me = format!("{}/v1/me", api_base());
-    if let Ok(resp) = cli
-        .get(me)
-        .header("X-Auth-Token", token)
-        .send()
-        .await
-        .and_then(|r| r.error_for_status())
-    {
-        #[derive(serde::Deserialize)]
-        struct Me {
-            stylesheet: Option<String>,
-            custom_js: Option<String>,
-            external_font_hosts: Option<String>,
-        }
-        if let Ok(m) = resp.json::<Me>().await {
-            return UiSnippets {
-                custom_css: m.stylesheet.unwrap_or_default(),
-                custom_js: m.custom_js.unwrap_or_default(),
-                external_font_hosts: m.external_font_hosts.unwrap_or_default(),
-            };
-        }
-    }
-    UiSnippets::default()
-}
-
 #[derive(Template)]
 #[allow(dead_code)]
 #[template(path = "layout.html")]
 struct LayoutTemplate<'a> {
     title: &'a str,
     body_html: &'a str,
-    dict: &'a std::collections::HashMap<String, String>,
-    csp_nonce: &'a str,
-    custom_css: &'a str,
-    custom_js: &'a str,
-    external_font_hosts: &'a str,
-}
-
-#[derive(Template)]
-#[template(path = "index.html")]
-struct IndexTemplate<'a> {
-    title: &'a str,
     dict: &'a std::collections::HashMap<String, String>,
     csp_nonce: &'a str,
     custom_css: &'a str,
@@ -153,101 +99,6 @@ struct RulesTestPage<'a> {
     external_font_hosts: &'a str,
 }
 
-#[derive(Template)]
-#[template(path = "login.html")]
-struct LoginTemplate<'a> {
-    title: &'a str,
-    oidc_enabled: bool,
-    dict: &'a std::collections::HashMap<String, String>,
-    csp_nonce: &'a str,
-    custom_css: &'a str,
-    custom_js: &'a str,
-    external_font_hosts: &'a str,
-}
-
-#[derive(Template)]
-#[template(path = "signup.html")]
-struct SignupTemplate<'a> {
-    title: &'a str,
-    dict: &'a std::collections::HashMap<String, String>,
-    csp_nonce: &'a str,
-    custom_css: &'a str,
-    custom_js: &'a str,
-    external_font_hosts: &'a str,
-}
-
-async fn index(headers: HeaderMap) -> axum::response::Response {
-    let lang = resolve_lang(&headers).await;
-    let dict = i18n::load(&lang);
-    let nonce = gen_csp_nonce();
-    let tpl = IndexTemplate {
-        title: "Captura",
-        dict: &dict,
-        csp_nonce: &nonce,
-        custom_css: "",
-        custom_js: "",
-        external_font_hosts: "",
-    };
-    match tpl.render() {
-        Ok(s) => Html(s).into_response(),
-        Err(_) => (
-            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-            "template error",
-        )
-            .into_response(),
-    }
-}
-
-async fn login(headers: HeaderMap) -> axum::response::Response {
-    // The page points to existing API endpoints. This handler does not depend on server state.
-    let lang = resolve_lang(&headers).await;
-    let dict = i18n::load(&lang);
-    let enabled = std::env::var("CAPTURA_OIDC_ENABLED")
-        .ok()
-        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-        .unwrap_or(false);
-    let nonce = gen_csp_nonce();
-    let tpl = LoginTemplate {
-        title: "Login",
-        oidc_enabled: enabled,
-        dict: &dict,
-        csp_nonce: &nonce,
-        custom_css: "",
-        custom_js: "",
-        external_font_hosts: "",
-    };
-    match tpl.render() {
-        Ok(s) => Html(s).into_response(),
-        Err(_) => (
-            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-            "template error",
-        )
-            .into_response(),
-    }
-}
-
-async fn signup(headers: HeaderMap) -> axum::response::Response {
-    let lang = resolve_lang(&headers).await;
-    let dict = i18n::load(&lang);
-    let nonce = gen_csp_nonce();
-    let tpl = SignupTemplate {
-        title: "Sign Up",
-        dict: &dict,
-        csp_nonce: &nonce,
-        custom_css: "",
-        custom_js: "",
-        external_font_hosts: "",
-    };
-    match tpl.render() {
-        Ok(s) => Html(s).into_response(),
-        Err(_) => (
-            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-            "template error",
-        )
-            .into_response(),
-    }
-}
-
 /// Build a UI router with generic state.
 /// No handler here takes a dependency on the state so S can be any shared state.
 pub fn router<S>() -> Router<S>
@@ -255,15 +106,15 @@ where
     S: Clone + Send + Sync + 'static,
 {
     Router::new()
-        .route("/", get(index))
-        .route("/login", get(login))
-        .route("/signup", get(signup))
+        .route("/", get(pages_index::index))
+        .route("/login", get(pages_index::login))
+        .route("/signup", get(pages_index::signup))
         .route("/settings", get(ui_settings))
-        .route("/hub", get(ui_hub_routes))
-        .route("/hub/test", get(ui_hub_test))
+        .route("/hub", get(pages_hub::ui_hub_routes))
+        .route("/hub/test", get(pages_hub::ui_hub_test))
         .route(
             "/rules/test",
-            post(ui_rules_test).get(|headers: HeaderMap| async move {
+            post(pages_hub::ui_rules_test).get(|headers: HeaderMap| async move {
                 // initial empty form render on GET
                 let lang = resolve_lang(&headers).await;
                 let dict = i18n::load(&lang);
@@ -271,8 +122,8 @@ where
                 let nonce = gen_csp_nonce();
                 let empty = String::new();
                 let none_yaml: Option<String> = None;
-                let none_result: Option<UiTryRuleResp> = None;
-                let tpl = RulesTestPage {
+                let none_result: Option<pages_hub::UiTryRuleResp> = None;
+                let tpl = pages_hub::RulesTestPage {
                     title: "Test Rule",
                     url: &empty,
                     yaml: &none_yaml,
@@ -296,6 +147,7 @@ where
         .route("/feeds/{id}", get(ui_feed_entries))
         .route("/feeds/{id}/edit", get(ui_feed_edit))
         .route("/entries/{id}", get(ui_entry))
+        .route("/smart-views/{id}", get(ui_smart_view_entries))
         // SSR action endpoints
         .route("/ui/entries/{id}/toggle-star", post(ui_toggle_star))
         .route("/ui/entries/{id}/mark", post(ui_mark_status))
@@ -341,157 +193,6 @@ where
         .route("/ui/categories/create", post(ui_category_create))
         .route("/ui/categories/{id}/update", post(ui_category_update))
         .route("/ui/categories/{id}/delete", post(ui_category_delete))
-}
-
-// -------------- templates (embedded) --------------
-// We place templates under `templates/` co-located with crate.
-
-// askama looks up templates under a `templates` dir sitting next to Cargo.toml
-
-// -------------- static assets --------------
-
-fn read_token_cookie(headers: &HeaderMap) -> Option<String> {
-    let cookies = headers.get(axum::http::header::COOKIE)?.to_str().ok()?;
-    for part in cookies.split(';') {
-        let kv = part.trim();
-        if let Some((k, v)) = kv.split_once('=') {
-            if k.trim() == "X-Auth-Token" {
-                return Some(v.trim().to_string());
-            }
-        }
-    }
-    None
-}
-
-fn api_base() -> String {
-    std::env::var("CAPTURA_WEBUI_API_BASE")
-        .ok()
-        .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| "http://127.0.0.1:8080".into())
-}
-
-fn cookie_value(headers: &HeaderMap, name: &str) -> Option<String> {
-    let cookies = headers.get(axum::http::header::COOKIE)?.to_str().ok()?;
-    for part in cookies.split(';') {
-        let kv = part.trim();
-        if let Some((k, v)) = kv.split_once('=') {
-            if k.trim() == name {
-                return Some(v.trim().to_string());
-            }
-        }
-    }
-    None
-}
-
-async fn resolve_lang(headers: &HeaderMap) -> String {
-    if let Some(lang) = cookie_value(headers, "lang") {
-        return lang;
-    }
-    if let Some(token) = cookie_value(headers, "X-Auth-Token") {
-        if let Ok(cli) = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(2))
-            .build()
-        {
-            let me = format!("{}/v1/me", api_base());
-            if let Ok(resp) = cli
-                .get(me)
-                .header("X-Auth-Token", token)
-                .send()
-                .await
-                .and_then(|r| r.error_for_status())
-            {
-                #[derive(serde::Deserialize)]
-                struct Me {
-                    language: Option<String>,
-                }
-                if let Ok(m) = resp.json::<Me>().await {
-                    if let Some(l) = m.language {
-                        return l;
-                    }
-                }
-            }
-        }
-    }
-    // Accept-Language heuristic
-    if let Some(al) = headers
-        .get(axum::http::header::ACCEPT_LANGUAGE)
-        .and_then(|v| v.to_str().ok())
-    {
-        let al = al.to_ascii_lowercase();
-        if al.contains("zh") {
-            return "zh_CN".into();
-        }
-    }
-    "en_US".into()
-}
-
-#[allow(dead_code)]
-#[derive(Deserialize, Clone)]
-struct UiHubRoute {
-    hub_id: String,
-    path: String,
-    categories: Vec<String>,
-    example: String,
-    #[serde(default)]
-    parameters: Vec<(String, String)>,
-    name: String,
-    url: String,
-    description: String,
-}
-
-#[derive(Clone)]
-struct UiHubNamespaceGroup {
-    namespace: String,
-    routes: Vec<UiHubRoute>,
-}
-
-#[allow(dead_code)]
-#[derive(Deserialize, Clone)]
-struct UiHubItem {
-    title: String,
-    #[serde(default)]
-    description: Option<String>,
-    #[serde(default)]
-    link: Option<String>,
-    #[serde(default)]
-    author: Option<String>,
-}
-
-#[allow(dead_code)]
-#[derive(Deserialize, Clone)]
-struct UiHubPreview {
-    title: String,
-    #[serde(default)]
-    description: Option<String>,
-    #[serde(default)]
-    link: Option<String>,
-    #[serde(default)]
-    image: Option<String>,
-    #[serde(default)]
-    language: Option<String>,
-    items: Vec<UiHubItem>,
-}
-
-#[derive(Deserialize, Clone)]
-struct UiTryRuleEntry {
-    title: Option<String>,
-    url: Option<String>,
-    content_len: usize,
-}
-
-#[derive(Deserialize, Clone)]
-struct UiTryRuleResp {
-    used_smart: bool,
-    list_url: String,
-    item_count: usize,
-    entries: Vec<UiTryRuleEntry>,
-    timeout_ms: Option<u64>,
-    duration_ms: u128,
-}
-
-#[derive(Deserialize, Default)]
-struct UiHubQuery {
-    url: Option<String>,
 }
 
 async fn ui_hub_routes(headers: HeaderMap, _q: Query<UiHubQuery>) -> impl IntoResponse {
@@ -712,6 +413,12 @@ struct UiFeedDto {
 }
 
 #[derive(Deserialize, Clone)]
+struct UiSmartView {
+    id: i64,
+    name: String,
+}
+
+#[derive(Deserialize, Clone)]
 struct UiCategory {
     id: i64,
     title: String,
@@ -727,6 +434,7 @@ struct FeedsPage<'a> {
     title: &'a str,
     feeds: &'a [UiFeedDto],
     categories: &'a [UiCategory],
+    smart_views: &'a [UiSmartView],
     selected_category: Option<i64>,
     has_uncategorized: bool,
     dict: &'a std::collections::HashMap<String, String>,
@@ -774,8 +482,22 @@ async fn ui_feeds(headers: HeaderMap, Query(fq): Query<UiFeedsQuery>) -> impl In
     let has_uncategorized = feeds.iter().any(|f| f.category.is_none());
     // categories for dropdown (ignore extra fields)
     let cats_url = format!("{}/v1/categories?counts=true", api_base());
-    let res2 = cli.get(cats_url).header("X-Auth-Token", token).send().await;
+    let res2 = cli.get(cats_url).header("X-Auth-Token", token.clone()).send().await;
     let categories: Vec<UiCategory> = match res2.and_then(|r| r.error_for_status()) {
+        Ok(resp) => resp.json().await.unwrap_or_default(),
+        Err(_) => Vec::new(),
+    };
+    // smart views (native /api/v1)
+    let sv_url = format!("{}/api/v1/smart-views", api_base());
+    let res3 = cli
+        .get(sv_url)
+        .header(
+            axum::http::header::AUTHORIZATION,
+            format!("Bearer {}", token),
+        )
+        .send()
+        .await;
+    let smart_views: Vec<UiSmartView> = match res3.and_then(|r| r.error_for_status()) {
         Ok(resp) => resp.json().await.unwrap_or_default(),
         Err(_) => Vec::new(),
     };
@@ -783,6 +505,7 @@ async fn ui_feeds(headers: HeaderMap, Query(fq): Query<UiFeedsQuery>) -> impl In
         title: "Feeds",
         feeds: &feeds,
         categories: &categories,
+        smart_views: &smart_views,
         selected_category,
         has_uncategorized,
         dict: &dict,
@@ -834,6 +557,22 @@ struct EntriesPage<'a> {
     search_q: &'a str,
     refreshed: bool,
     refresh_err: bool,
+    csp_nonce: &'a str,
+    custom_css: &'a str,
+    custom_js: &'a str,
+    external_font_hosts: &'a str,
+}
+
+#[derive(Template)]
+#[template(path = "smart_view_entries.html")]
+struct SmartEntriesPage<'a> {
+    title: &'a str,
+    smart_view: &'a UiSmartView,
+    items: &'a [UiEntryBrief],
+    limit: usize,
+    prev_page: Option<usize>,
+    next_page: Option<usize>,
+    dict: &'a std::collections::HashMap<String, String>,
     csp_nonce: &'a str,
     custom_css: &'a str,
     custom_js: &'a str,
@@ -993,6 +732,152 @@ async fn ui_feed_entries(
         search_q: search_q_leaked,
         refreshed,
         refresh_err,
+        csp_nonce: &nonce,
+        custom_css: &snippets.custom_css,
+        custom_js: &snippets.custom_js,
+        external_font_hosts: &snippets.external_font_hosts,
+    };
+    match tpl.render() {
+        Ok(s) => Html(s).into_response(),
+        Err(_) => (StatusCode::INTERNAL_SERVER_ERROR, "template error").into_response(),
+    }
+}
+
+#[derive(Deserialize)]
+struct ApiSmartEntry {
+    id: i64,
+    title: Option<String>,
+    url: Option<String>,
+    author: Option<String>,
+    #[serde(rename = "published_at")]
+    date: Option<String>,
+    is_read: bool,
+    is_starred: bool,
+}
+
+async fn ui_smart_view_entries(
+    Path(id): Path<i64>,
+    headers: HeaderMap,
+    Query(q): Query<UiListQuery>,
+) -> impl IntoResponse {
+    let Some(token) = read_token_cookie(&headers) else {
+        return Redirect::to("/login").into_response();
+    };
+    let lang = resolve_lang(&headers).await;
+    let dict = i18n::load(&lang);
+    let snippets = load_snippets(&headers).await;
+    let nonce = gen_csp_nonce();
+    let cli = match reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(4))
+        .build()
+    {
+        Ok(c) => c,
+        Err(_) => {
+            return (StatusCode::INTERNAL_SERVER_ERROR, "http client error").into_response();
+        }
+    };
+
+    // Load smart view metadata
+    let sv_url = format!("{}/api/v1/smart-views/{}", api_base(), id);
+    let sv_res = cli
+        .get(sv_url)
+        .header(
+            axum::http::header::AUTHORIZATION,
+            format!("Bearer {}", token.clone()),
+        )
+        .send()
+        .await;
+    let smart_view: UiSmartView = match sv_res.and_then(|r| r.error_for_status()) {
+        Ok(resp) => match resp.json().await {
+            Ok(v) => v,
+            Err(_) => {
+                return Redirect::to("/feeds").into_response();
+            }
+        },
+        Err(_) => {
+            return Redirect::to("/feeds").into_response();
+        }
+    };
+
+    // Determine pagination (reuse entries_per_page from /v1/me when limit is not provided)
+    let limit = if let Some(l) = q.limit {
+        l.clamp(1, 200)
+    } else {
+        let me_url = format!("{}/v1/me", api_base());
+        match cli
+            .get(me_url)
+            .header("X-Auth-Token", &token)
+            .send()
+            .await
+            .and_then(|r| r.error_for_status())
+        {
+            Ok(resp) => {
+                #[derive(serde::Deserialize)]
+                struct Me {
+                    entries_per_page: Option<i32>,
+                }
+                let me: Me = resp.json().await.unwrap_or(Me {
+                    entries_per_page: None,
+                });
+                me.entries_per_page.unwrap_or(50).max(1) as usize
+            }
+            Err(_) => 50usize,
+        }
+        .min(200)
+    };
+    let page = q.page.unwrap_or(1).max(1);
+    let offset = (page - 1) * limit;
+
+    // Fetch entries for this smart view
+    let url = format!(
+        "{}/api/v1/smart-views/{}/entries?limit={}&offset={}",
+        api_base(),
+        id,
+        limit,
+        offset
+    );
+    let res = cli
+        .get(url)
+        .header(
+            axum::http::header::AUTHORIZATION,
+            format!("Bearer {}", token),
+        )
+        .send()
+        .await;
+    let api_entries: Vec<ApiSmartEntry> = match res.and_then(|r| r.error_for_status()) {
+        Ok(resp) => resp.json().await.unwrap_or_default(),
+        Err(_) => Vec::new(),
+    };
+    let mut items: Vec<UiEntryBrief> = Vec::with_capacity(api_entries.len());
+    for e in api_entries {
+        items.push(UiEntryBrief {
+            id: e.id,
+            title: e.title,
+            url: e.url,
+            author: e.author,
+            date: e.date,
+            starred: e.is_starred,
+            status: if e.is_read {
+                "read".into()
+            } else {
+                "unread".into()
+            },
+            tags: None,
+        });
+    }
+
+    let prev_page = if page > 1 { Some(page - 1) } else { None };
+    // We do not know total count; show "next" when we filled the current page.
+    let next_page = if items.len() >= limit { Some(page + 1) } else { None };
+
+    let tpl = SmartEntriesPage {
+        title: "Entries",
+        smart_view: &smart_view,
+        items: &items,
+        limit,
+        prev_page,
+        next_page,
+        dict: &dict,
         csp_nonce: &nonce,
         custom_css: &snippets.custom_css,
         custom_js: &snippets.custom_js,

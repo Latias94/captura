@@ -52,11 +52,24 @@
       <a class="button ml-2" href="/feeds/{{ feed_id }}?limit={{ limit }}{{ filter_q }}">{{ dict["btn.clear_search"] }}</a>
       {% endif %}
       <button class="button ml-2" type="button" id="btnSaveSearch">{{ dict["btn.save_search"] }}</button>
+      <button class="button ml-2" type="button" id="btnSaveSmartView">{{ dict["btn.save_view"] }}</button>
     </form>
   </div>
   <section class="panel mt-2">
     <h2 class="title">{{ dict["saved.title"] }}</h2>
-    <ul class="list" id="savedSearches" data-dict-empty="{{ dict["saved.empty"] }}" data-dict-rename="{{ dict["btn.rename"] }}" data-dict-delete="{{ dict["btn.delete"] }}" data-dict-saveas="{{ dict["saved.save_as"] }}" data-dict-saved="{{ dict["saved.saved"] }}" data-dict-exists="{{ dict["saved.exists"] }}"></ul>
+    <ul
+      class="list"
+      id="savedSearches"
+      data-dict-empty="{{ dict["saved.empty"] }}"
+      data-dict-rename="{{ dict["btn.rename"] }}"
+      data-dict-delete="{{ dict["btn.delete"] }}"
+      data-dict-saveas="{{ dict["saved.save_as"] }}"
+      data-dict-saved="{{ dict["saved.saved"] }}"
+      data-dict-exists="{{ dict["saved.exists"] }}"
+      data-dict-smart-saved="{{ dict["smart_views.saved"] }}"
+      data-dict-smart-failed="{{ dict["smart_views.failed"] }}"
+      data-dict-smart-name="{{ dict["smart_views.save_as"] }}"
+    ></ul>
   </section>
   {% if refreshed %}
   <div class="alert">{{ dict["info.refreshed"] }}</div>

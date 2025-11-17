@@ -1,7 +1,6 @@
 use captura_common::{Error, Result};
 use captura_storage::entity::feed;
 use reqwest::Client;
-use std::env;
 use std::time::Duration;
 
 /// Build an HTTP client using feed-level settings with optional overrides.
@@ -53,44 +52,5 @@ pub(crate) fn client_for_feed(
 
 /// Build a simple HTTP client with optional user agent and timeout.
 pub fn client_basic(user_agent: Option<String>, timeout_ms: Option<u64>) -> Result<Client> {
-    let mut builder = Client::builder();
-
-    // User-Agent: explicit override > env > default.
-    let ua = user_agent
-        .or_else(|| {
-            env::var("CAPTURA_HTTP_USER_AGENT")
-                .ok()
-                .filter(|s| !s.trim().is_empty())
-        })
-        .unwrap_or_else(|| "captura/0.1".to_string());
-    builder = builder.user_agent(ua);
-
-    // Timeout: explicit override > env (milliseconds).
-    let effective_timeout = timeout_ms.or_else(|| {
-        env::var("CAPTURA_HTTP_TIMEOUT_MS")
-            .ok()
-            .and_then(|v| v.parse::<u64>().ok())
-    });
-    if let Some(ms) = effective_timeout {
-        if ms > 0 {
-            builder = builder.timeout(Duration::from_millis(ms));
-        }
-    }
-
-    // Optional proxy for all Hub/pipeline HTTP calls.
-    if let Ok(proxy_url) = env::var("CAPTURA_HTTP_PROXY") {
-        let proxy_url = proxy_url.trim();
-        if !proxy_url.is_empty() {
-            match reqwest::Proxy::all(proxy_url) {
-                Ok(p) => {
-                    builder = builder.proxy(p);
-                }
-                Err(e) => {
-                    return Err(Error::Config(format!("invalid CAPTURA_HTTP_PROXY: {e}")));
-                }
-            }
-        }
-    }
-
-    builder.build().map_err(|e| Error::Network(e.to_string()))
+    captura_net::client_basic(user_agent, timeout_ms)
 }

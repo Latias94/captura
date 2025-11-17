@@ -561,6 +561,7 @@ pub(crate) async fn try_rule(
         block_filter_entry_rules: None,
         keep_filter_entry_rules: None,
         integrations_json: None,
+        view: None,
         created_at: now,
         updated_at: now,
     };

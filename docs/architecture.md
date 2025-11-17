@@ -29,12 +29,11 @@ This document describes the initial architecture and workspace layout for Captur
     - Fever：`/fever`
     - Google Reader：`/reader/api/0/*`
 - `crates/fetcher`: standard feed fetching (HTTP + ETag/IMS) and parsing.
-- `crates/crawler`: spider-based adapter for dynamic pages and anti-bot bypass.
-- `crates/rules`: Rules DSL v1 schema and validator/linter (conceptual model +
-  legacy YAML support).
+- `crates/crawler`: spider-based adapter for dynamic pages and anti-bot bypass。
+- `crates/net`: shared HTTP client + HTML helpers（统一 UA/超时/代理 等行为）。
 - `crates/scheduler`: job scheduler and background workers.
-- `crates/pipeline`: Orchestrates `fetcher`/`crawler`/`rules` into normalized entries.
-- `crates/hub`: Hub route definitions and metadata (RSSHub-style routes).
+- `crates/pipeline`: Orchestrates `fetcher`/`crawler`/DSL rules into normalized entries。
+- `crates/hub`: Hub route definitions和内置规则模型（RSSHub-style routes + DSL v1 schema）。
 - `rules/`: legacy/example DSL rule files (YAML); new official routes live in
   `crates/hub`.
 - `docs/`: documentation.
