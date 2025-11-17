@@ -18,9 +18,7 @@ use crate::search;
 use crate::util::{validate_limit_offset, validate_sort};
 use crate::AppState;
 use captura_storage::entity::{entry, entry_label, feed, smart_view};
-use captura_types::{
-    EntryDto, EntryView, Paging, SmartViewDto, SmartViewFiltersDto, Sorting,
-};
+use captura_types::{EntryDto, EntryView, SmartViewDto, SmartViewFiltersDto, Sorting};
 
 #[derive(Deserialize)]
 pub(crate) struct SmartViewCreateReq {
@@ -93,7 +91,11 @@ pub(crate) async fn create_smart_view(
     if name.is_empty() || name.len() > 190 {
         return Err(bad_request("invalid smart view name"));
     }
-    validate_sort(&body.sort_by, &["published_at", "created_at"], &body.sort_order)?;
+    validate_sort(
+        &body.sort_by,
+        &["published_at", "created_at"],
+        &body.sort_order,
+    )?;
     let now = Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
     let filters_json = serde_json::to_value(&body.filters).map_err(internal)?;
     let am = smart_view::ActiveModel {
@@ -206,8 +208,8 @@ pub(crate) async fn delete_smart_view(
 pub(crate) struct SmartViewEntriesQuery {
     #[serde(flatten)]
     pub sorting: Sorting,
-    #[serde(flatten)]
-    pub paging: Paging,
+    pub limit: Option<u64>,
+    pub offset: Option<u64>,
 }
 
 pub(crate) async fn list_smart_view_entries(
@@ -217,7 +219,7 @@ pub(crate) async fn list_smart_view_entries(
     Query(q): Query<SmartViewEntriesQuery>,
 ) -> ApiResult<Json<Vec<EntryDto>>> {
     let user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
-    validate_limit_offset(q.paging.limit, q.paging.offset)?;
+    validate_limit_offset(q.limit, q.offset)?;
     // Only allow a subset of sort keys for smart views for now.
     validate_sort(
         &q.sorting.sort_by,
@@ -364,9 +366,9 @@ pub(crate) async fn list_smart_view_entries(
         }
     }
 
-    let l = q.paging.limit.unwrap_or(100);
+    let l = q.limit.unwrap_or(100);
     sel = sel.limit(l);
-    if let Some(o) = q.paging.offset {
+    if let Some(o) = q.offset {
         sel = sel.offset(o);
     }
 

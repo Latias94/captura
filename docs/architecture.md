@@ -49,6 +49,30 @@ This document describes the initial architecture and workspace layout for Captur
 3. Pipeline applies transformations: URL cleaning, rewrite, sanitization, content extraction.
 4. Storage persists feeds, entries, rules, jobs via SeaORM. API serves clients.
 
+## Unified Timeline Model (Folo-inspired)
+
+From a product perspective, Captura exposes a single, unified timeline model
+for first-party clients (TUI/CLI/GUI), inspired by Folo:
+
+- `/api/v1/entries` – the **only** canonical timeline endpoint; everything
+  else is either metadata or a saved query on top of it. Clients should treat
+  this as “one global stream”, filtered by `view`, `status`, `search`, etc.
+- Built‑in views (`EntryView`) – `articles`, `pictures`, `videos`, `audios`,
+  `social`, `notifications` – are **subscription attributes** (`feed.view`,
+  `category.view`), not ad‑hoc query strings. They define how a feed/category
+  is presented by default in the unified timeline.
+- Smart views (`/api/v1/smart-views`) – named timelines built from
+  `view + filters` (feed_ids/category_ids/label_ids/search/status), similar to
+  Folo’s saved lists.
+- Timelines (`/api/v1/timelines`) – a thin abstraction that merges built‑in
+  views and SmartViews into one “timeline directory” for sidebars and
+  navigation. Actual items are always fetched via `/api/v1/entries` or
+  `/api/v1/smart-views/{id}/entries`.
+
+In short, `/api/v1/entries` is the backbone timeline API; views, SmartViews and
+timelines are different layers of naming and grouping on top of the same
+underlying stream.
+
 ## Storage (SeaORM v2)
 
 Initial tables (to be refined):
@@ -73,7 +97,10 @@ RSSHub 的路由处理方式，同时保留一个可复用的抓取 DSL 概念�
   - 一个异步 handler 函数，签名类似
     `async fn handler(ctx: &mut HubCtx<'_>) -> Result<HubData>`，
     用于执行抓取逻辑，返回 `HubData`（类似 RSSHub 的 `Data`）。
-  - `Route { meta, handler }` 会在 `crates/hub/src/hub/registry.rs` 中集中注册。
+  - 在代码结构上，我们刻意把 **RouteMeta + 抓取规则 + handler 实现放在同一个模块/文件里**
+    （例如 `crates/hub/src/hub/github/trending.rs`），这是有意向 RSSHub 靠拢的设计选择，方便贡献者在一处同时查看
+    “路由元信息（路径、参数、示例）”和“具体如何抓取网页、如何提取正文”，与 RSSHub 的 `lib/routes/*/*.ts` 体验一致。
+  - `Route { meta, handler }` 通过宏注册到全局 Hub registry 中，无需手动维护列表。
 - 抓取模型层：Rules DSL v1 概念（见 `docs/rules-dsl.md`），描述：
   - HTML list/detail、single-page、JSON API、XPath 抽取、filters/transform 等。
   - 这些概念在代码中通过 Rust 结构和 helper 函数体现，既可以在 Hub handler 内复用，也可以用作 legacy DSL 路径的执行器。

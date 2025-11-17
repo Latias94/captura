@@ -14,8 +14,8 @@ use sea_orm::{
 use tracing::debug;
 
 pub mod integration;
-pub mod webhook;
 pub mod query;
+pub mod webhook;
 
 /// Build a basic HTTP client used by scheduler/service integrations and webhooks.
 ///

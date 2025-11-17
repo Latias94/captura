@@ -27,6 +27,7 @@ pub const META_BILIBILI_HOT_SEARCH: RouteMeta = RouteMeta {
     maintainers: &["captura"],
     url: "https://www.bilibili.com/",
     description: "Bilibili 热搜关键词。",
+    default_view: Some("social"),
 };
 
 pub async fn handler(ctx: &mut HubCtx<'_>) -> captura_common::Result<HubData> {

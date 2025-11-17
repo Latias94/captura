@@ -11,13 +11,14 @@ pub mod feeds;
 pub mod hub;
 pub mod integrations;
 pub mod jobs;
+pub mod labels;
 pub mod media;
 pub mod oidc;
 pub mod opml;
 pub mod rules;
 pub mod search;
-pub mod state;
 pub mod smart_views;
+pub mod state;
 pub mod users;
 pub mod util;
 pub mod views;
@@ -29,12 +30,16 @@ pub use state::{AppConfig, AppState};
 use axum::body::Body as AxumBody;
 use axum::{
     extract::State,
-    routing::{get, post},
+    routing::{get, post, put},
     Router,
 };
 use sea_orm::{ConnectionTrait, DatabaseConnection};
 use tower_http::set_header::SetResponseHeaderLayer;
 use tower_http::trace::TraceLayer;
+
+/// Type alias used by integration tests to avoid tying them to the exact
+/// Router generic parameters.
+pub type RouterServiceType = axum::routing::RouterIntoService<AxumBody, ()>;
 
 /// Build the full application Router, including:
 /// - `/api/v1` primary API (auth/feeds/entries/jobs/...)
@@ -77,6 +82,7 @@ pub fn build_router(app_state: AppState) -> Router {
             "/feeds/{id}/enqueue-refresh",
             post(crate::feeds::enqueue_feed_refresh),
         )
+        .route("/feeds/bulk-view", post(crate::feeds::bulk_update_view))
         .route("/feeds/{id}/favicon/refresh", post(crate::favicon::refresh))
         .route("/favicons/{id}", get(crate::favicon::get))
         .route(
@@ -94,6 +100,14 @@ pub fn build_router(app_state: AppState) -> Router {
             "/categories/counters",
             get(crate::categories::category_counters),
         )
+        .route(
+            "/labels",
+            get(crate::labels::list_labels).post(crate::labels::create_label),
+        )
+        .route(
+            "/labels/{id}",
+            put(crate::labels::update_label).delete(crate::labels::delete_label),
+        )
         .route("/entries", get(crate::entries::list_entries))
         .route(
             "/entries/mark-all-read",
@@ -105,8 +119,7 @@ pub fn build_router(app_state: AppState) -> Router {
         .route("/entries/{id}/star", post(crate::entries::mark_star))
         .route(
             "/smart-views",
-            get(crate::smart_views::list_smart_views)
-                .post(crate::smart_views::create_smart_view),
+            get(crate::smart_views::list_smart_views).post(crate::smart_views::create_smart_view),
         )
         .route(
             "/smart-views/{id}",
@@ -119,9 +132,13 @@ pub fn build_router(app_state: AppState) -> Router {
             get(crate::smart_views::list_smart_view_entries),
         )
         .route("/views", get(crate::views::list_views))
+        .route("/views/summary", get(crate::views::view_summary))
+        .route("/timelines", get(crate::views::list_timelines))
         .route("/opml/export", get(crate::opml::export))
         .route("/opml/import", post(crate::opml::import))
         .route("/opml/validate", post(crate::opml::validate))
+        .route("/export/full", get(crate::opml::export_full))
+        .route("/import/full", post(crate::opml::import_full))
         // jobs
         .route("/jobs", get(crate::jobs::list_jobs))
         .route("/jobs/run-once", post(crate::jobs::run_jobs_once))

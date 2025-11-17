@@ -25,6 +25,7 @@ pub const META_LOBSTERS_FRONT: RouteMeta = RouteMeta {
     maintainers: &["captura"],
     url: "https://lobste.rs/",
     description: "Lobsters front page stories.",
+    default_view: Some("articles"),
 };
 
 pub async fn handler(_ctx: &mut HubCtx<'_>) -> captura_common::Result<HubData> {

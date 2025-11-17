@@ -23,4 +23,3 @@ pub fn extract_text(parent: &ElementRef<'_>, sel: &str) -> Option<String> {
     }
     None
 }
-

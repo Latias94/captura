@@ -4,7 +4,7 @@ Captura 支持使用本地的“Hub 路由”来快速创建基于模板的抓�
 
 Hub 路由在内部是一个 `Route { meta: RouteMeta, handler: HubHandlerFn }`，其中：
 
-- `RouteMeta` 描述 `hub_id/path/categories/example/params/features/radar/name/maintainers/url/description`；
+- `RouteMeta` 描述 `hub_id/path/categories/example/params/features/radar/name/maintainers/url/description/default_view`；
 - `handler` 是一个异步函数，签名等价于：`async fn handler(ctx: &mut HubCtx<'_>) -> Result<HubData>`。
 
 在代码结构上，我们刻意把 **RouteMeta + 抓取规则 + handler 实现放在同一个模块/文件里**（例如
@@ -156,6 +156,11 @@ Hub 路由的代码位于 `crates/hub/src/hub`，每个站点一个模块，例�
        maintainers: &["your-id"],
        url: "https://example.com/foo",
        description: "Foo Bar route.",
+       // Optional: recommended EntryView for feeds created from this route.
+       // When the client does not explicitly choose a view during subscription
+       // creation, this default_view can be used as the feed.view value
+       // (e.g. "articles", "pictures", "videos", "social", ...).
+       default_view: Some("articles"),
    };
    ```
 

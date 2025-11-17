@@ -295,7 +295,7 @@ pub(crate) async fn get(
         .await
         .map_err(internal)?
     else {
-        return Err(not_found("entry").into());
+        return Err(not_found("entry"));
     };
     let Some(f) = feed::Entity::find_by_id(e.feed_id)
         .filter(feed::Column::UserId.eq(auth.user_id))
@@ -303,7 +303,7 @@ pub(crate) async fn get(
         .await
         .map_err(internal)?
     else {
-        return Err(not_found("entry").into());
+        return Err(not_found("entry"));
     };
     let pairs: Vec<(i64, String)> = entry_label::Entity::find()
         .join(
@@ -429,7 +429,7 @@ pub(crate) async fn update(
         .await
         .map_err(internal)?
     else {
-        return Err(not_found("entry").into());
+        return Err(not_found("entry"));
     };
     let owned = feed::Entity::find_by_id(e.feed_id)
         .filter(feed::Column::UserId.eq(auth.user_id))
@@ -438,7 +438,7 @@ pub(crate) async fn update(
         .map_err(internal)?
         .is_some();
     if !owned {
-        return Err(not_found("entry").into());
+        return Err(not_found("entry"));
     }
     let mut am: entry::ActiveModel = e.into();
     if let Some(sts) = body.status.as_deref() {
@@ -470,7 +470,7 @@ pub(crate) async fn update(
         .await
         .map_err(internal)?
     else {
-        return Err(not_found("entry").into());
+        return Err(not_found("entry"));
     };
     let Some(f) = feed::Entity::find_by_id(e.feed_id)
         .filter(feed::Column::UserId.eq(auth.user_id))
@@ -478,7 +478,7 @@ pub(crate) async fn update(
         .await
         .map_err(internal)?
     else {
-        return Err(not_found("entry").into());
+        return Err(not_found("entry"));
     };
     let pairs: Vec<(i64, String)> = entry_label::Entity::find()
         .join(
@@ -545,7 +545,7 @@ pub(crate) async fn toggle_star(
         .await
         .map_err(internal)?
     else {
-        return Err(not_found("entry").into());
+        return Err(not_found("entry"));
     };
     let owned = feed::Entity::find_by_id(e.feed_id)
         .filter(feed::Column::UserId.eq(auth.user_id))
@@ -554,7 +554,7 @@ pub(crate) async fn toggle_star(
         .map_err(internal)?
         .is_some();
     if !owned {
-        return Err(not_found("entry").into());
+        return Err(not_found("entry"));
     }
     let current = e.is_starred;
     let mut am: entry::ActiveModel = e.into();
@@ -631,7 +631,7 @@ pub(crate) async fn fetch_content(
         .await
         .map_err(internal)?
     else {
-        return Err(not_found("entry").into());
+        return Err(not_found("entry"));
     };
     let owned = feed::Entity::find_by_id(e.feed_id)
         .filter(feed::Column::UserId.eq(auth.user_id))
@@ -640,14 +640,14 @@ pub(crate) async fn fetch_content(
         .map_err(internal)?
         .is_some();
     if !owned {
-        return Err(not_found("entry").into());
+        return Err(not_found("entry"));
     }
     let Some(f) = feed::Entity::find_by_id(e.feed_id)
         .one(&st.db)
         .await
         .map_err(internal)?
     else {
-        return Err(not_found("feed").into());
+        return Err(not_found("feed"));
     };
     let page_url = match e.url.as_deref() {
         Some(u) => u,
@@ -702,7 +702,7 @@ pub(crate) async fn save(
         .await
         .map_err(internal)?
     else {
-        return Err(not_found("entry").into());
+        return Err(not_found("entry"));
     };
     let owned = feed::Entity::find_by_id(e.feed_id)
         .filter(feed::Column::UserId.eq(auth.user_id))
@@ -711,7 +711,7 @@ pub(crate) async fn save(
         .map_err(internal)?
         .is_some();
     if !owned {
-        return Err(not_found("entry").into());
+        return Err(not_found("entry"));
     }
     let now = Utc::now()
         .with_timezone(&FixedOffset::east_opt(0).unwrap())
@@ -764,7 +764,7 @@ pub(crate) async fn add_tags(
         .await
         .map_err(internal)?
     else {
-        return Err(not_found("entry").into());
+        return Err(not_found("entry"));
     };
     let owned = feed::Entity::find_by_id(e.feed_id)
         .filter(feed::Column::UserId.eq(auth.user_id))
@@ -773,7 +773,7 @@ pub(crate) async fn add_tags(
         .map_err(internal)?
         .is_some();
     if !owned {
-        return Err(not_found("entry").into());
+        return Err(not_found("entry"));
     }
     let mut names: Vec<String> = body
         .tags
@@ -855,7 +855,7 @@ pub(crate) async fn remove_tags(
         .await
         .map_err(internal)?
     else {
-        return Err(not_found("entry").into());
+        return Err(not_found("entry"));
     };
     let owned = feed::Entity::find_by_id(e.feed_id)
         .filter(feed::Column::UserId.eq(auth.user_id))
@@ -864,7 +864,7 @@ pub(crate) async fn remove_tags(
         .map_err(internal)?
         .is_some();
     if !owned {
-        return Err(not_found("entry").into());
+        return Err(not_found("entry"));
     }
     let mut names: Vec<String> = body
         .tags

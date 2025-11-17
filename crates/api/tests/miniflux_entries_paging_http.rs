@@ -46,7 +46,7 @@ async fn miniflux_entries_before_after_entry_id() {
     .insert(&db)
     .await
     .unwrap();
-    let e2 = entry::ActiveModel {
+    let _e2 = entry::ActiveModel {
         feed_id: Set(f.id),
         guid: Set(Some("g2".into())),
         url: Set(Some("https://example.com/2".into())),

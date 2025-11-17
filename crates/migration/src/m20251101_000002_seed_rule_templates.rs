@@ -1,6 +1,4 @@
 use sea_orm_migration::prelude::*;
-use serde_json;
-use serde_yaml;
 
 #[derive(DeriveMigrationName)]
 pub struct Migration;

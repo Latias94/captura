@@ -25,6 +25,7 @@ pub const META_REUTERS_TOP: RouteMeta = RouteMeta {
     maintainers: &["captura"],
     url: "https://www.reuters.com/world/",
     description: "Reuters top news stories.",
+    default_view: Some("articles"),
 };
 
 pub async fn handler(_ctx: &mut HubCtx<'_>) -> captura_common::Result<HubData> {

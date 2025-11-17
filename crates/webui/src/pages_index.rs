@@ -2,6 +2,7 @@ use askama::Template;
 use axum::http::HeaderMap;
 use axum::response::{Html, IntoResponse};
 
+use crate::filters;
 use crate::i18n;
 use crate::util::{gen_csp_nonce, resolve_lang};
 
@@ -109,4 +110,3 @@ pub async fn signup(headers: HeaderMap) -> impl IntoResponse {
             .into_response(),
     }
 }
-

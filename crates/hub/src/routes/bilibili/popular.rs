@@ -31,6 +31,7 @@ pub const META_BILIBILI_POPULAR: RouteMeta = RouteMeta {
     maintainers: &["captura"],
     url: "https://www.bilibili.com/",
     description: "Bilibili 综合热门视频。",
+    default_view: Some("videos"),
 };
 
 pub async fn handler(ctx: &mut HubCtx<'_>) -> captura_common::Result<HubData> {

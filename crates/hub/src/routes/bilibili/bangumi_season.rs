@@ -38,6 +38,7 @@ pub const META_BILIBILI_BANGUMI_SEASON: RouteMeta = RouteMeta {
     maintainers: &["captura"],
     url: "https://www.bilibili.com/bangumi",
     description: "Bangumi season episodes by season id (simplified).",
+    default_view: Some("videos"),
 };
 
 pub async fn handler(ctx: &mut HubCtx<'_>) -> captura_common::Result<HubData> {

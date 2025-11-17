@@ -6,7 +6,7 @@ use std::env;
 ///
 /// These helpers mirror a subset of RSSHub's `utils.ts`, but are kept
 /// lightweight and self-contained in the `rules::bilibili` module.
-
+///
 /// Normalize a cover image URL to HTTPS and strip obvious issues.
 pub fn normalize_cover_url(url: &str) -> String {
     let mut u = url.trim().to_string();

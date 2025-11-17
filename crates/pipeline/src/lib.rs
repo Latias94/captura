@@ -354,6 +354,7 @@ mod live_tests {
             last_error_message: None,
             error_count: 0,
             disabled: false,
+            view: Some("articles".into()),
             scraper_rules: None,
             rewrite_rules: None,
             blocklist_rules: None,

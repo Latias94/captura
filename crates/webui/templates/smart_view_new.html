@@ -1,0 +1,39 @@
+{% extends "layout.html" %}
+{% block body %}
+<div class="view view--settings">
+  <h1 class="title">{{ dict["smart_views.new_title"] }}</h1>
+  <form method="post" action="/ui/smart-views/create" class="panel">
+    <div class="field">
+      <label class="label" for="sv_name">{{ dict["saved.save_as"] }}</label>
+      <input id="sv_name" class="input" name="name" required />
+    </div>
+    <div class="field">
+      <label class="label" for="sv_view">{{ dict["smart_views.view"] }}</label>
+      <select id="sv_view" class="input" name="view">
+        <option value="all" selected>{{ dict["filter.all"] }}</option>
+        <option value="articles">articles</option>
+        <option value="pictures">pictures</option>
+        <option value="videos">videos</option>
+        <option value="audios">audios</option>
+      </select>
+    </div>
+    <div class="field">
+      <label class="label" for="sv_status">{{ dict["smart_views.status"] }}</label>
+      <select id="sv_status" class="input" name="status">
+        <option value="">{{ dict["filter.all"] }}</option>
+        <option value="unread">{{ dict["filter.unread"] }}</option>
+        <option value="starred">{{ dict["filter.starred"] }}</option>
+      </select>
+    </div>
+    <div class="field">
+      <label class="label" for="sv_search">{{ dict["smart_views.search"] }}</label>
+      <input id="sv_search" class="input" name="search" />
+    </div>
+    <div class="actions">
+      <button class="button" type="submit">{{ dict["btn.create"] }}</button>
+      <a class="button ml-2" href="/feeds">{{ dict["nav.feeds"] }}</a>
+    </div>
+  </form>
+</div>
+{% endblock %}
+

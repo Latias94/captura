@@ -110,7 +110,7 @@ pub(crate) async fn create(
 ) -> MfResult<Json<MfCategoryDto>> {
     let auth = mf_auth(&st, &headers).await.map_err(from_api_error)?;
     if body.title.trim().is_empty() {
-        return Err(bad_request("title required").into());
+        return Err(bad_request("title required"));
     }
     let now = Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
     let am = category::ActiveModel {
@@ -140,10 +140,9 @@ pub(crate) async fn counters(
     headers: axum::http::HeaderMap,
 ) -> MfResult<Json<Vec<MfCatCounter>>> {
     let auth = mf_auth(&st, &headers).await.map_err(from_api_error)?;
-    let cat_map =
-        captura_service::query::category_unread_counters_for_user(&st.db, auth.user_id)
-            .await
-            .map_err(internal)?;
+    let cat_map = captura_service::query::category_unread_counters_for_user(&st.db, auth.user_id)
+        .await
+        .map_err(internal)?;
     let out = cat_map
         .into_iter()
         .map(|(category_id, unread)| MfCatCounter {
@@ -213,7 +212,7 @@ pub(crate) async fn update(
 ) -> MfResult<&'static str> {
     let auth = mf_auth(&st, &headers).await.map_err(from_api_error)?;
     if body.title.trim().is_empty() {
-        return Err(bad_request("title required").into());
+        return Err(bad_request("title required"));
     }
     let Some(cat) = category::Entity::find_by_id(id)
         .filter(category::Column::UserId.eq(auth.user_id))
@@ -221,7 +220,7 @@ pub(crate) async fn update(
         .await
         .map_err(internal)?
     else {
-        return Err(not_found("category").into());
+        return Err(not_found("category"));
     };
     let mut am: category::ActiveModel = cat.into();
     am.name = Set(body.title);

@@ -4,6 +4,50 @@
   <div class="toolbar">
     <a class="link" href="/feeds">← {{ dict["nav.feeds"] }}</a>
     <span class="ml-3">{{ smart_view.name }}</span>
+    <form method="post" action="/ui/smart-views/{{ smart_view.id }}/delete" class="inline-block ml-2" onsubmit="return confirm('{{ dict["smart_views.confirm_delete"] }}')">
+      <button class="button" type="submit">{{ dict["btn.delete"] }}</button>
+    </form>
+  </div>
+  <div class="toolbar my-2">
+    <form method="post" action="/ui/smart-views/{{ smart_view.id }}/update" class="inline-block">
+      <label class="label" for="sv_name">{{ dict["saved.save_as"] }}</label>
+      <input id="sv_name" class="input" name="name" value="{{ smart_view.name }}" />
+      <label class="label ml-2" for="sv_view">{{ dict["smart_views.view"] }}</label>
+      <select id="sv_view" class="input" name="view">
+        <option value="all" {% if smart_view.view.is_some() && smart_view.view.as_ref().unwrap() == "all" %}selected{% endif %}>{{ dict["filter.all"] }}</option>
+        <option value="articles" {% if smart_view.view.is_some() && smart_view.view.as_ref().unwrap() == "articles" %}selected{% endif %}>articles</option>
+        <option value="pictures" {% if smart_view.view.is_some() && smart_view.view.as_ref().unwrap() == "pictures" %}selected{% endif %}>pictures</option>
+        <option value="videos" {% if smart_view.view.is_some() && smart_view.view.as_ref().unwrap() == "videos" %}selected{% endif %}>videos</option>
+        <option value="audios" {% if smart_view.view.is_some() && smart_view.view.as_ref().unwrap() == "audios" %}selected{% endif %}>audios</option>
+      </select>
+      <label class="label ml-2" for="sv_status">{{ dict["smart_views.status"] }}</label>
+      <select id="sv_status" class="input" name="status">
+        <option value=""
+          {% if smart_view.filters.is_none()
+             || smart_view.filters.as_ref().unwrap().status.is_none()
+             || smart_view.filters.as_ref().unwrap().status.as_ref().unwrap() == "all" %}
+          selected
+          {% endif %}
+        >{{ dict["filter.all"] }}</option>
+        <option value="unread"
+          {% if smart_view.filters.is_some()
+             && smart_view.filters.as_ref().unwrap().status.is_some()
+             && smart_view.filters.as_ref().unwrap().status.as_ref().unwrap() == "unread" %}
+          selected
+          {% endif %}
+        >{{ dict["filter.unread"] }}</option>
+        <option value="starred"
+          {% if smart_view.filters.is_some()
+             && smart_view.filters.as_ref().unwrap().status.is_some()
+             && smart_view.filters.as_ref().unwrap().status.as_ref().unwrap() == "starred" %}
+          selected
+          {% endif %}
+        >{{ dict["filter.starred"] }}</option>
+      </select>
+      <label class="label ml-2" for="sv_search">{{ dict["smart_views.search"] }}</label>
+      <input id="sv_search" class="input" name="search" value="{% if smart_view.filters.is_some() && smart_view.filters.as_ref().unwrap().search.is_some() %}{{ smart_view.filters.as_ref().unwrap().search.as_ref().unwrap() }}{% endif %}" />
+      <button class="button ml-2" type="submit">{{ dict["btn.save"] }}</button>
+    </form>
   </div>
   <div class="toolbar my-2">
     <button type="button" class="button" id="btnSelectAll">{{ dict["btn.select_all"] }}</button>
@@ -66,4 +110,3 @@
   </div>
 </div>
 {% endblock %}
-

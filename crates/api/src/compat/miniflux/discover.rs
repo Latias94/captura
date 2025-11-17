@@ -41,7 +41,7 @@ pub(crate) async fn discover(
         .map_err(internal)?;
     let resp = client.get(base.clone()).send().await.map_err(internal)?;
     if !resp.status().is_success() {
-        return Err(not_found("unreachable").into());
+        return Err(not_found("unreachable"));
     }
     let content_type = resp
         .headers()
@@ -184,7 +184,7 @@ pub(crate) async fn discover(
         }
     }
     if list.is_empty() {
-        return Err(not_found("no_subscription").into());
+        return Err(not_found("no_subscription"));
     }
     if q.verify.unwrap_or(false) {
         let mut verified: Vec<MfSubscriptionDto> = Vec::new();
@@ -200,7 +200,7 @@ pub(crate) async fn discover(
             }
         }
         if verified.is_empty() {
-            return Err(not_found("no_subscription").into());
+            return Err(not_found("no_subscription"));
         }
         return Ok(Json(verified));
     }

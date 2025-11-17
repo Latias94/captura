@@ -59,4 +59,3 @@ pub fn client_basic(user_agent: Option<String>, timeout_ms: Option<u64>) -> Resu
 
     builder.build().map_err(|e| Error::Network(e.to_string()))
 }
-

@@ -46,9 +46,11 @@ pub(crate) async fn fetch_html_strategy(
 ) -> Result<String> {
     // Optional crawler path when `smart = true`.
     if fetch.smart.unwrap_or(false) {
-        let mut opts = CrawlOptions::default();
-        opts.user_agent = fetch.user_agent.clone();
-        opts.respect_robots = fetch.respect_robots.unwrap_or(true);
+        let mut opts = CrawlOptions {
+            user_agent: fetch.user_agent.clone(),
+            respect_robots: fetch.respect_robots.unwrap_or(true),
+            ..CrawlOptions::default()
+        };
         if let Some(d) = fetch.delay_ms {
             opts.delay_ms = d;
         }
@@ -122,6 +124,17 @@ pub async fn refresh_rule_v1(
         SourceType::SinglePage => execute_single_page_v1(feed, spec).await,
         SourceType::Json => {
             let params = merge_rule_params_v1(spec, feed.rule_params_json.as_ref());
+            // Rule-level proxies override feed-level proxy when provided so that
+            // rules can steer traffic through dedicated proxy pools (e.g. for
+            // specific regions), while still allowing feed-level defaults when
+            // no rule preference is set.
+            let effective_proxy = if let Some(pxs) = &spec.fetch.proxies {
+                pxs.first().cloned()
+            } else if feed.fetch_via_proxy {
+                feed.proxy_url.clone()
+            } else {
+                None
+            };
             let http_ctx = RuleExecHttpCtx {
                 user_agent: spec
                     .fetch
@@ -135,11 +148,7 @@ pub async fn refresh_rule_v1(
                     .cloned(),
                 cookies: feed.cookies.clone(),
                 basic_auth: feed.username.clone().map(|u| (u, feed.password.clone())),
-                proxy_url: if feed.fetch_via_proxy {
-                    feed.proxy_url.clone()
-                } else {
-                    None
-                },
+                proxy_url: effective_proxy,
                 timeout_ms: spec
                     .fetch
                     .timeout_ms
@@ -184,7 +193,7 @@ struct FullContentMatcher {
 async fn apply_full_content_when_v1(
     feed: &feed::Model,
     spec: &RuleSpecV1,
-    entries: &mut Vec<NormalizedEntry>,
+    entries: &mut [NormalizedEntry],
 ) -> Result<()> {
     let Some(filters) = &spec.filters else {
         return Ok(());
@@ -310,8 +319,7 @@ async fn execute_list_detail_v1(
         None
     };
 
-    let client =
-        crate::http_client::client_for_feed(feed, Some(ua), spec.fetch.timeout_ms)?;
+    let client = crate::http_client::client_for_feed(feed, Some(ua), spec.fetch.timeout_ms)?;
 
     let fetch_cfg = FetchCfg {
         user_agent: spec

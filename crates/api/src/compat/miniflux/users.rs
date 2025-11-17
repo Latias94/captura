@@ -12,7 +12,7 @@ use sea_orm::{
 };
 
 use captura_storage::entity::user as user_entity;
-use captura_storage::entity::{user_pref};
+use captura_storage::entity::user_pref;
 
 // ---------- DTO ----------
 #[derive(serde::Serialize)]
@@ -82,7 +82,7 @@ pub(super) async fn ensure_admin(st: &AppState, user_id: i64) -> MfResult<()> {
     if is_admin_role(&u.role) {
         Ok(())
     } else {
-        Err(forbidden("admin required").into())
+        Err(forbidden("admin required"))
     }
 }
 
@@ -254,7 +254,7 @@ pub(crate) async fn create(
     let auth = mf_auth(&st, &headers).await.map_err(from_api_error)?;
     ensure_admin(&st, auth.user_id).await?;
     if body.username.trim().is_empty() || body.password.is_empty() {
-        return Err(bad_request("username/password required").into());
+        return Err(bad_request("username/password required"));
     }
     let exists = user_entity::Entity::find()
         .filter(user_entity::Column::Username.eq(&body.username))
@@ -262,7 +262,7 @@ pub(crate) async fn create(
         .await
         .map_err(internal)?;
     if exists > 0 {
-        return Err(bad_request("username exists").into());
+        return Err(bad_request("username exists"));
     }
     let salt = argon2::password_hash::SaltString::generate(&mut OsRng);
     let hash = argon2::Argon2::default()
@@ -300,7 +300,7 @@ pub(crate) async fn update(
         .await
         .map_err(internal)?
     else {
-        return Err(not_found("user").into());
+        return Err(not_found("user"));
     };
     let mut am: user_entity::ActiveModel = model.into();
     if let Some(name) = body.username {
@@ -426,14 +426,14 @@ pub(crate) async fn delete(
     let auth = mf_auth(&st, &headers).await.map_err(from_api_error)?;
     ensure_admin(&st, auth.user_id).await?;
     if id == auth.user_id {
-        return Err(bad_request("cannot delete self").into());
+        return Err(bad_request("cannot delete self"));
     }
     let Some(u) = user_entity::Entity::find_by_id(id)
         .one(&st.db)
         .await
         .map_err(internal)?
     else {
-        return Err(not_found("user").into());
+        return Err(not_found("user"));
     };
     let am: user_entity::ActiveModel = u.into();
     am.delete(&st.db).await.map_err(internal)?;
@@ -452,16 +452,10 @@ pub(crate) async fn mark_all_read(
 ) -> MfResult<&'static str> {
     let auth = mf_auth(&st, &headers).await.map_err(from_api_error)?;
     if auth.user_id != id {
-        return Err(not_found("user").into());
+        return Err(not_found("user"));
     }
-    let _ = captura_service::query::mark_entries_read_for_user(
-        &st.db,
-        id,
-        None,
-        None,
-        None,
-    )
-    .await
-    .map_err(internal)?;
+    let _ = captura_service::query::mark_entries_read_for_user(&st.db, id, None, None, None)
+        .await
+        .map_err(internal)?;
     Ok("ok")
 }

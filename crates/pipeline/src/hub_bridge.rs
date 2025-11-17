@@ -3,7 +3,7 @@ use captura_rules::routes::types::{HubCtx, HubData, Route};
 
 fn find_builtin_route(hub_id: &str) -> Option<&'static Route> {
     captura_rules::routes::registry::builtin_routes()
-        .into_iter()
+        .iter()
         .find(|r| r.meta.hub_id == hub_id)
 }
 

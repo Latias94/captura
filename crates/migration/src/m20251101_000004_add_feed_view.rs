@@ -10,7 +10,12 @@ impl MigrationTrait for Migration {
             .alter_table(
                 Table::alter()
                     .table(Feed::Table)
-                    .add_column_if_not_exists(ColumnDef::new(Feed::View).string())
+                    .add_column_if_not_exists(
+                        ColumnDef::new(Feed::View)
+                            .string()
+                            .not_null()
+                            .default("articles"),
+                    )
                     .to_owned(),
             )
             .await
@@ -33,4 +38,3 @@ enum Feed {
     Table,
     View,
 }
-

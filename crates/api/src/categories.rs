@@ -6,9 +6,7 @@ use axum_extra::typed_header::TypedHeader;
 use chrono::{FixedOffset, Utc};
 use headers::authorization::Bearer;
 use headers::Authorization;
-use sea_orm::{
-    ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, QueryOrder, Set,
-};
+use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, QueryOrder, Set};
 use serde::Deserialize;
 
 use captura_storage::entity::category;
@@ -34,7 +32,7 @@ pub(crate) async fn list_categories(
             .map(|c| CategoryDto {
                 id: c.id,
                 name: c.name,
-                view: c.view.as_deref().and_then(EntryView::from_str),
+                view: EntryView::from_db(c.view.as_deref()).unwrap_or(EntryView::Articles),
             })
             .collect(),
     ))
@@ -56,11 +54,19 @@ pub(crate) async fn create_category(
     if name.is_empty() || name.len() > 128 {
         return Err(bad_request("invalid category name"));
     }
+    if let Some(v) = body.view {
+        if matches!(v, EntryView::All) {
+            return Err(bad_request("view 'all' is not allowed for categories"));
+        }
+    }
     let now = Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
+    let view = body.view.unwrap_or(EntryView::Articles);
     let am = category::ActiveModel {
         user_id: Set(user.user_id),
         name: Set(name.to_string()),
-        view: Set(body.view.map(|v| v.as_str().to_string())),
+        // Always persist a concrete view string; schema enforces NOT NULL with a
+        // default of "articles", and we keep the same semantics here.
+        view: Set(Some(view.to_db())),
         created_at: Set(now),
         ..Default::default()
     };
@@ -92,7 +98,7 @@ pub(crate) async fn get_category(
     Ok(Json(CategoryDto {
         id: c.id,
         name: c.name,
-        view: c.view.as_deref().and_then(EntryView::from_str),
+        view: EntryView::from_db(c.view.as_deref()).unwrap_or(EntryView::Articles),
     }))
 }
 
@@ -119,7 +125,10 @@ pub(crate) async fn update_category(
     }
     am.name = Set(name.to_string());
     if let Some(v) = body.view {
-        am.view = Set(Some(v.as_str().to_string()));
+        if matches!(v, EntryView::All) {
+            return Err(bad_request("view 'all' is not allowed for categories"));
+        }
+        am.view = Set(Some(v.to_db()));
     }
     am.update(&st.db).await.map_err(internal)?;
     Ok("ok")
@@ -151,10 +160,9 @@ pub(crate) async fn category_counters(
     TypedHeader(Authorization(bearer)): TypedHeader<Authorization<Bearer>>,
 ) -> ApiResult<Json<Vec<CategoryCounterDto>>> {
     let user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
-    let cat_map =
-        captura_service::query::category_unread_counters_for_user(&st.db, user.user_id)
-            .await
-            .map_err(internal)?;
+    let cat_map = captura_service::query::category_unread_counters_for_user(&st.db, user.user_id)
+        .await
+        .map_err(internal)?;
     let out = cat_map
         .into_iter()
         .map(|(category_id, unread)| CategoryCounterDto {

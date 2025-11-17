@@ -40,6 +40,7 @@ pub const META_BILIBILI_USER_VIDEO: RouteMeta = RouteMeta {
     maintainers: &["captura"],
     url: "https://space.bilibili.com",
     description: "Latest videos from a Bilibili user space.",
+    default_view: Some("videos"),
 };
 
 pub async fn handler(ctx: &mut HubCtx<'_>) -> captura_common::Result<HubData> {

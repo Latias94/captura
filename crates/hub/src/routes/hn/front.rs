@@ -25,6 +25,7 @@ pub const META_HN_FRONT: RouteMeta = RouteMeta {
     maintainers: &["captura"],
     url: "https://news.ycombinator.com/",
     description: "Hacker News front page stories.",
+    default_view: Some("articles"),
 };
 
 pub async fn handler(_ctx: &mut HubCtx<'_>) -> captura_common::Result<HubData> {

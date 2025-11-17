@@ -40,6 +40,7 @@ pub fn rule() -> RuleSpecV1 {
             respect_robots: Some(true),
             proxies: None,
         },
+        default_view: Some("social".to_string()),
         source: SourceSpec {
             kind: SourceType::Json,
             // list_detail-only fields

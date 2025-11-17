@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use url::Url;
 
 use captura_service as service;
-use captura_storage::entity::{enclosure, entry};
+use captura_storage::entity::{category, enclosure, entry};
 use captura_storage::entity::{feed, job};
 
 use crate::auth::AuthUser;
@@ -53,6 +53,17 @@ pub(crate) struct CreateFeedReq {
 #[derive(Serialize)]
 pub(crate) struct CreateFeedResp {
     pub id: i64,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct BulkViewReq {
+    pub feed_ids: Vec<i64>,
+    pub view: EntryView,
+}
+
+#[derive(Serialize)]
+pub(crate) struct BulkViewResp {
+    pub updated: u64,
 }
 
 #[derive(Deserialize)]
@@ -139,7 +150,7 @@ pub(crate) async fn list_feeds(
                 site_url: f.site_url,
                 disabled: f.disabled,
                 category_id: f.category_id,
-                view: f.view.as_deref().and_then(EntryView::from_str),
+                view: EntryView::from_db(f.view.as_deref()).unwrap_or(EntryView::Articles),
             })
             .collect(),
     ))
@@ -159,7 +170,7 @@ pub(crate) async fn get_feed(
         site_url: f.site_url,
         disabled: f.disabled,
         category_id: f.category_id,
-        view: f.view.as_deref().and_then(EntryView::from_str),
+        view: EntryView::from_db(f.view.as_deref()).unwrap_or(EntryView::Articles),
     }))
 }
 
@@ -207,6 +218,9 @@ pub(crate) async fn update_feed(
         am.disabled = Set(d);
     }
     if let Some(v) = body.view {
+        if matches!(v, EntryView::All) {
+            return Err(bad_request("view 'all' is not allowed for feeds"));
+        }
         // Store as snake_case string in DB.
         am.view = Set(Some(v.as_str().to_string()));
     }
@@ -248,6 +262,39 @@ pub(crate) async fn delete_feed(
     let am: feed::ActiveModel = f.into();
     am.delete(&st.db).await.map_err(internal)?;
     Ok("ok")
+}
+
+/// Bulk update the preferred view for a set of feeds belonging to the current user.
+///
+/// This powers UI flows like “Move selected subscriptions to Pictures view”
+/// without requiring the client to send one request per feed.
+pub(crate) async fn bulk_update_view(
+    State(st): State<AppState>,
+    TypedHeader(Authorization(bearer)): TypedHeader<Authorization<Bearer>>,
+    Json(body): Json<BulkViewReq>,
+) -> ApiResult<Json<BulkViewResp>> {
+    let user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
+    if body.feed_ids.is_empty() {
+        return Err(bad_request("feed_ids must not be empty"));
+    }
+    if matches!(body.view, EntryView::All) {
+        return Err(bad_request("view 'all' is not allowed for feeds"));
+    }
+    // Persist the new view as a snake_case string.
+    let view_str = body.view.to_db();
+    let res = feed::Entity::update_many()
+        .col_expr(
+            feed::Column::View,
+            sea_orm::sea_query::Expr::value(view_str),
+        )
+        .filter(feed::Column::UserId.eq(user.user_id))
+        .filter(feed::Column::Id.is_in(body.feed_ids.clone()))
+        .exec(&st.db)
+        .await
+        .map_err(internal)?;
+    Ok(Json(BulkViewResp {
+        updated: res.rows_affected as u64,
+    }))
 }
 
 pub(crate) async fn create_feed(
@@ -314,8 +361,27 @@ pub(crate) async fn create_feed(
             return Err(bad_request("headers_json must be an object"));
         }
     }
+    if let Some(v) = body.view {
+        if matches!(v, EntryView::All) {
+            return Err(bad_request("view 'all' is not allowed for feeds"));
+        }
+    }
+    // If a category is provided, ensure ownership and capture its view as default feed view when
+    // the request does not explicitly specify one.
+    let mut inherited_view: Option<EntryView> = None;
     if let Some(cid) = body.category_id {
         crate::util::assert_category_ownership(&st.db, user.user_id, cid).await?;
+        if body.view.is_none() {
+            if let Some(cat) = category::Entity::find()
+                .filter(category::Column::UserId.eq(user.user_id))
+                .filter(category::Column::Id.eq(cid))
+                .one(&st.db)
+                .await
+                .map_err(internal)?
+            {
+                inherited_view = cat.view.as_deref().and_then(EntryView::from_str);
+            }
+        }
     }
     let dup = feed::Entity::find()
         .filter(feed::Column::UserId.eq(user.user_id))
@@ -326,6 +392,31 @@ pub(crate) async fn create_feed(
     if dup.is_some() {
         return Err(bad_request("feed already exists"));
     }
+    // Decide effective preferred view for this feed: request payload wins, then
+    // Hub route default view (for captura_hub feeds), then inherited category view,
+    // finally default articles view.
+    let mut hub_default_view: Option<EntryView> = None;
+    if effective_type == feed::FeedType::Hub && body.view.is_none() {
+        if let Some(rest) = normalized_feed_url.strip_prefix("captura_hub://") {
+            let path = rest
+                .split_once('?')
+                .map(|(p, _)| p.to_string())
+                .unwrap_or_else(|| rest.to_string());
+            let hub_id = path.trim_start_matches('/');
+            if let Some(meta) = captura_rules::routes::registry::find_route_meta(hub_id) {
+                if let Some(v) = meta.default_view {
+                    hub_default_view = EntryView::from_str(v);
+                }
+            }
+        }
+    }
+
+    let effective_view = body
+        .view
+        .or(hub_default_view)
+        .or(inherited_view)
+        .unwrap_or(EntryView::Articles);
+
     // Regular feed or hub subscription path
     let am = feed::ActiveModel {
         user_id: Set(user.user_id),
@@ -353,7 +444,10 @@ pub(crate) async fn create_feed(
         last_status: Set(None),
         error_count: Set(0),
         disabled: Set(body.disabled.unwrap_or(false)),
-        view: Set(body.view.map(|v| v.as_str().to_string())),
+        // Persist a concrete view string; schema enforces NOT NULL with a
+        // default of "articles", but we still compute the effective view here
+        // to make semantics explicit and future-proof.
+        view: Set(Some(effective_view.to_db())),
         scraper_rules: Set(None),
         rewrite_rules: Set(None),
         blocklist_rules: Set(None),
@@ -375,8 +469,9 @@ pub(crate) async fn feeds_counters(
     TypedHeader(Authorization(bearer)): TypedHeader<Authorization<Bearer>>,
 ) -> ApiResult<Json<FeedCountersDto>> {
     let user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
-    let (reads, unreads) =
-        service::query::feed_counters_for_user(&st.db, user.user_id).await.map_err(internal)?;
+    let (reads, unreads) = service::query::feed_counters_for_user(&st.db, user.user_id)
+        .await
+        .map_err(internal)?;
     Ok(Json(FeedCountersDto { reads, unreads }))
 }
 

@@ -3,8 +3,6 @@ use base64::Engine as _;
 use rand_core::{OsRng, RngCore};
 use std::time::Duration;
 
-use crate::i18n;
-
 #[derive(Default)]
 pub struct UiSnippets {
     pub custom_css: String,
@@ -131,4 +129,3 @@ pub async fn resolve_lang(headers: &HeaderMap) -> String {
     }
     "en_US".into()
 }
-

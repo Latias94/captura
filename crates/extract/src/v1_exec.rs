@@ -1,5 +1,6 @@
 use captura_common::{NormalizedEntry, Result};
 use reqwest::Client;
+use scraper::{Html, Selector};
 use serde_json::Value as JsonValue;
 use std::time::Duration;
 use tracing::debug;
@@ -107,19 +108,44 @@ fn extract_items_for_source(
     value: &JsonValue,
     mapping: &JsonMappingSpec,
 ) -> Vec<NormalizedEntry> {
-    let base = if let Some(path) = root {
-        match json_get_path(value, path) {
-            Some(v) => v,
-            None => return Vec::new(),
+    match root {
+        None => match value {
+            JsonValue::Array(arr) => map_json_items(arr, mapping),
+            JsonValue::Object(_) => map_json_items(std::slice::from_ref(value), mapping),
+            _ => Vec::new(),
+        },
+        Some(path) => {
+            // When the root is applied to an array (e.g. aggregated JSON
+            // documents from `from_html.multiple=true`), walk each element and
+            // collect items from the path inside that element.
+            if let JsonValue::Array(arr) = value {
+                let mut out = Vec::new();
+                for elem in arr {
+                    if let Some(target) = json_get_path(elem, path) {
+                        match target {
+                            JsonValue::Array(inner) => {
+                                out.extend(map_json_items(inner, mapping));
+                            }
+                            JsonValue::Object(_) => {
+                                out.extend(map_json_items(std::slice::from_ref(target), mapping));
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                out
+            } else {
+                let base = match json_get_path(value, path) {
+                    Some(v) => v,
+                    None => return Vec::new(),
+                };
+                match base {
+                    JsonValue::Array(arr) => map_json_items(arr, mapping),
+                    JsonValue::Object(_) => map_json_items(std::slice::from_ref(base), mapping),
+                    _ => Vec::new(),
+                }
+            }
         }
-    } else {
-        value
-    };
-
-    match base {
-        JsonValue::Array(arr) => map_json_items(arr, mapping),
-        JsonValue::Object(_) => map_json_items(&[base.clone()], mapping),
-        _ => Vec::new(),
     }
 }
 
@@ -165,21 +191,69 @@ pub async fn execute_json_v1_stateless(
             entries.extend(src_entries);
         }
     } else {
-        // Single-source mode: use source.request/root/mapping.
-        let req = spec.source.request.as_ref().ok_or_else(|| {
-            captura_common::Error::Config("source.request is required for json".into())
-        })?;
+        // Single-source mode: use source.request/root/mapping or from_html.
         let mapping = spec.source.mapping.as_ref().ok_or_else(|| {
             captura_common::Error::Config("source.mapping is required for json".into())
         })?;
 
-        let html_or_json = fetch_json_text(&client, spec, ctx, req).await?;
-        let value: JsonValue = serde_json::from_str(&html_or_json)
-            .map_err(|e| captura_common::Error::Parse(e.to_string()))?;
+        if let Some(from_html) = &spec.source.from_html {
+            // JSON embedded in HTML: fetch HTML, extract JSON text from nodes
+            // selected by CSS, then parse and apply root/mapping.
+            let req = from_html
+                .request
+                .as_ref()
+                .or(spec.source.request.as_ref())
+                .ok_or_else(|| {
+                    captura_common::Error::Config(
+                        "source.request or from_html.request is required for json/from_html".into(),
+                    )
+                })?;
 
-        let root = spec.source.root.as_deref();
-        let mapped = extract_items_for_source(root, &value, mapping);
-        entries.extend(mapped);
+            let html_text = fetch_json_text(&client, spec, ctx, req).await?;
+            let doc = Html::parse_document(&html_text);
+            let selector = Selector::parse(&from_html.selector).map_err(|e| {
+                captura_common::Error::Config(format!("invalid from_html.selector: {e}"))
+            })?;
+
+            let mut docs: Vec<JsonValue> = Vec::new();
+            for node in doc.select(&selector) {
+                let text = node.text().collect::<String>();
+                let trimmed = text.trim();
+                if trimmed.is_empty() {
+                    continue;
+                }
+                match serde_json::from_str::<JsonValue>(trimmed) {
+                    Ok(v) => docs.push(v),
+                    Err(e) => {
+                        debug!("failed to parse JSON from from_html node: {}", e);
+                    }
+                }
+            }
+
+            if !docs.is_empty() {
+                let root = spec.source.root.as_deref();
+                let value = if from_html.multiple.unwrap_or(false) {
+                    JsonValue::Array(docs)
+                } else {
+                    // NOTE: we already checked `docs` is non-empty.
+                    docs.into_iter().next().unwrap()
+                };
+                let mapped = extract_items_for_source(root, &value, mapping);
+                entries.extend(mapped);
+            }
+        } else {
+            // Pure JSON source: fetch and map as before.
+            let req = spec.source.request.as_ref().ok_or_else(|| {
+                captura_common::Error::Config("source.request is required for json".into())
+            })?;
+            let html_or_json = fetch_json_text(&client, spec, ctx, req).await?;
+            let value: JsonValue = serde_json::from_str(&html_or_json)
+                .map_err(|e| captura_common::Error::Parse(e.to_string()))?;
+
+            let root = spec.source.root.as_deref();
+            let mapped = extract_items_for_source(root, &value, mapping);
+            entries.extend(mapped);
+        }
     }
 
     Ok(entries)

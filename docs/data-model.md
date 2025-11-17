@@ -7,7 +7,7 @@ This document summarizes the current schema intended to avoid frequent breaking 
 - user
   - id (PK), username (unique), password_hash, fever_key_md5 (nullable), created_at
 - category
-  - id (PK), user_id (FK user), name, view (optional, preferred view for this category), created_at
+  - id (PK), user_id (FK user), name, view (NOT NULL, preferred view for this category; same key space as feed.view), created_at
 - rule
   - id (PK), rule_id (unique), version, namespace, description, yaml (DSL), examples_json, verified_at, maintainer, created_at, updated_at
 - feed
@@ -15,7 +15,10 @@ This document summarizes the current schema intended to avoid frequent breaking 
   - type: rss | atom | json | rule
   - title, site_url, feed_url (for rule-type: source URL)
   - favicon_id (FK favicon, nullable), rule_id (FK rule, nullable)
-  - view (optional, preferred view for this feed: articles | pictures | videos | audios | social | notifications)
+  - view (NOT NULL, preferred view for this feed: articles | pictures | videos | audios | social | notifications; stored as snake_case string)
+    - 语义：视图是**订阅属性**，不是纯查询参数；它决定该订阅在时间线中的默认呈现方式（例如文章流、图片流、视频流），并参与 `/api/v1/entries` 与 “mark-all-read” 等操作。
+    - 继承规则：当创建订阅时未显式指定 `view` 且 `category_id` 指向的分类设置了 `view`，订阅会默认继承该分类视图；否则使用默认文章视图（`articles`）。
+    - 查询侧可以通过 `?view=` 临时过滤：例如 `view=pictures` 仅返回首选视图为图片的订阅条目；`view=all` 则表示不按视图过滤。注意：逻辑视图 `all` **不会**写入 `feed.view`，仅存在于查询和 SmartView 语义中。
   - fetch options: user_agent, headers_json, cookies, proxy_url, fetch_via_proxy, disable_http2, allow_invalid_certs, request_timeout_ms
   - scheduling & state: checked_at, next_run_at, etag, last_modified, last_status, error_count, disabled
   - rewriting & filtering: scraper_rules, rewrite_rules, blocklist_rules, keeplist_rules, url_rewrite_rules, block_filter_entry_rules, keep_filter_entry_rules

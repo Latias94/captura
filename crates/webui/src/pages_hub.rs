@@ -7,6 +7,7 @@ use axum::{
 use serde::Deserialize;
 use std::time::Duration;
 
+use crate::filters;
 use crate::i18n;
 use crate::util::{api_base, gen_csp_nonce, load_snippets, read_token_cookie, resolve_lang};
 
@@ -106,15 +107,13 @@ pub struct UiTryRuleEntry {
 #[derive(Deserialize, Clone)]
 pub struct UiTryRuleResp {
     pub used_smart: bool,
-    pub list_url: String,
     pub item_count: usize,
     pub entries: Vec<UiTryRuleEntry>,
-    pub timeout_ms: Option<u64>,
     pub duration_ms: u128,
 }
 
 #[derive(Deserialize, Default)]
-struct UiHubQuery {
+pub struct UiHubQuery {
     url: Option<String>,
 }
 
@@ -132,7 +131,13 @@ pub async fn ui_hub_routes(headers: HeaderMap, _q: Query<UiHubQuery>) -> impl In
         .build()
     {
         Ok(c) => c,
-        Err(_) => return (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "http client error").into_response(),
+        Err(_) => {
+            return (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                "http client error",
+            )
+                .into_response();
+        }
     };
 
     #[derive(Deserialize)]
@@ -182,7 +187,11 @@ pub async fn ui_hub_routes(headers: HeaderMap, _q: Query<UiHubQuery>) -> impl In
     };
     match tpl.render() {
         Ok(s) => Html(s).into_response(),
-        Err(_) => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "template error").into_response(),
+        Err(_) => (
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            "template error",
+        )
+            .into_response(),
     }
 }
 
@@ -200,7 +209,13 @@ pub async fn ui_hub_test(headers: HeaderMap, Query(q): Query<UiHubQuery>) -> imp
         .build()
     {
         Ok(c) => c,
-        Err(_) => return (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "http client error").into_response(),
+        Err(_) => {
+            return (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                "http client error",
+            )
+                .into_response();
+        }
     };
 
     let mut preview: Option<UiHubPreview> = None;
@@ -238,20 +253,27 @@ pub async fn ui_hub_test(headers: HeaderMap, Query(q): Query<UiHubQuery>) -> imp
     };
     match tpl.render() {
         Ok(s) => Html(s).into_response(),
-        Err(_) => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "template error").into_response(),
+        Err(_) => (
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            "template error",
+        )
+            .into_response(),
     }
 }
 
 use axum::Form;
 
 #[derive(Deserialize)]
-struct RulesTestForm {
+pub struct RulesTestForm {
     url: String,
     #[serde(default)]
     yaml: String,
 }
 
-pub async fn ui_rules_test(headers: HeaderMap, Form(form): Form<RulesTestForm>) -> impl IntoResponse {
+pub async fn ui_rules_test(
+    headers: HeaderMap,
+    Form(form): Form<RulesTestForm>,
+) -> impl IntoResponse {
     let Some(token) = read_token_cookie(&headers) else {
         return Redirect::to("/login").into_response();
     };
@@ -268,36 +290,42 @@ pub async fn ui_rules_test(headers: HeaderMap, Form(form): Form<RulesTestForm>) 
     };
     let mut result: Option<UiTryRuleResp> = None;
 
-    if !url.trim().is_empty() && yaml.is_some() {
-        let cli = match reqwest::Client::builder()
-            .timeout(Duration::from_secs(6))
-            .build()
-        {
-            Ok(c) => c,
-            Err(_) => {
-                return (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "http client error").into_response();
+    if !url.trim().is_empty() {
+        if let Some(yaml_str) = yaml.as_ref() {
+            let cli = match reqwest::Client::builder()
+                .timeout(Duration::from_secs(6))
+                .build()
+            {
+                Ok(c) => c,
+                Err(_) => {
+                    return (
+                        axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                        "http client error",
+                    )
+                        .into_response();
+                }
+            };
+            #[derive(serde::Serialize)]
+            struct TryReq<'a> {
+                url: &'a str,
+                yaml: &'a str,
             }
-        };
-        #[derive(serde::Serialize)]
-        struct TryReq<'a> {
-            url: &'a str,
-            yaml: &'a str,
-        }
-        let body = TryReq {
-            url: &url,
-            yaml: yaml.as_ref().unwrap(),
-        };
-        let endpoint = format!("{}/api/v1/rules/try", api_base());
-        if let Ok(resp) = cli
-            .post(endpoint)
-            .header("Authorization", format!("Bearer {}", token))
-            .json(&body)
-            .send()
-            .await
-            .and_then(|r| r.error_for_status())
-        {
-            if let Ok(r) = resp.json::<UiTryRuleResp>().await {
-                result = Some(r);
+            let body = TryReq {
+                url: &url,
+                yaml: yaml_str,
+            };
+            let endpoint = format!("{}/api/v1/rules/try", api_base());
+            if let Ok(resp) = cli
+                .post(endpoint)
+                .header("Authorization", format!("Bearer {}", token))
+                .json(&body)
+                .send()
+                .await
+                .and_then(|r| r.error_for_status())
+            {
+                if let Ok(r) = resp.json::<UiTryRuleResp>().await {
+                    result = Some(r);
+                }
             }
         }
     }
@@ -315,7 +343,10 @@ pub async fn ui_rules_test(headers: HeaderMap, Form(form): Form<RulesTestForm>) 
     };
     match tpl.render() {
         Ok(s) => Html(s).into_response(),
-        Err(_) => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "template error").into_response(),
+        Err(_) => (
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            "template error",
+        )
+            .into_response(),
     }
 }
-

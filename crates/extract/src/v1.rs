@@ -25,6 +25,10 @@ pub struct RuleSpecV1 {
     pub params: Option<ParamsSpec>,
     #[serde(default)]
     pub fetch: FetchDefaults,
+    /// Optional default view suggested by this rule when creating feeds from it.
+    /// Expressed as snake_case string (e.g. "articles", "pictures", "videos").
+    #[serde(default)]
+    pub default_view: Option<String>,
     pub source: SourceSpec,
     pub filters: Option<FiltersSpec>,
     pub transform: Option<TransformSpec>,

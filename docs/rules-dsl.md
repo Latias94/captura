@@ -92,6 +92,7 @@ version: 1
 description: GitHub Trending repositories
 author: captura
 tags: [github, trending]
+default_view: articles
 examples:
   - https://github.com/trending
 
@@ -134,6 +135,13 @@ transform:
 - `author` (string, optional): rule author/maintainer.
 - `tags` (string[], optional): tags for discovery and grouping.
 - `examples` (string[], optional): example URLs for testing and docs.
+- `default_view` (string, optional): recommended `EntryView` for feeds created
+  from this rule (e.g. `articles`, `pictures`, `videos`, `audios`, `social`,
+  `notifications`). When a client creates a feed from a rule template and does
+  not explicitly specify a view, this value can be used as the initial
+  `feed.view`. The special logical view `all` is not stored in `feed.view` and
+  should not be used here; use `articles` instead when you want the traditional
+  article timeline.
 
 ### 2.2 Match
 
@@ -575,6 +583,51 @@ Semantics:
 
 Initial v1 implementations may choose to support only the `multiple=false`
 case; the schema is defined to allow more complete implementations later.
+
+**Concrete example**
+
+HTML page:
+
+```html
+<html>
+  <body>
+    <script id="data" type="application/json">
+      {"items":[{"title":"FromHtml Title","url":"https://example.com/from_html"}]}
+    </script>
+  </body>
+</html>
+```
+
+Rule (single embedded JSON document, `multiple=false` by default):
+
+```yaml
+id: "test.rule.json_from_html"
+version: 1
+description: "json from html pipeline"
+
+source:
+  type: json
+
+  from_html:
+    request:
+      url: "https://example.com/html_json"
+    selector: "script#data"
+    # multiple: false (default)
+
+  root: "items"
+  mapping:
+    title: "title"
+    url: "url"
+```
+
+Semantics:
+
+- The engine:
+  1. Fetches `https://example.com/html_json`;
+  2. Locates `<script id="data">…</script>` via `selector`;
+  3. Parses its text as JSON, yielding `{"items":[...]}`;
+  4. Applies `root = "items"` to obtain the array of items;
+  5. For each item, maps `title` and `url` into normalized entries.
 
 ---
 

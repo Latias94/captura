@@ -349,7 +349,7 @@ fn extract_cover_bvid_aid(major: &JsonValue) -> (Option<String>, Option<String>,
         let cover = archive
             .get("cover")
             .and_then(|c| c.as_str())
-            .map(|s| normalize_cover_url(s));
+            .map(normalize_cover_url);
         let bvid = archive
             .get("bvid")
             .and_then(|b| b.as_str())
@@ -365,7 +365,7 @@ fn extract_cover_bvid_aid(major: &JsonValue) -> (Option<String>, Option<String>,
                 let cover = first
                     .get("url")
                     .and_then(|u| u.as_str())
-                    .map(|s| normalize_cover_url(s));
+                    .map(normalize_cover_url);
                 return (cover, None, None);
             }
         }
@@ -376,7 +376,7 @@ fn extract_cover_bvid_aid(major: &JsonValue) -> (Option<String>, Option<String>,
         let cover = live
             .get("cover")
             .and_then(|c| c.as_str())
-            .map(|s| normalize_cover_url(s));
+            .map(normalize_cover_url);
         return (cover, None, None);
     }
 

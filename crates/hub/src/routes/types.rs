@@ -52,6 +52,11 @@ pub struct RouteMeta {
     pub maintainers: &'static [&'static str],
     pub url: &'static str,
     pub description: &'static str,
+    /// Optional preferred EntryView for feeds created from this Hub route, expressed
+    /// as a snake_case string (e.g. "articles", "pictures", "videos", ...).
+    /// When present and the client does not explicitly choose a view, feed
+    /// creation can use this as the default subscription view.
+    pub default_view: Option<&'static str>,
 }
 
 /// Item-level structure returned by Hub handlers (similar to RSSHub's DataItem).

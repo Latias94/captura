@@ -60,6 +60,7 @@ pub const META_GITHUB_TRENDING: RouteMeta = RouteMeta {
     maintainers: &["captura"],
     url: "https://github.com/trending",
     description: "GitHub Trending repositories (inspired by RSSHub github/trending route).",
+    default_view: Some("social"),
 };
 
 pub async fn handler(ctx: &mut HubCtx<'_>) -> captura_common::Result<HubData> {

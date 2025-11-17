@@ -32,6 +32,7 @@ pub const META_BILIBILI_RANKING: RouteMeta = RouteMeta {
     maintainers: &["captura"],
     url: "https://www.bilibili.com/v/popular/rank/all",
     description: "Bilibili ranking list (numeric rid).",
+    default_view: Some("videos"),
 };
 
 pub async fn handler(ctx: &mut HubCtx<'_>) -> captura_common::Result<HubData> {

@@ -32,6 +32,7 @@ pub const META_BILIBILI_LINK_NEWS: RouteMeta = RouteMeta {
     maintainers: &["captura"],
     url: "https://link.bilibili.com/p/eden/news",
     description: "Bilibili link product announcements (live / vc / wh).",
+    default_view: Some("notifications"),
 };
 
 pub async fn handler(ctx: &mut HubCtx<'_>) -> captura_common::Result<HubData> {

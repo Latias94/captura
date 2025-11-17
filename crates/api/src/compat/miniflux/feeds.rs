@@ -308,9 +308,15 @@ pub(crate) async fn mark_all_read(
     else {
         return Err(not_found("feed").into());
     };
-    let _ = captura_service::query::mark_entries_read_for_user(&st.db, auth.user_id, Some(id), None, None)
-        .await
-        .map_err(internal)?;
+    let _ = captura_service::query::mark_entries_read_for_user(
+        &st.db,
+        auth.user_id,
+        Some(id),
+        None,
+        None,
+    )
+    .await
+    .map_err(internal)?;
     Ok((
         axum::http::StatusCode::NO_CONTENT,
         axum::body::Body::empty(),

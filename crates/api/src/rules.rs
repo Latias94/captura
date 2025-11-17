@@ -13,13 +13,13 @@ use sea_orm::{
 use serde::{Deserialize, Serialize};
 
 use captura_rules::v1::{parse_rule_v1, RuleSpecV1, SourceType};
-use captura_storage::entity::{feed, rule};
+use captura_storage::entity::{category, feed, rule};
 
 use crate::auth::AuthUser;
 use crate::error::{bad_request, forbidden, internal, not_found, ApiResult};
 use crate::util::validate_limit_offset;
 use crate::AppState;
-use captura_types::{IdResp, Paging};
+use captura_types::{EntryView, IdResp, Paging};
 use regex::Regex;
 
 #[derive(Serialize)]
@@ -402,6 +402,30 @@ pub(crate) async fn create_feed_from_template(
         r.rule_id.clone()
     };
     let now = Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
+
+    // Determine default view for the feed created from this rule template:
+    // rule-level default_view (if any) wins, then category-level view, then articles.
+    let mut default_view: Option<EntryView> = None;
+    if r.kind == "dsl" {
+        if let Some(v) = spec.default_view.as_deref() {
+            default_view = EntryView::from_str(v);
+        }
+    }
+    if default_view.is_none() {
+        if let Some(cid) = req.category_id {
+            crate::util::assert_category_ownership(&st.db, user.user_id, cid).await?;
+            if let Some(cat) = category::Entity::find()
+                .filter(category::Column::UserId.eq(user.user_id))
+                .filter(category::Column::Id.eq(cid))
+                .one(&st.db)
+                .await
+                .map_err(internal)?
+            {
+                default_view = cat.view.as_deref().and_then(EntryView::from_str);
+            }
+        }
+    }
+    let view_str = default_view.unwrap_or(EntryView::Articles).to_db();
     let am = feed::ActiveModel {
         user_id: Set(user.user_id),
         category_id: Set(req.category_id),
@@ -426,6 +450,7 @@ pub(crate) async fn create_feed_from_template(
         last_status: Set(None),
         error_count: Set(0),
         disabled: Set(false),
+        view: Set(Some(view_str)),
         scraper_rules: Set(None),
         rewrite_rules: Set(None),
         blocklist_rules: Set(None),

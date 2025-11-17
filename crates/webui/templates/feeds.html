@@ -22,7 +22,10 @@
     </form>
   </section>
   <section class="panel mt-4">
-    <h2 class="title">{{ dict["smart_views.title"] }}</h2>
+    <h2 class="title">
+      {{ dict["smart_views.title"] }}
+      <a class="button button--xs ml-2" href="/smart-views/new">{{ dict["smart_views.new"] }}</a>
+    </h2>
     <ul class="list">
       {% if smart_views | length == 0 %}
       <li class="list__item">{{ dict["smart_views.empty"] }}</li>

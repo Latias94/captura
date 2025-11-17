@@ -30,6 +30,7 @@ pub const META_MEDIUM_TAG: RouteMeta = RouteMeta {
     maintainers: &["captura"],
     url: "https://medium.com/",
     description: "Medium posts by tag.",
+    default_view: Some("articles"),
 };
 
 pub async fn handler(ctx: &mut HubCtx<'_>) -> captura_common::Result<HubData> {

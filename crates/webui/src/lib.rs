@@ -6,23 +6,24 @@
 use askama::Template;
 use axum::{
     body::Bytes,
-    extract::{Path, Query},
+    extract::Path,
     http::{HeaderMap, StatusCode},
     response::{Html, IntoResponse, Redirect},
     routing::{get, post},
     Router,
 };
 use serde::Deserialize;
-use std::time::Duration;
 
 mod static_assets;
 use static_assets::static_handler;
 mod i18n;
-mod util;
+mod pages_entries;
+mod pages_feeds;
+mod pages_hub;
 mod pages_index;
-mod pages_hub;
-mod pages_hub;
-use util::{api_base, cookie_value, gen_csp_nonce, load_snippets, read_token_cookie, resolve_lang, UiSnippets};
+mod pages_settings;
+mod util;
+use util::{api_base, gen_csp_nonce, load_snippets, read_token_cookie, resolve_lang};
 
 // ----- Templates -----
 
@@ -47,58 +48,6 @@ pub mod filters {
     }
 }
 
-#[derive(Template)]
-#[allow(dead_code)]
-#[template(path = "layout.html")]
-struct LayoutTemplate<'a> {
-    title: &'a str,
-    body_html: &'a str,
-    dict: &'a std::collections::HashMap<String, String>,
-    csp_nonce: &'a str,
-    custom_css: &'a str,
-    custom_js: &'a str,
-    external_font_hosts: &'a str,
-}
-
-#[derive(Template)]
-#[template(path = "hub_routes.html")]
-struct HubRoutesPage<'a> {
-    title: &'a str,
-    groups: &'a [UiHubNamespaceGroup],
-    dict: &'a std::collections::HashMap<String, String>,
-    csp_nonce: &'a str,
-    custom_css: &'a str,
-    custom_js: &'a str,
-    external_font_hosts: &'a str,
-}
-
-#[derive(Template)]
-#[template(path = "hub_test.html")]
-struct HubTestPage<'a> {
-    title: &'a str,
-    preview: Option<UiHubPreview>,
-    preview_url: &'a str,
-    dict: &'a std::collections::HashMap<String, String>,
-    csp_nonce: &'a str,
-    custom_css: &'a str,
-    custom_js: &'a str,
-    external_font_hosts: &'a str,
-}
-
-#[derive(Template)]
-#[template(path = "rules_test.html")]
-struct RulesTestPage<'a> {
-    title: &'a str,
-    url: &'a str,
-    yaml: &'a Option<String>,
-    result: &'a Option<UiTryRuleResp>,
-    dict: &'a std::collections::HashMap<String, String>,
-    csp_nonce: &'a str,
-    custom_css: &'a str,
-    custom_js: &'a str,
-    external_font_hosts: &'a str,
-}
-
 /// Build a UI router with generic state.
 /// No handler here takes a dependency on the state so S can be any shared state.
 pub fn router<S>() -> Router<S>
@@ -109,7 +58,7 @@ where
         .route("/", get(pages_index::index))
         .route("/login", get(pages_index::login))
         .route("/signup", get(pages_index::signup))
-        .route("/settings", get(ui_settings))
+        .route("/settings", get(pages_settings::ui_settings))
         .route("/hub", get(pages_hub::ui_hub_routes))
         .route("/hub/test", get(pages_hub::ui_hub_test))
         .route(
@@ -143,11 +92,19 @@ where
         // static files: /ui/static/{*path}
         .route("/ui/static/{*path}", get(static_handler))
         // minimal SSR pages using API + token cookie
-        .route("/feeds", get(ui_feeds))
-        .route("/feeds/{id}", get(ui_feed_entries))
+        .route("/feeds", get(pages_feeds::ui_feeds))
+        .route("/smart-views/new", get(ui_smart_view_new))
+        .route("/feeds/{id}", get(pages_entries::ui_feed_entries))
         .route("/feeds/{id}/edit", get(ui_feed_edit))
-        .route("/entries/{id}", get(ui_entry))
-        .route("/smart-views/{id}", get(ui_smart_view_entries))
+        .route("/entries/{id}", get(pages_entries::ui_entry))
+        .route(
+            "/smart-views/{id}",
+            get(pages_entries::ui_smart_view_entries),
+        )
+        .route("/ui/smart-views/{id}/rename", post(ui_smart_view_rename))
+        .route("/ui/smart-views/create", post(ui_smart_view_create))
+        .route("/ui/smart-views/{id}/update", post(ui_smart_view_update))
+        .route("/ui/smart-views/{id}/delete", post(ui_smart_view_delete))
         // SSR action endpoints
         .route("/ui/entries/{id}/toggle-star", post(ui_toggle_star))
         .route("/ui/entries/{id}/mark", post(ui_mark_status))
@@ -158,285 +115,98 @@ where
         .route("/ui/feeds/{id}/delete", post(ui_feed_delete))
         .route("/ui/feeds/create", post(ui_feed_create))
         // settings actions
-        .route("/ui/opml/export", get(ui_opml_export))
-        .route("/ui/opml/import", post(ui_opml_import))
-        .route("/ui/api-keys/create", post(ui_apikey_create))
-        .route("/ui/api-keys/{id}/delete", post(ui_apikey_delete))
-        .route("/ui/integrations/create", post(ui_integration_create))
-        .route("/ui/integrations/{id}/update", post(ui_integration_update))
-        .route("/ui/integrations/{id}/delete", post(ui_integration_delete))
-        .route("/ui/webhooks/create", post(ui_webhook_create))
-        .route("/ui/webhooks/{id}/delete", post(ui_webhook_delete))
-        .route("/ui/prefs/language", post(ui_prefs_language))
-        .route("/ui/prefs/default-filter", post(ui_prefs_default_filter))
+        .route("/ui/opml/export", get(pages_settings::ui_opml_export))
+        .route("/ui/opml/import", post(pages_settings::ui_opml_import))
+        .route(
+            "/ui/api-keys/create",
+            post(pages_settings::ui_apikey_create),
+        )
+        .route(
+            "/ui/api-keys/{id}/delete",
+            post(pages_settings::ui_apikey_delete),
+        )
+        .route(
+            "/ui/integrations/create",
+            post(pages_settings::ui_integration_create),
+        )
+        .route(
+            "/ui/integrations/{id}/update",
+            post(pages_settings::ui_integration_update),
+        )
+        .route(
+            "/ui/integrations/{id}/delete",
+            post(pages_settings::ui_integration_delete),
+        )
+        .route(
+            "/ui/webhooks/create",
+            post(pages_settings::ui_webhook_create),
+        )
+        .route(
+            "/ui/webhooks/{id}/delete",
+            post(pages_settings::ui_webhook_delete),
+        )
+        .route(
+            "/ui/prefs/language",
+            post(pages_settings::ui_prefs_language),
+        )
+        .route(
+            "/ui/prefs/default-filter",
+            post(pages_settings::ui_prefs_default_filter),
+        )
         .route(
             "/ui/prefs/entries-per-page",
-            post(ui_prefs_entries_per_page),
+            post(pages_settings::ui_prefs_entries_per_page),
         )
-        .route("/ui/prefs/sort-direction", post(ui_prefs_sort_direction))
+        .route(
+            "/ui/prefs/sort-direction",
+            post(pages_settings::ui_prefs_sort_direction),
+        )
         .route(
             "/ui/prefs/keyboard-shortcuts",
-            post(ui_prefs_keyboard_shortcuts),
+            post(pages_settings::ui_prefs_keyboard_shortcuts),
         )
         .route(
             "/ui/prefs/show-reading-time",
-            post(ui_prefs_show_reading_time),
+            post(pages_settings::ui_prefs_show_reading_time),
         )
-        .route("/ui/prefs/open-ext-newtab", post(ui_prefs_open_ext_newtab))
-        .route("/ui/prefs/theme", post(ui_prefs_theme))
-        .route("/ui/prefs/compact-ui", post(ui_prefs_compact_ui))
-        .route("/ui/prefs/minimal-ui", post(ui_prefs_minimal_ui))
-        .route("/ui/prefs/auto-mark-read", post(ui_prefs_auto_mark_read))
-        .route("/ui/prefs/custom-css", post(ui_prefs_custom_css))
-        .route("/ui/prefs/custom-js", post(ui_prefs_custom_js))
+        .route(
+            "/ui/prefs/open-ext-newtab",
+            post(pages_settings::ui_prefs_open_ext_newtab),
+        )
+        .route("/ui/prefs/theme", post(pages_settings::ui_prefs_theme))
+        .route(
+            "/ui/prefs/compact-ui",
+            post(pages_settings::ui_prefs_compact_ui),
+        )
+        .route(
+            "/ui/prefs/minimal-ui",
+            post(pages_settings::ui_prefs_minimal_ui),
+        )
+        .route(
+            "/ui/prefs/auto-mark-read",
+            post(pages_settings::ui_prefs_auto_mark_read),
+        )
+        .route(
+            "/ui/prefs/custom-css",
+            post(pages_settings::ui_prefs_custom_css),
+        )
+        .route(
+            "/ui/prefs/custom-js",
+            post(pages_settings::ui_prefs_custom_js),
+        )
         // categories management
         .route("/ui/categories/create", post(ui_category_create))
         .route("/ui/categories/{id}/update", post(ui_category_update))
         .route("/ui/categories/{id}/delete", post(ui_category_delete))
 }
 
-async fn ui_hub_routes(headers: HeaderMap, _q: Query<UiHubQuery>) -> impl IntoResponse {
-    let Some(token) = read_token_cookie(&headers) else {
-        return Redirect::to("/login").into_response();
-    };
-    let lang = resolve_lang(&headers).await;
-    let dict = i18n::load(&lang);
-    let snippets = load_snippets(&headers).await;
-    let nonce = gen_csp_nonce();
-
-    let cli = match reqwest::Client::builder()
-        .timeout(Duration::from_secs(3))
-        .build()
-    {
-        Ok(c) => c,
-        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "http client error").into_response(),
-    };
-
-    #[derive(Deserialize)]
-    struct HubRoutesResp {
-        routes: Vec<UiHubRoute>,
-    }
-
-    // Fetch hub routes list.
-    let routes_url = format!("{}/api/v1/hub/routes", api_base());
-    let routes_flat: Vec<UiHubRoute> = match cli
-        .get(routes_url)
-        .header("Authorization", format!("Bearer {}", token))
-        .send()
-        .await
-        .and_then(|r| r.error_for_status())
-    {
-        Ok(resp) => resp
-            .json::<HubRoutesResp>()
-            .await
-            .map(|r| r.routes)
-            .unwrap_or_default(),
-        Err(_) => Vec::new(),
-    };
-
-    // Group routes by namespace (prefix before '/')
-    use std::collections::BTreeMap;
-    let mut by_ns: BTreeMap<String, Vec<UiHubRoute>> = BTreeMap::new();
-    for r in routes_flat {
-        let ns = r.hub_id.split('/').next().unwrap_or("").to_string();
-        by_ns.entry(ns).or_default().push(r);
-    }
-    let mut groups: Vec<UiHubNamespaceGroup> = by_ns
-        .into_iter()
-        .map(|(namespace, mut routes)| {
-            routes.sort_by(|a, b| a.hub_id.cmp(&b.hub_id));
-            UiHubNamespaceGroup { namespace, routes }
-        })
-        .collect();
-    groups.sort_by(|a, b| a.namespace.cmp(&b.namespace));
-
-    let tpl = HubRoutesPage {
-        title: "Hub Routes",
-        groups: &groups,
-        dict: &dict,
-        csp_nonce: &nonce,
-        custom_css: &snippets.custom_css,
-        custom_js: &snippets.custom_js,
-        external_font_hosts: &snippets.external_font_hosts,
-    };
-    match tpl.render() {
-        Ok(s) => Html(s).into_response(),
-        Err(_) => (StatusCode::INTERNAL_SERVER_ERROR, "template error").into_response(),
-    }
-}
-
-async fn ui_hub_test(headers: HeaderMap, Query(q): Query<UiHubQuery>) -> impl IntoResponse {
-    let Some(token) = read_token_cookie(&headers) else {
-        return Redirect::to("/login").into_response();
-    };
-    let lang = resolve_lang(&headers).await;
-    let dict = i18n::load(&lang);
-    let snippets = load_snippets(&headers).await;
-    let nonce = gen_csp_nonce();
-
-    let cli = match reqwest::Client::builder()
-        .timeout(Duration::from_secs(3))
-        .build()
-    {
-        Ok(c) => c,
-        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "http client error").into_response(),
-    };
-
-    let mut preview: Option<UiHubPreview> = None;
-    let preview_url = q.url.unwrap_or_default();
-    if !preview_url.is_empty() {
-        #[derive(Deserialize)]
-        struct PreviewResp {
-            data: UiHubPreview,
-        }
-        let preview_endpoint = format!("{}/api/v1/hub/preview", api_base());
-        let body = serde_json::json!({ "url": preview_url });
-        if let Ok(resp) = cli
-            .post(preview_endpoint)
-            .header("Authorization", format!("Bearer {}", token))
-            .json(&body)
-            .send()
-            .await
-            .and_then(|r| r.error_for_status())
-        {
-            if let Ok(pr) = resp.json::<PreviewResp>().await {
-                preview = Some(pr.data);
-            }
-        }
-    }
-
-    let tpl = HubTestPage {
-        title: "Hub Preview",
-        preview,
-        preview_url: &preview_url,
-        dict: &dict,
-        csp_nonce: &nonce,
-        custom_css: &snippets.custom_css,
-        custom_js: &snippets.custom_js,
-        external_font_hosts: &snippets.external_font_hosts,
-    };
-    match tpl.render() {
-        Ok(s) => Html(s).into_response(),
-        Err(_) => (StatusCode::INTERNAL_SERVER_ERROR, "template error").into_response(),
-    }
-}
-
-use axum::Form;
-
-#[derive(Deserialize)]
-struct RulesTestForm {
-    url: String,
-    #[serde(default)]
-    yaml: String,
-}
-
-async fn ui_rules_test(headers: HeaderMap, Form(form): Form<RulesTestForm>) -> impl IntoResponse {
-    let Some(token) = read_token_cookie(&headers) else {
-        return Redirect::to("/login").into_response();
-    };
-    let lang = resolve_lang(&headers).await;
-    let dict = i18n::load(&lang);
-    let snippets = load_snippets(&headers).await;
-    let nonce = gen_csp_nonce();
-
-    let url = form.url.clone();
-    let yaml = if form.yaml.trim().is_empty() {
-        None
-    } else {
-        Some(form.yaml.clone())
-    };
-    let mut result: Option<UiTryRuleResp> = None;
-
-    if !url.trim().is_empty() && yaml.is_some() {
-        let cli = match reqwest::Client::builder()
-            .timeout(Duration::from_secs(6))
-            .build()
-        {
-            Ok(c) => c,
-            Err(_) => {
-                return (StatusCode::INTERNAL_SERVER_ERROR, "http client error").into_response();
-            }
-        };
-        #[derive(serde::Serialize)]
-        struct TryReq<'a> {
-            url: &'a str,
-            yaml: &'a str,
-        }
-        let body = TryReq {
-            url: &url,
-            yaml: yaml.as_ref().unwrap(),
-        };
-        let endpoint = format!("{}/api/v1/rules/try", api_base());
-        if let Ok(resp) = cli
-            .post(endpoint)
-            .header("Authorization", format!("Bearer {}", token))
-            .json(&body)
-            .send()
-            .await
-            .and_then(|r| r.error_for_status())
-        {
-            if let Ok(r) = resp.json::<UiTryRuleResp>().await {
-                result = Some(r);
-            }
-        }
-    }
-
-    let tpl = RulesTestPage {
-        title: "Test Rule",
-        url: &url,
-        yaml: &yaml,
-        result: &result,
-        dict: &dict,
-        csp_nonce: &nonce,
-        custom_css: &snippets.custom_css,
-        custom_js: &snippets.custom_js,
-        external_font_hosts: &snippets.external_font_hosts,
-    };
-    match tpl.render() {
-        Ok(s) => Html(s).into_response(),
-        Err(_) => (StatusCode::INTERNAL_SERVER_ERROR, "template error").into_response(),
-    }
-}
-
-#[derive(Deserialize, Clone)]
-#[allow(dead_code)]
-struct UiFeedDto {
-    id: i64,
-    title: Option<String>,
-    site_url: Option<String>,
-    unread_count: Option<i64>,
-    category: Option<UiCategory>,
-    #[serde(default)]
-    parsing_error_count: Option<i32>,
-    #[serde(default)]
-    parsing_error_message: Option<String>,
-}
-
-#[derive(Deserialize, Clone)]
-struct UiSmartView {
-    id: i64,
-    name: String,
-}
-
-#[derive(Deserialize, Clone)]
-struct UiCategory {
-    id: i64,
-    title: String,
-    #[serde(default)]
-    feed_count: Option<i64>,
-    #[serde(default)]
-    total_unread: Option<i64>,
-}
+// hub pages moved to pages_hub.rs
+// feeds listing moved to pages_feeds.rs
 
 #[derive(Template)]
-#[template(path = "feeds.html")]
-struct FeedsPage<'a> {
+#[template(path = "smart_view_new.html")]
+struct SmartViewNewPage<'a> {
     title: &'a str,
-    feeds: &'a [UiFeedDto],
-    categories: &'a [UiCategory],
-    smart_views: &'a [UiSmartView],
-    selected_category: Option<i64>,
-    has_uncategorized: bool,
     dict: &'a std::collections::HashMap<String, String>,
     csp_nonce: &'a str,
     custom_css: &'a str,
@@ -444,70 +214,16 @@ struct FeedsPage<'a> {
     external_font_hosts: &'a str,
 }
 
-#[derive(Deserialize, Default)]
-struct UiFeedsQuery {
-    category_id: Option<i64>,
-}
-
-async fn ui_feeds(headers: HeaderMap, Query(fq): Query<UiFeedsQuery>) -> impl IntoResponse {
-    let Some(token) = read_token_cookie(&headers) else {
+async fn ui_smart_view_new(headers: HeaderMap) -> impl IntoResponse {
+    let Some(_token) = read_token_cookie(&headers) else {
         return Redirect::to("/login").into_response();
     };
     let lang = resolve_lang(&headers).await;
     let dict = i18n::load(&lang);
     let snippets = load_snippets(&headers).await;
     let nonce = gen_csp_nonce();
-    let cli = match reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(3))
-        .build()
-    {
-        Ok(c) => c,
-        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "http client error").into_response(),
-    };
-    let mut url = format!("{}/v1/feeds?withCounters=true", api_base());
-    let mut selected_category = None;
-    if let Some(cid) = fq.category_id {
-        url.push_str(&format!("&category_id={}", cid));
-        selected_category = Some(cid);
-    }
-    let res = cli
-        .get(url)
-        .header("X-Auth-Token", token.clone())
-        .send()
-        .await;
-    let feeds: Vec<UiFeedDto> = match res.and_then(|r| r.error_for_status()) {
-        Ok(resp) => resp.json().await.unwrap_or_default(),
-        Err(_) => Vec::new(),
-    };
-    let has_uncategorized = feeds.iter().any(|f| f.category.is_none());
-    // categories for dropdown (ignore extra fields)
-    let cats_url = format!("{}/v1/categories?counts=true", api_base());
-    let res2 = cli.get(cats_url).header("X-Auth-Token", token.clone()).send().await;
-    let categories: Vec<UiCategory> = match res2.and_then(|r| r.error_for_status()) {
-        Ok(resp) => resp.json().await.unwrap_or_default(),
-        Err(_) => Vec::new(),
-    };
-    // smart views (native /api/v1)
-    let sv_url = format!("{}/api/v1/smart-views", api_base());
-    let res3 = cli
-        .get(sv_url)
-        .header(
-            axum::http::header::AUTHORIZATION,
-            format!("Bearer {}", token),
-        )
-        .send()
-        .await;
-    let smart_views: Vec<UiSmartView> = match res3.and_then(|r| r.error_for_status()) {
-        Ok(resp) => resp.json().await.unwrap_or_default(),
-        Err(_) => Vec::new(),
-    };
-    let tpl = FeedsPage {
-        title: "Feeds",
-        feeds: &feeds,
-        categories: &categories,
-        smart_views: &smart_views,
-        selected_category,
-        has_uncategorized,
+    let tpl = SmartViewNewPage {
+        title: "New Smart View",
         dict: &dict,
         csp_nonce: &nonce,
         custom_css: &snippets.custom_css,
@@ -520,508 +236,237 @@ async fn ui_feeds(headers: HeaderMap, Query(fq): Query<UiFeedsQuery>) -> impl In
     }
 }
 
-#[derive(Deserialize, Clone)]
-#[allow(dead_code)]
-struct UiEntryBrief {
-    id: i64,
-    title: Option<String>,
-    url: Option<String>,
-    author: Option<String>,
-    #[serde(rename = "published_at")]
-    date: Option<String>,
-    starred: bool,
-    status: String,
-    #[serde(default)]
-    tags: Option<Vec<String>>,
-}
-
-#[derive(Deserialize)]
-struct UiEntrySet {
-    total: i64,
-    entries: Vec<UiEntryBrief>,
-}
-
-#[derive(Template)]
-#[template(path = "entries.html")]
-struct EntriesPage<'a> {
-    title: &'a str,
-    feed_id: i64,
-    items: &'a [UiEntryBrief],
-    limit: usize,
-    prev_page: Option<usize>,
-    next_page: Option<usize>,
-    dict: &'a std::collections::HashMap<String, String>,
-    filter: &'a str,
-    filter_q: &'a str,
-    search_q_qs: &'a str,
-    search_q: &'a str,
-    refreshed: bool,
-    refresh_err: bool,
-    csp_nonce: &'a str,
-    custom_css: &'a str,
-    custom_js: &'a str,
-    external_font_hosts: &'a str,
-}
-
-#[derive(Template)]
-#[template(path = "smart_view_entries.html")]
-struct SmartEntriesPage<'a> {
-    title: &'a str,
-    smart_view: &'a UiSmartView,
-    items: &'a [UiEntryBrief],
-    limit: usize,
-    prev_page: Option<usize>,
-    next_page: Option<usize>,
-    dict: &'a std::collections::HashMap<String, String>,
-    csp_nonce: &'a str,
-    custom_css: &'a str,
-    custom_js: &'a str,
-    external_font_hosts: &'a str,
-}
-
-#[derive(Deserialize, Default)]
-struct UiListQuery {
-    page: Option<usize>,
-    limit: Option<usize>,
-    status: Option<String>,
-    starred: Option<bool>,
-    q: Option<String>,
-    refreshed: Option<bool>,
-    refresh_err: Option<bool>,
-}
-
-async fn ui_feed_entries(
+async fn ui_smart_view_rename(
     Path(id): Path<i64>,
     headers: HeaderMap,
-    Query(q): Query<UiListQuery>,
+    body: Bytes,
 ) -> impl IntoResponse {
     let Some(token) = read_token_cookie(&headers) else {
         return Redirect::to("/login").into_response();
     };
-    let lang = resolve_lang(&headers).await;
-    let dict = i18n::load(&lang);
-    let snippets = load_snippets(&headers).await;
-    let nonce = gen_csp_nonce();
-    let cli = match reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(4))
-        .build()
-    {
-        Ok(c) => c,
-        Err(_) => {
-            return (StatusCode::INTERNAL_SERVER_ERROR, "http client error").into_response();
+    let mut name: Option<String> = None;
+    for (k, v) in url::form_urlencoded::parse(&body) {
+        if k == "name" {
+            name = Some(v.to_string());
         }
-    };
-    // If limit not specified, read from /v1/me (entries_per_page)
-    let limit = if let Some(l) = q.limit {
-        l.clamp(1, 200)
-    } else {
-        let me_url = format!("{}/v1/me", api_base());
-        match cli
-            .get(me_url)
-            .header("X-Auth-Token", &token)
-            .send()
-            .await
-            .and_then(|r| r.error_for_status())
-        {
-            Ok(resp) => {
-                #[derive(serde::Deserialize)]
-                struct Me {
-                    entries_per_page: Option<i32>,
+    }
+    if let Some(n) = name {
+        if !n.trim().is_empty() {
+            let cli = match reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(4))
+                .build()
+            {
+                Ok(c) => c,
+                Err(_) => {
+                    return Redirect::to(&format!("/smart-views/{}", id)).into_response();
                 }
-                let me: Me = resp.json().await.unwrap_or(Me {
-                    entries_per_page: None,
-                });
-                me.entries_per_page.unwrap_or(50).max(1) as usize
-            }
-            Err(_) => 50usize,
-        }
-        .min(200)
-    };
-    let page = q.page.unwrap_or(1).max(1);
-    let offset = (page - 1) * limit;
-    let mut url = format!(
-        "{}/v1/feeds/{}/entries?limit={}&offset={}&order=published_at&direction=desc",
-        api_base(),
-        id,
-        limit,
-        offset
-    );
-    let mut filter = "all".to_string();
-    let mut filter_q = String::new();
-    if let Some(ref s) = q.status {
-        let s = s.trim().to_lowercase();
-        if s == "unread" || s == "read" {
-            url.push_str(&format!("&status={}", s));
-            filter = s;
-            filter_q = format!("&status={}", filter);
+            };
+            let url = format!("{}/api/v1/smart-views/{}", api_base(), id);
+            let _ = cli
+                .put(url)
+                .header(
+                    axum::http::header::AUTHORIZATION,
+                    format!("Bearer {}", token),
+                )
+                .json(&serde_json::json!({ "name": n }))
+                .send()
+                .await;
         }
     }
-    if let Some(st) = q.starred {
-        if st {
-            url.push_str("&starred=true");
-            filter = "starred".into();
-            filter_q = "&starred=true".into();
-        }
-    }
-    // search query
-    let mut search_q_qs = String::new();
-    let mut search_q_value = String::new();
-    if let Some(ref sq) = q.q {
-        if !sq.trim().is_empty() {
-            let enc = urlencoding::encode(sq);
-            url.push_str(&format!("&q={}", enc));
-            search_q_qs = format!("&q={}", enc);
-            search_q_value = sq.clone();
-        }
-    }
-    // If user didn't pass any filter, apply cookie default_filter
-    if q.status.is_none() && q.starred.is_none() {
-        if let Some(def) = cookie_value(&headers, "default_filter") {
-            let d = def.to_ascii_lowercase();
-            if d == "unread" {
-                url.push_str("&status=unread");
-                filter = "unread".into();
-                filter_q = "&status=unread".into();
-            } else if d == "starred" {
-                url.push_str("&starred=true");
-                filter = "starred".into();
-                filter_q = "&starred=true".into();
-            }
-        }
-    }
-    let res = cli
-        .get(url)
-        .header("X-Auth-Token", token.clone())
-        .send()
-        .await;
-    let set: UiEntrySet = match res.and_then(|r| r.error_for_status()) {
-        Ok(resp) => resp.json().await.unwrap_or(UiEntrySet {
-            total: 0,
-            entries: vec![],
-        }),
-        Err(_) => UiEntrySet {
-            total: 0,
-            entries: vec![],
-        },
-    };
-    let total = set.total.max(0) as usize;
-    let end_index = offset + set.entries.len();
-    let prev_page = if page > 1 { Some(page - 1) } else { None };
-    let next_page = if end_index < total {
-        Some(page + 1)
-    } else {
-        None
-    };
-    let refreshed = q.refreshed.unwrap_or(false);
-    let refresh_err = q.refresh_err.unwrap_or(false);
-    let filter_leaked = Box::leak(filter.into_boxed_str());
-    let filter_q_leaked = Box::leak(filter_q.into_boxed_str());
-    let search_q_qs_leaked = Box::leak(search_q_qs.into_boxed_str());
-    let search_q_leaked = Box::leak(search_q_value.into_boxed_str());
-    let tpl = EntriesPage {
-        title: "Entries",
-        feed_id: id,
-        items: &set.entries,
-        limit,
-        prev_page,
-        next_page,
-        dict: &dict,
-        filter: filter_leaked,
-        filter_q: filter_q_leaked,
-        search_q_qs: search_q_qs_leaked,
-        search_q: search_q_leaked,
-        refreshed,
-        refresh_err,
-        csp_nonce: &nonce,
-        custom_css: &snippets.custom_css,
-        custom_js: &snippets.custom_js,
-        external_font_hosts: &snippets.external_font_hosts,
-    };
-    match tpl.render() {
-        Ok(s) => Html(s).into_response(),
-        Err(_) => (StatusCode::INTERNAL_SERVER_ERROR, "template error").into_response(),
-    }
+    Redirect::to(&format!("/smart-views/{}", id)).into_response()
 }
 
-#[derive(Deserialize)]
-struct ApiSmartEntry {
-    id: i64,
-    title: Option<String>,
-    url: Option<String>,
-    author: Option<String>,
-    #[serde(rename = "published_at")]
-    date: Option<String>,
-    is_read: bool,
-    is_starred: bool,
-}
-
-async fn ui_smart_view_entries(
-    Path(id): Path<i64>,
-    headers: HeaderMap,
-    Query(q): Query<UiListQuery>,
-) -> impl IntoResponse {
+async fn ui_smart_view_create(headers: HeaderMap, body: Bytes) -> impl IntoResponse {
     let Some(token) = read_token_cookie(&headers) else {
         return Redirect::to("/login").into_response();
     };
-    let lang = resolve_lang(&headers).await;
-    let dict = i18n::load(&lang);
-    let snippets = load_snippets(&headers).await;
-    let nonce = gen_csp_nonce();
+    let mut name: Option<String> = None;
+    let mut view: Option<String> = None;
+    let mut status: Option<String> = None;
+    let mut search: Option<String> = None;
+    for (k, v) in url::form_urlencoded::parse(&body) {
+        match &*k {
+            "name" => {
+                let s = v.to_string();
+                if !s.trim().is_empty() {
+                    name = Some(s);
+                }
+            }
+            "view" => {
+                let s = v.to_string();
+                if !s.trim().is_empty() {
+                    view = Some(s);
+                }
+            }
+            "status" => {
+                let s = v.to_string();
+                if !s.trim().is_empty() {
+                    status = Some(s);
+                }
+            }
+            "search" => {
+                let s = v.to_string();
+                if !s.trim().is_empty() {
+                    search = Some(s);
+                }
+            }
+            _ => {}
+        }
+    }
+    let Some(name) = name else {
+        return Redirect::to("/feeds").into_response();
+    };
+    let view = view.unwrap_or_else(|| "all".to_string());
+    let mut filters = serde_json::Map::new();
+    if let Some(st) = status {
+        if st != "all" {
+            filters.insert("status".into(), serde_json::json!(st));
+        }
+    }
+    if let Some(q) = search {
+        filters.insert("search".into(), serde_json::json!(q));
+    }
+    let mut payload = serde_json::Map::new();
+    payload.insert("name".into(), serde_json::json!(name));
+    payload.insert("view".into(), serde_json::json!(view));
+    if !filters.is_empty() {
+        payload.insert("filters".into(), serde_json::Value::Object(filters));
+    }
     let cli = match reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(4))
         .build()
     {
         Ok(c) => c,
-        Err(_) => {
-            return (StatusCode::INTERNAL_SERVER_ERROR, "http client error").into_response();
-        }
-    };
-
-    // Load smart view metadata
-    let sv_url = format!("{}/api/v1/smart-views/{}", api_base(), id);
-    let sv_res = cli
-        .get(sv_url)
-        .header(
-            axum::http::header::AUTHORIZATION,
-            format!("Bearer {}", token.clone()),
-        )
-        .send()
-        .await;
-    let smart_view: UiSmartView = match sv_res.and_then(|r| r.error_for_status()) {
-        Ok(resp) => match resp.json().await {
-            Ok(v) => v,
-            Err(_) => {
-                return Redirect::to("/feeds").into_response();
-            }
-        },
         Err(_) => {
             return Redirect::to("/feeds").into_response();
         }
     };
-
-    // Determine pagination (reuse entries_per_page from /v1/me when limit is not provided)
-    let limit = if let Some(l) = q.limit {
-        l.clamp(1, 200)
-    } else {
-        let me_url = format!("{}/v1/me", api_base());
-        match cli
-            .get(me_url)
-            .header("X-Auth-Token", &token)
-            .send()
-            .await
-            .and_then(|r| r.error_for_status())
-        {
-            Ok(resp) => {
-                #[derive(serde::Deserialize)]
-                struct Me {
-                    entries_per_page: Option<i32>,
-                }
-                let me: Me = resp.json().await.unwrap_or(Me {
-                    entries_per_page: None,
-                });
-                me.entries_per_page.unwrap_or(50).max(1) as usize
+    let url = format!("{}/api/v1/smart-views", api_base());
+    let resp = cli
+        .post(url)
+        .header(
+            axum::http::header::AUTHORIZATION,
+            format!("Bearer {}", token),
+        )
+        .json(&serde_json::Value::Object(payload))
+        .send()
+        .await;
+    if let Ok(r) = resp.and_then(|r| r.error_for_status()) {
+        if let Ok(v) = r.json::<serde_json::Value>().await {
+            if let Some(id) = v.get("id").and_then(|x| x.as_i64()) {
+                return Redirect::to(&format!("/smart-views/{}", id)).into_response();
             }
-            Err(_) => 50usize,
         }
-        .min(200)
-    };
-    let page = q.page.unwrap_or(1).max(1);
-    let offset = (page - 1) * limit;
+    }
+    Redirect::to("/feeds").into_response()
+}
 
-    // Fetch entries for this smart view
-    let url = format!(
-        "{}/api/v1/smart-views/{}/entries?limit={}&offset={}",
-        api_base(),
-        id,
-        limit,
-        offset
-    );
-    let res = cli
-        .get(url)
+async fn ui_smart_view_update(
+    Path(id): Path<i64>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> impl IntoResponse {
+    let Some(token) = read_token_cookie(&headers) else {
+        return Redirect::to("/login").into_response();
+    };
+    let mut name: Option<String> = None;
+    let mut view: Option<String> = None;
+    let mut status: Option<String> = None;
+    let mut search: Option<String> = None;
+    for (k, v) in url::form_urlencoded::parse(&body) {
+        match &*k {
+            "name" => {
+                let s = v.to_string();
+                if !s.trim().is_empty() {
+                    name = Some(s);
+                }
+            }
+            "view" => {
+                let s = v.to_string();
+                if !s.trim().is_empty() {
+                    view = Some(s);
+                }
+            }
+            "status" => {
+                let s = v.to_string();
+                if !s.trim().is_empty() {
+                    status = Some(s);
+                }
+            }
+            "search" => {
+                let s = v.to_string();
+                if !s.trim().is_empty() {
+                    search = Some(s);
+                }
+            }
+            _ => {}
+        }
+    }
+    // Build partial update payload
+    let mut payload = serde_json::Map::new();
+    if let Some(n) = name {
+        payload.insert("name".into(), serde_json::json!(n));
+    }
+    if let Some(v) = view {
+        payload.insert("view".into(), serde_json::json!(v));
+    }
+    let mut filters = serde_json::Map::new();
+    if let Some(st) = status {
+        if st != "all" {
+            filters.insert("status".into(), serde_json::json!(st));
+        }
+    }
+    if let Some(q) = search {
+        filters.insert("search".into(), serde_json::json!(q));
+    }
+    if !filters.is_empty() {
+        payload.insert("filters".into(), serde_json::Value::Object(filters));
+    }
+    if !payload.is_empty() {
+        let cli = match reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(4))
+            .build()
+        {
+            Ok(c) => c,
+            Err(_) => {
+                return Redirect::to(&format!("/smart-views/{}", id)).into_response();
+            }
+        };
+        let url = format!("{}/api/v1/smart-views/{}", api_base(), id);
+        let _ = cli
+            .put(url)
+            .header(
+                axum::http::header::AUTHORIZATION,
+                format!("Bearer {}", token),
+            )
+            .json(&serde_json::Value::Object(payload))
+            .send()
+            .await;
+    }
+    Redirect::to(&format!("/smart-views/{}", id)).into_response()
+}
+
+async fn ui_smart_view_delete(Path(id): Path<i64>, headers: HeaderMap) -> impl IntoResponse {
+    let Some(token) = read_token_cookie(&headers) else {
+        return Redirect::to("/login").into_response();
+    };
+    let cli = match reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(4))
+        .build()
+    {
+        Ok(c) => c,
+        Err(_) => return Redirect::to("/feeds").into_response(),
+    };
+    let url = format!("{}/api/v1/smart-views/{}", api_base(), id);
+    let _ = cli
+        .delete(url)
         .header(
             axum::http::header::AUTHORIZATION,
             format!("Bearer {}", token),
         )
         .send()
         .await;
-    let api_entries: Vec<ApiSmartEntry> = match res.and_then(|r| r.error_for_status()) {
-        Ok(resp) => resp.json().await.unwrap_or_default(),
-        Err(_) => Vec::new(),
-    };
-    let mut items: Vec<UiEntryBrief> = Vec::with_capacity(api_entries.len());
-    for e in api_entries {
-        items.push(UiEntryBrief {
-            id: e.id,
-            title: e.title,
-            url: e.url,
-            author: e.author,
-            date: e.date,
-            starred: e.is_starred,
-            status: if e.is_read {
-                "read".into()
-            } else {
-                "unread".into()
-            },
-            tags: None,
-        });
-    }
-
-    let prev_page = if page > 1 { Some(page - 1) } else { None };
-    // We do not know total count; show "next" when we filled the current page.
-    let next_page = if items.len() >= limit { Some(page + 1) } else { None };
-
-    let tpl = SmartEntriesPage {
-        title: "Entries",
-        smart_view: &smart_view,
-        items: &items,
-        limit,
-        prev_page,
-        next_page,
-        dict: &dict,
-        csp_nonce: &nonce,
-        custom_css: &snippets.custom_css,
-        custom_js: &snippets.custom_js,
-        external_font_hosts: &snippets.external_font_hosts,
-    };
-    match tpl.render() {
-        Ok(s) => Html(s).into_response(),
-        Err(_) => (StatusCode::INTERNAL_SERVER_ERROR, "template error").into_response(),
-    }
-}
-
-#[derive(Deserialize)]
-struct UiEntryFull {
-    id: i64,
-    title: Option<String>,
-    author: Option<String>,
-    url: Option<String>,
-    content: Option<String>,
-    status: String,
-    starred: bool,
-    feed_id: i64,
-    #[serde(default)]
-    tags: Option<Vec<String>>,
-}
-
-#[derive(Template)]
-#[template(path = "entry.html")]
-struct EntryPage<'a> {
-    title: &'a str,
-    entry: &'a UiEntryFull,
-    prev_id: Option<i64>,
-    next_id: Option<i64>,
-    dict: &'a std::collections::HashMap<String, String>,
-    csp_nonce: &'a str,
-    custom_css: &'a str,
-    custom_js: &'a str,
-    external_font_hosts: &'a str,
-}
-
-async fn ui_entry(Path(id): Path<i64>, headers: HeaderMap) -> impl IntoResponse {
-    let Some(token) = read_token_cookie(&headers) else {
-        return Redirect::to("/login").into_response();
-    };
-    let lang = resolve_lang(&headers).await;
-    let dict = i18n::load(&lang);
-    let snippets = load_snippets(&headers).await;
-    let nonce = gen_csp_nonce();
-    let cli = match reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(4))
-        .build()
-    {
-        Ok(c) => c,
-        Err(_) => {
-            return (StatusCode::INTERNAL_SERVER_ERROR, "http client error").into_response();
-        }
-    };
-    let url = format!("{}/v1/entries/{}", api_base(), id);
-    let res = cli
-        .get(url)
-        .header("X-Auth-Token", token.clone())
-        .send()
-        .await;
-    let entry: UiEntryFull = match res.and_then(|r| r.error_for_status()) {
-        Ok(resp) => resp.json().await.unwrap_or(UiEntryFull {
-            id,
-            title: None,
-            author: None,
-            url: None,
-            content: None,
-            status: String::new(),
-            starred: false,
-            feed_id: 0,
-            tags: None,
-        }),
-        Err(_) => UiEntryFull {
-            id,
-            title: None,
-            author: None,
-            url: None,
-            content: None,
-            status: String::new(),
-            starred: false,
-            feed_id: 0,
-            tags: None,
-        },
-    };
-    let (mut prev_id, mut next_id) = (None, None);
-    if entry.feed_id > 0 {
-        // prev: before_id current
-        let prev_url = format!(
-            "{}/v1/entries?feed_id={}&before_id={}&order=id&direction=desc&limit=1",
-            api_base(),
-            entry.feed_id,
-            entry.id
-        );
-        if let Ok(r) = cli
-            .get(prev_url)
-            .header("X-Auth-Token", &token)
-            .send()
-            .await
-            .and_then(|r| r.error_for_status())
-        {
-            if let Ok(s) = r.json::<UiEntrySet>().await {
-                if let Some(e) = s.entries.first() {
-                    prev_id = Some(e.id);
-                }
-            }
-        }
-        // next: after_id current
-        let next_url = format!(
-            "{}/v1/entries?feed_id={}&after_id={}&order=id&direction=asc&limit=1",
-            api_base(),
-            entry.feed_id,
-            entry.id
-        );
-        if let Ok(r) = cli
-            .get(next_url)
-            .header("X-Auth-Token", &token)
-            .send()
-            .await
-            .and_then(|r| r.error_for_status())
-        {
-            if let Ok(s) = r.json::<UiEntrySet>().await {
-                if let Some(e) = s.entries.first() {
-                    next_id = Some(e.id);
-                }
-            }
-        }
-    }
-    let tpl = EntryPage {
-        title: "Entry",
-        entry: &entry,
-        prev_id,
-        next_id,
-        dict: &dict,
-        csp_nonce: &nonce,
-        custom_css: &snippets.custom_css,
-        custom_js: &snippets.custom_js,
-        external_font_hosts: &snippets.external_font_hosts,
-    };
-    match tpl.render() {
-        Ok(s) => Html(s).into_response(),
-        Err(_) => (StatusCode::INTERNAL_SERVER_ERROR, "template error").into_response(),
-    }
+    Redirect::to("/feeds").into_response()
 }
 
 // ---- SSR action handlers ----
@@ -1226,906 +671,12 @@ async fn ui_feed_create(headers: HeaderMap, body: Bytes) -> impl IntoResponse {
     Redirect::to("/feeds").into_response()
 }
 
-// ---------------- Settings pages ----------------
-
-#[derive(Deserialize, Clone)]
-#[allow(dead_code)]
-struct UiApiKey {
-    id: i64,
-    user_id: i64,
-    token: String,
-    description: Option<String>,
-    last_used_at: Option<String>,
-    created_at: String,
-}
-
-#[derive(Deserialize, Clone)]
-struct UiIntegration {
-    id: i64,
-    kind: String,
-    enabled: bool,
-    config_json: Option<serde_json::Value>,
-}
-
-#[derive(Deserialize, Clone)]
-#[allow(dead_code)]
-struct UiWebhook {
-    id: i64,
-    url: String,
-    events: Option<String>,
-    enabled: bool,
-    created_at: String,
-}
-
-#[derive(Template)]
-#[template(path = "settings.html")]
-struct SettingsPage<'a> {
-    title: &'a str,
-    apikeys: &'a [UiApiKey],
-    integrations: &'a [UiIntegration],
-    webhooks: &'a [UiWebhook],
-    dict: &'a std::collections::HashMap<String, String>,
-    lang: &'a str,
-    default_filter: &'a str,
-    entries_per_page: i32,
-    csp_nonce: &'a str,
-    custom_css: &'a str,
-    custom_js: &'a str,
-    external_font_hosts: &'a str,
-}
-
-async fn ui_settings(headers: HeaderMap) -> impl IntoResponse {
-    let Some(token) = read_token_cookie(&headers) else {
-        return Redirect::to("/login").into_response();
-    };
-    let lang = resolve_lang(&headers).await;
-    let dict = i18n::load(&lang);
-    let snippets = load_snippets(&headers).await;
-    let nonce = gen_csp_nonce();
-    let cli = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(5))
-        .build()
-        .unwrap();
-    let keys_url = format!("{}/v1/api-keys", api_base());
-    let apikeys: Vec<UiApiKey> = match cli
-        .get(keys_url)
-        .header("X-Auth-Token", &token)
-        .send()
-        .await
-        .and_then(|r| r.error_for_status())
-    {
-        Ok(resp) => resp.json().await.unwrap_or_default(),
-        Err(_) => vec![],
-    };
-    let ints_url = format!("{}/api/v1/integrations", api_base());
-    let integrations: Vec<UiIntegration> = match cli
-        .get(ints_url)
-        .header("X-Auth-Token", token)
-        .send()
-        .await
-        .and_then(|r| r.error_for_status())
-    {
-        Ok(resp) => resp.json().await.unwrap_or_default(),
-        Err(_) => vec![],
-    };
-    // Webhooks via /api/v1/webhooks
-    let hooks_url = format!("{}/api/v1/webhooks", api_base());
-    let webhooks: Vec<UiWebhook> = match cli
-        .get(hooks_url)
-        .header("X-Auth-Token", &read_token_cookie(&headers).unwrap())
-        .send()
-        .await
-        .and_then(|r| r.error_for_status())
-    {
-        Ok(resp) => resp.json().await.unwrap_or_default(),
-        Err(_) => vec![],
-    };
-    // read current default_filter from cookie (fallback to "all")
-    let default_filter_cookie =
-        cookie_value(&headers, "default_filter").unwrap_or_else(|| "all".into());
-    // read entries_per_page from /v1/me for hint
-    let me_url = format!("{}/v1/me", api_base());
-    let mut entries_per_page: i32 = 50;
-    if let Ok(resp) = cli
-        .get(me_url)
-        .header("X-Auth-Token", &read_token_cookie(&headers).unwrap())
-        .send()
-        .await
-        .and_then(|r| r.error_for_status())
-    {
-        #[derive(serde::Deserialize)]
-        struct Me {
-            entries_per_page: Option<i32>,
-        }
-        if let Ok(m) = resp.json::<Me>().await {
-            if let Some(n) = m.entries_per_page {
-                entries_per_page = n.max(1);
-            }
-        }
-    }
-    let def_filter = Box::leak(default_filter_cookie.into_boxed_str());
-    let tpl = SettingsPage {
-        title: "Settings",
-        apikeys: &apikeys,
-        integrations: &integrations,
-        webhooks: &webhooks,
-        dict: &dict,
-        lang: &lang,
-        default_filter: def_filter,
-        entries_per_page,
-        csp_nonce: &nonce,
-        custom_css: &snippets.custom_css,
-        custom_js: &snippets.custom_js,
-        external_font_hosts: &snippets.external_font_hosts,
-    };
-    match tpl.render() {
-        Ok(s) => Html(s).into_response(),
-        Err(_) => (StatusCode::INTERNAL_SERVER_ERROR, "template error").into_response(),
-    }
-}
-
-async fn ui_prefs_language(headers: HeaderMap, body: Bytes) -> impl IntoResponse {
-    let lang = {
-        let mut out = None;
-        for (k, v) in url::form_urlencoded::parse(&body) {
-            if k == "lang" {
-                out = Some(v.to_string());
-            }
-        }
-        out.unwrap_or_else(|| "en_US".into())
-    };
-    // Try update user prefs via /v1/me -> id, then PUT /v1/users/{id}
-    if let Some(token) = read_token_cookie(&headers) {
-        let cli = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(5))
-            .build()
-            .unwrap();
-        let me = format!("{}/v1/me", api_base());
-        if let Ok(resp) = cli
-            .get(me)
-            .header("X-Auth-Token", &token)
-            .send()
-            .await
-            .and_then(|r| r.error_for_status())
-        {
-            #[derive(serde::Deserialize)]
-            struct Me {
-                id: i64,
-            }
-            if let Ok(m) = resp.json::<Me>().await {
-                let url = format!("{}/v1/users/{}", api_base(), m.id);
-                let _ = cli
-                    .put(url)
-                    .header("X-Auth-Token", token)
-                    .json(&serde_json::json!({"language": lang}))
-                    .send()
-                    .await;
-            }
-        }
-    }
-    // Always set cookie for immediate effect
-    let res = axum::response::Response::builder()
-        .status(axum::http::StatusCode::SEE_OTHER)
-        .header(axum::http::header::LOCATION, "/settings")
-        .header(
-            axum::http::header::SET_COOKIE,
-            format!("lang={}; Path=/; SameSite=Lax", lang),
-        );
-    res.body(axum::body::Body::empty())
-        .unwrap_or_else(|_| axum::response::Response::new(axum::body::Body::empty()))
-}
-
-async fn ui_prefs_default_filter(_headers: HeaderMap, body: Bytes) -> impl IntoResponse {
-    // Accept values: all | unread | starred
-    let value = {
-        let mut out: Option<String> = None;
-        for (k, v) in url::form_urlencoded::parse(&body) {
-            if k == "filter" {
-                out = Some(v.to_string());
-            }
-        }
-        let v = out.unwrap_or_else(|| "all".into()).to_ascii_lowercase();
-        match v.as_str() {
-            "unread" => "unread",
-            "starred" => "starred",
-            _ => "all",
-        }
-        .to_string()
-    };
-    let res = axum::response::Response::builder()
-        .status(axum::http::StatusCode::SEE_OTHER)
-        .header(axum::http::header::LOCATION, "/settings")
-        .header(
-            axum::http::header::SET_COOKIE,
-            format!("default_filter={}; Path=/; SameSite=Lax", value),
-        );
-    res.body(axum::body::Body::empty())
-        .unwrap_or_else(|_| axum::response::Response::new(axum::body::Body::empty()))
-}
-
-async fn ui_prefs_entries_per_page(headers: HeaderMap, body: Bytes) -> impl IntoResponse {
-    let Some(token) = read_token_cookie(&headers) else {
-        return Redirect::to("/login").into_response();
-    };
-    // parse positive integer 1..=200
-    let mut num: i32 = 50;
-    for (k, v) in url::form_urlencoded::parse(&body) {
-        if k == "entries_per_page" {
-            if let Ok(n) = v.parse::<i32>() {
-                num = n.clamp(1, 200);
-            }
-        }
-    }
-    // PUT /v1/users/{id}
-    let cli = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(5))
-        .build()
-        .unwrap();
-    let me = format!("{}/v1/me", api_base());
-    if let Ok(resp) = cli
-        .get(&me)
-        .header("X-Auth-Token", &token)
-        .send()
-        .await
-        .and_then(|r| r.error_for_status())
-    {
-        #[derive(serde::Deserialize)]
-        struct Me {
-            id: i64,
-        }
-        if let Ok(m) = resp.json::<Me>().await {
-            let url = format!("{}/v1/users/{}", api_base(), m.id);
-            let _ = cli
-                .put(url)
-                .header("X-Auth-Token", token)
-                .json(&serde_json::json!({"entries_per_page": num}))
-                .send()
-                .await;
-        }
-    }
-    Redirect::to("/settings").into_response()
-}
-
-async fn ui_prefs_sort_direction(headers: HeaderMap, body: Bytes) -> impl IntoResponse {
-    let Some(token) = read_token_cookie(&headers) else {
-        return Redirect::to("/login").into_response();
-    };
-    let mut dir = String::from("desc");
-    for (k, v) in url::form_urlencoded::parse(&body) {
-        if k == "entry_sorting_direction" {
-            let s = v.to_string().to_ascii_lowercase();
-            if s == "asc" || s == "desc" {
-                dir = s;
-            }
-        }
-    }
-    let cli = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(5))
-        .build()
-        .unwrap();
-    let me = format!("{}/v1/me", api_base());
-    if let Ok(resp) = cli
-        .get(&me)
-        .header("X-Auth-Token", &token)
-        .send()
-        .await
-        .and_then(|r| r.error_for_status())
-    {
-        #[derive(serde::Deserialize)]
-        struct Me {
-            id: i64,
-        }
-        if let Ok(m) = resp.json::<Me>().await {
-            let url = format!("{}/v1/users/{}", api_base(), m.id);
-            let _ = cli
-                .put(url)
-                .header("X-Auth-Token", token)
-                .json(&serde_json::json!({"entry_sorting_direction": dir}))
-                .send()
-                .await;
-        }
-    }
-    Redirect::to("/settings").into_response()
-}
-
-async fn ui_prefs_keyboard_shortcuts(headers: HeaderMap, body: Bytes) -> impl IntoResponse {
-    let Some(token) = read_token_cookie(&headers) else {
-        return Redirect::to("/login").into_response();
-    };
-    let mut enabled = false;
-    for (k, v) in url::form_urlencoded::parse(&body) {
-        if k == "keyboard_shortcuts" {
-            let s = v.to_string();
-            enabled = s == "on" || s == "1" || s.eq_ignore_ascii_case("true");
-        }
-    }
-    let cli = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(5))
-        .build()
-        .unwrap();
-    let me = format!("{}/v1/me", api_base());
-    if let Ok(resp) = cli
-        .get(&me)
-        .header("X-Auth-Token", &token)
-        .send()
-        .await
-        .and_then(|r| r.error_for_status())
-    {
-        #[derive(serde::Deserialize)]
-        struct Me {
-            id: i64,
-        }
-        if let Ok(m) = resp.json::<Me>().await {
-            let url = format!("{}/v1/users/{}", api_base(), m.id);
-            let _ = cli
-                .put(url)
-                .header("X-Auth-Token", token)
-                .json(&serde_json::json!({"keyboard_shortcuts": enabled}))
-                .send()
-                .await;
-        }
-    }
-    Redirect::to("/settings").into_response()
-}
-
-async fn ui_prefs_show_reading_time(headers: HeaderMap, body: Bytes) -> impl IntoResponse {
-    let Some(token) = read_token_cookie(&headers) else {
-        return Redirect::to("/login").into_response();
-    };
-    let mut enabled = false;
-    for (k, v) in url::form_urlencoded::parse(&body) {
-        if k == "show_reading_time" {
-            let s = v.to_string();
-            enabled = s == "on" || s == "1" || s.eq_ignore_ascii_case("true");
-        }
-    }
-    let cli = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(5))
-        .build()
-        .unwrap();
-    let me = format!("{}/v1/me", api_base());
-    if let Ok(resp) = cli
-        .get(&me)
-        .header("X-Auth-Token", &token)
-        .send()
-        .await
-        .and_then(|r| r.error_for_status())
-    {
-        #[derive(serde::Deserialize)]
-        struct Me {
-            id: i64,
-        }
-        if let Ok(m) = resp.json::<Me>().await {
-            let url = format!("{}/v1/users/{}", api_base(), m.id);
-            let _ = cli
-                .put(url)
-                .header("X-Auth-Token", token)
-                .json(&serde_json::json!({"show_reading_time": enabled}))
-                .send()
-                .await;
-        }
-    }
-    Redirect::to("/settings").into_response()
-}
-
-async fn ui_prefs_open_ext_newtab(headers: HeaderMap, body: Bytes) -> impl IntoResponse {
-    // Set cookie for immediate effect; attempt to persist to user prefs if supported
-    let enabled = {
-        let mut b = false;
-        for (k, v) in url::form_urlencoded::parse(&body) {
-            if k == "open_newtab" {
-                let s = v.to_string();
-                b = s == "on" || s == "1" || s.eq_ignore_ascii_case("true");
-            }
-        }
-        b
-    };
-    if let Some(token) = read_token_cookie(&headers) {
-        let cli = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(5))
-            .build()
-            .unwrap();
-        let me = format!("{}/v1/me", api_base());
-        if let Ok(resp) = cli
-            .get(&me)
-            .header("X-Auth-Token", &token)
-            .send()
-            .await
-            .and_then(|r| r.error_for_status())
-        {
-            #[derive(serde::Deserialize)]
-            struct Me {
-                id: i64,
-            }
-            if let Ok(m) = resp.json::<Me>().await {
-                let url = format!("{}/v1/users/{}", api_base(), m.id);
-                let _ = cli
-                    .put(url)
-                    .header("X-Auth-Token", token)
-                    .json(&serde_json::json!({"open_external_links_in_new_tab": enabled}))
-                    .send()
-                    .await;
-            }
-        }
-    }
-    let res = axum::response::Response::builder()
-        .status(axum::http::StatusCode::SEE_OTHER)
-        .header(axum::http::header::LOCATION, "/settings")
-        .header(
-            axum::http::header::SET_COOKIE,
-            format!(
-                "open_ext_newtab={}; Path=/; SameSite=Lax",
-                if enabled { "1" } else { "0" }
-            ),
-        );
-    res.body(axum::body::Body::empty())
-        .unwrap_or_else(|_| axum::response::Response::new(axum::body::Body::empty()))
-}
-
-async fn ui_prefs_theme(headers: HeaderMap, body: Bytes) -> impl IntoResponse {
-    let theme = {
-        let mut out = String::from("system");
-        for (k, v) in url::form_urlencoded::parse(&body) {
-            if k == "theme" {
-                let s = v.to_string();
-                if s == "light" || s == "dark" || s == "system" {
-                    out = s;
-                }
-            }
-        }
-        out
-    };
-    // persist to server theme if possible
-    if let Some(token) = read_token_cookie(&headers) {
-        let cli = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(5))
-            .build()
-            .unwrap();
-        let me = format!("{}/v1/me", api_base());
-        if let Ok(resp) = cli
-            .get(&me)
-            .header("X-Auth-Token", &token)
-            .send()
-            .await
-            .and_then(|r| r.error_for_status())
-        {
-            #[derive(serde::Deserialize)]
-            struct Me {
-                id: i64,
-            }
-            if let Ok(m) = resp.json::<Me>().await {
-                let url = format!("{}/v1/users/{}", api_base(), m.id);
-                let server_theme = match theme.as_str() {
-                    "light" => "light_serif",
-                    "dark" => "dark_serif",
-                    _ => "system_serif",
-                };
-                let _ = cli
-                    .put(url)
-                    .header("X-Auth-Token", token)
-                    .json(&serde_json::json!({"theme": server_theme}))
-                    .send()
-                    .await;
-            }
-        }
-    }
-    let res = axum::response::Response::builder()
-        .status(axum::http::StatusCode::SEE_OTHER)
-        .header(axum::http::header::LOCATION, "/settings")
-        .header(
-            axum::http::header::SET_COOKIE,
-            format!("theme={}; Path=/; SameSite=Lax", theme),
-        );
-    res.body(axum::body::Body::empty())
-        .unwrap_or_else(|_| axum::response::Response::new(axum::body::Body::empty()))
-}
-
-async fn ui_prefs_custom_css(headers: HeaderMap, body: Bytes) -> impl IntoResponse {
-    let Some(token) = read_token_cookie(&headers) else {
-        return Redirect::to("/login").into_response();
-    };
-    let mut css = String::new();
-    let mut font_hosts = None::<String>;
-    for (k, v) in url::form_urlencoded::parse(&body) {
-        if k == "custom_css" {
-            css = v.to_string();
-        } else if k == "external_font_hosts" {
-            let s = v.to_string();
-            if !s.trim().is_empty() {
-                font_hosts = Some(s);
-            } else {
-                font_hosts = Some(String::new());
-            }
-        }
-    }
-    let cli = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(5))
-        .build()
-        .unwrap();
-    let me = format!("{}/v1/me", api_base());
-    if let Ok(resp) = cli
-        .get(&me)
-        .header("X-Auth-Token", &token)
-        .send()
-        .await
-        .and_then(|r| r.error_for_status())
-    {
-        #[derive(serde::Deserialize)]
-        struct Me {
-            id: i64,
-        }
-        if let Ok(m) = resp.json::<Me>().await {
-            let url = format!("{}/v1/users/{}", api_base(), m.id);
-            let mut payload = serde_json::json!({ "stylesheet": css });
-            if let Some(hosts) = font_hosts {
-                if let Some(obj) = payload.as_object_mut() {
-                    obj.insert("external_font_hosts".to_string(), serde_json::json!(hosts));
-                }
-            }
-            let _ = cli
-                .put(url)
-                .header("X-Auth-Token", token)
-                .json(&payload)
-                .send()
-                .await;
-        }
-    }
-    Redirect::to("/settings").into_response()
-}
-
-async fn ui_prefs_custom_js(headers: HeaderMap, body: Bytes) -> impl IntoResponse {
-    let Some(token) = read_token_cookie(&headers) else {
-        return Redirect::to("/login").into_response();
-    };
-    let mut js = String::new();
-    for (k, v) in url::form_urlencoded::parse(&body) {
-        if k == "custom_js" {
-            js = v.to_string();
-        }
-    }
-    let cli = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(5))
-        .build()
-        .unwrap();
-    let me = format!("{}/v1/me", api_base());
-    if let Ok(resp) = cli
-        .get(&me)
-        .header("X-Auth-Token", &token)
-        .send()
-        .await
-        .and_then(|r| r.error_for_status())
-    {
-        #[derive(serde::Deserialize)]
-        struct Me {
-            id: i64,
-        }
-        if let Ok(m) = resp.json::<Me>().await {
-            let url = format!("{}/v1/users/{}", api_base(), m.id);
-            let _ = cli
-                .put(url)
-                .header("X-Auth-Token", token)
-                .json(&serde_json::json!({ "custom_js": js }))
-                .send()
-                .await;
-        }
-    }
-    Redirect::to("/settings").into_response()
-}
-
-fn set_cookie_redirect(_headers: HeaderMap, name: &str, on: bool) -> axum::response::Response {
-    let res = axum::response::Response::builder()
-        .status(axum::http::StatusCode::SEE_OTHER)
-        .header(axum::http::header::LOCATION, "/settings")
-        .header(
-            axum::http::header::SET_COOKIE,
-            format!(
-                "{}={}; Path=/; SameSite=Lax",
-                name,
-                if on { "1" } else { "0" }
-            ),
-        );
-    res.body(axum::body::Body::empty())
-        .unwrap_or_else(|_| axum::response::Response::new(axum::body::Body::empty()))
-}
-
-async fn ui_prefs_compact_ui(headers: HeaderMap, body: Bytes) -> impl IntoResponse {
-    let mut on = false;
-    for (k, v) in url::form_urlencoded::parse(&body) {
-        if k == "compact_ui" {
-            let s = v.to_string();
-            on = s == "on" || s == "1" || s.eq_ignore_ascii_case("true");
-        }
-    }
-    set_cookie_redirect(headers, "compact_ui", on)
-}
-
-async fn ui_prefs_minimal_ui(headers: HeaderMap, body: Bytes) -> impl IntoResponse {
-    let mut on = false;
-    for (k, v) in url::form_urlencoded::parse(&body) {
-        if k == "minimal_ui" {
-            let s = v.to_string();
-            on = s == "on" || s == "1" || s.eq_ignore_ascii_case("true");
-        }
-    }
-    set_cookie_redirect(headers, "minimal_ui", on)
-}
-
-async fn ui_prefs_auto_mark_read(headers: HeaderMap, body: Bytes) -> impl IntoResponse {
-    let mut on = false;
-    for (k, v) in url::form_urlencoded::parse(&body) {
-        if k == "auto_mark_read" {
-            let s = v.to_string();
-            on = s == "on" || s == "1" || s.eq_ignore_ascii_case("true");
-        }
-    }
-    // Persist to server mark_read_on_view if possible
-    if let Some(token) = read_token_cookie(&headers) {
-        let cli = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(5))
-            .build()
-            .unwrap();
-        let me = format!("{}/v1/me", api_base());
-        if let Ok(resp) = cli
-            .get(&me)
-            .header("X-Auth-Token", &token)
-            .send()
-            .await
-            .and_then(|r| r.error_for_status())
-        {
-            #[derive(serde::Deserialize)]
-            struct Me {
-                id: i64,
-            }
-            if let Ok(m) = resp.json::<Me>().await {
-                let url = format!("{}/v1/users/{}", api_base(), m.id);
-                let _ = cli
-                    .put(url)
-                    .header("X-Auth-Token", token)
-                    .json(&serde_json::json!({ "mark_read_on_view": on }))
-                    .send()
-                    .await;
-            }
-        }
-    }
-    set_cookie_redirect(headers, "auto_mark_read", on)
-}
-
-async fn ui_opml_export(headers: HeaderMap) -> impl IntoResponse {
-    let Some(token) = read_token_cookie(&headers) else {
-        return Redirect::to("/login").into_response();
-    };
-    let cli = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
-        .build()
-        .unwrap();
-    let url = format!("{}/v1/export", api_base());
-    match cli
-        .get(url)
-        .header("X-Auth-Token", token)
-        .send()
-        .await
-        .and_then(|r| r.error_for_status())
-    {
-        Ok(resp) => {
-            let bytes = resp.bytes().await.unwrap_or_default();
-            let mut res = axum::response::Response::builder().status(200);
-            res = res.header(axum::http::header::CONTENT_TYPE, "text/xml; charset=utf-8");
-            res = res.header(
-                axum::http::header::CONTENT_DISPOSITION,
-                "attachment; filename=feeds.opml",
-            );
-            res.body(axum::body::Body::from(bytes))
-                .unwrap_or_else(|_| axum::response::Response::new(axum::body::Body::from("")))
-        }
-        Err(_) => Redirect::to("/settings").into_response(),
-    }
-}
-
-async fn ui_opml_import(headers: HeaderMap, body: Bytes) -> impl IntoResponse {
-    let Some(token) = read_token_cookie(&headers) else {
-        return Redirect::to("/login").into_response();
-    };
-    let parsed = url::form_urlencoded::parse(&body);
-    let mut content = String::new();
-    for (k, v) in parsed {
-        if k == "content" {
-            content = v.to_string();
-        }
-    }
-    if content.trim().is_empty() {
-        return Redirect::to("/settings").into_response();
-    }
-    let cli = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(15))
-        .build()
-        .unwrap();
-    let url = format!("{}/v1/import", api_base());
-    let _ = cli
-        .post(url)
-        .header("X-Auth-Token", token)
-        .header(axum::http::header::CONTENT_TYPE, "application/xml")
-        .body(content)
-        .send()
-        .await;
-    Redirect::to("/settings").into_response()
-}
-
-async fn ui_apikey_create(headers: HeaderMap, body: Bytes) -> impl IntoResponse {
-    let Some(token) = read_token_cookie(&headers) else {
-        return Redirect::to("/login").into_response();
-    };
-    let parsed = url::form_urlencoded::parse(&body);
-    let mut desc = None;
-    for (k, v) in parsed {
-        if k == "description" {
-            desc = Some(v.to_string());
-        }
-    }
-    let payload = serde_json::json!({"description": desc});
-    let cli = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(5))
-        .build()
-        .unwrap();
-    let url = format!("{}/v1/api-keys", api_base());
-    let _ = cli
-        .post(url)
-        .header("X-Auth-Token", token)
-        .json(&payload)
-        .send()
-        .await;
-    Redirect::to("/settings").into_response()
-}
-
-async fn ui_apikey_delete(Path(id): Path<i64>, headers: HeaderMap) -> impl IntoResponse {
-    let Some(token) = read_token_cookie(&headers) else {
-        return Redirect::to("/login").into_response();
-    };
-    let cli = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(5))
-        .build()
-        .unwrap();
-    let url = format!("{}/v1/api-keys/{}", api_base(), id);
-    let _ = cli.delete(url).header("X-Auth-Token", token).send().await;
-    Redirect::to("/settings").into_response()
-}
-
-async fn ui_integration_create(headers: HeaderMap, body: Bytes) -> impl IntoResponse {
-    let Some(token) = read_token_cookie(&headers) else {
-        return Redirect::to("/login").into_response();
-    };
-    let mut kind = String::new();
-    let mut enabled = true;
-    let mut cfg = String::new();
-    for (k, v) in url::form_urlencoded::parse(&body) {
-        match &*k {
-            "kind" => kind = v.to_string(),
-            "enabled" => enabled = v == "on" || v == "1" || v.eq_ignore_ascii_case("true"),
-            "config_json" => cfg = v.to_string(),
-            _ => {}
-        }
-    }
-    let config_json: serde_json::Value =
-        serde_json::from_str(&cfg).unwrap_or(serde_json::json!({}));
-    let payload = serde_json::json!({"kind": kind, "enabled": enabled, "config_json": config_json});
-    let cli = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(8))
-        .build()
-        .unwrap();
-    let url = format!("{}/api/v1/integrations", api_base());
-    let _ = cli
-        .post(url)
-        .header("X-Auth-Token", token)
-        .json(&payload)
-        .send()
-        .await;
-    Redirect::to("/settings").into_response()
-}
-
-async fn ui_integration_update(
-    Path(id): Path<i64>,
-    headers: HeaderMap,
-    body: Bytes,
-) -> impl IntoResponse {
-    let Some(token) = read_token_cookie(&headers) else {
-        return Redirect::to("/login").into_response();
-    };
-    let mut enabled = None;
-    let mut cfg = None;
-    for (k, v) in url::form_urlencoded::parse(&body) {
-        match &*k {
-            "enabled" => enabled = Some(v == "on" || v == "1" || v.eq_ignore_ascii_case("true")),
-            "config_json" => cfg = Some(v.to_string()),
-            _ => {}
-        }
-    }
-    let config_json = cfg.and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok());
-    let mut payload = serde_json::Map::new();
-    if let Some(b) = enabled {
-        payload.insert("enabled".into(), serde_json::Value::Bool(b));
-    }
-    if let Some(j) = config_json {
-        payload.insert("config_json".into(), j);
-    }
-    let cli = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(8))
-        .build()
-        .unwrap();
-    let url = format!("{}/api/v1/integrations/{}", api_base(), id);
-    let _ = cli
-        .put(url)
-        .header("X-Auth-Token", token)
-        .json(&payload)
-        .send()
-        .await;
-    Redirect::to("/settings").into_response()
-}
-
-async fn ui_integration_delete(Path(id): Path<i64>, headers: HeaderMap) -> impl IntoResponse {
-    let Some(token) = read_token_cookie(&headers) else {
-        return Redirect::to("/login").into_response();
-    };
-    let cli = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(5))
-        .build()
-        .unwrap();
-    let url = format!("{}/api/v1/integrations/{}", api_base(), id);
-    let _ = cli.delete(url).header("X-Auth-Token", token).send().await;
-    Redirect::to("/settings").into_response()
-}
-
-async fn ui_webhook_create(headers: HeaderMap, body: Bytes) -> impl IntoResponse {
-    let Some(token) = read_token_cookie(&headers) else {
-        return Redirect::to("/login").into_response();
-    };
-    let mut urlv = String::new();
-    let mut events = None;
-    for (k, v) in url::form_urlencoded::parse(&body) {
-        match &*k {
-            "url" => urlv = v.to_string(),
-            "events" => {
-                let s = v.to_string();
-                if !s.trim().is_empty() {
-                    events = Some(s);
-                }
-            }
-            _ => {}
-        }
-    }
-    if !urlv.trim().is_empty() {
-        let payload = serde_json::json!({"url": urlv, "events": events});
-        let cli = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(8))
-            .build()
-            .unwrap();
-        let api = format!("{}/api/v1/webhooks", api_base());
-        let _ = cli
-            .post(api)
-            .header("X-Auth-Token", token)
-            .json(&payload)
-            .send()
-            .await;
-    }
-    Redirect::to("/settings").into_response()
-}
-
-async fn ui_webhook_delete(Path(id): Path<i64>, headers: HeaderMap) -> impl IntoResponse {
-    let Some(token) = read_token_cookie(&headers) else {
-        return Redirect::to("/login").into_response();
-    };
-    let cli = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(5))
-        .build()
-        .unwrap();
-    let api = format!("{}/api/v1/webhooks/{}", api_base(), id);
-    let _ = cli.delete(api).header("X-Auth-Token", token).send().await;
-    Redirect::to("/settings").into_response()
-}
 #[derive(Deserialize, Clone)]
 struct UiFeedFull {
     id: i64,
     title: Option<String>,
     #[serde(default)]
-    category: Option<UiCategory>,
+    category: Option<pages_feeds::UiCategory>,
     #[serde(default)]
     user_agent: Option<String>,
     #[serde(default)]
@@ -2157,7 +708,7 @@ struct UiFeedFull {
 struct FeedEditPage<'a> {
     title: &'a str,
     feed: &'a UiFeedFull,
-    categories: &'a [UiCategory],
+    categories: &'a [pages_feeds::UiCategory],
     dict: &'a std::collections::HashMap<String, String>,
     csp_nonce: &'a str,
     custom_css: &'a str,
@@ -2221,7 +772,7 @@ async fn ui_feed_edit(Path(id): Path<i64>, headers: HeaderMap) -> impl IntoRespo
         },
     };
     let cats_url = format!("{}/v1/categories?counts=false", api_base());
-    let categories: Vec<UiCategory> = match cli
+    let categories: Vec<pages_feeds::UiCategory> = match cli
         .get(cats_url)
         .header("X-Auth-Token", token)
         .send()

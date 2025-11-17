@@ -5,8 +5,8 @@
 //! reuse the same logic.
 
 use captura_common::Result;
-use captura_types::EntryView;
 use captura_storage::entity::{entry, entry_label, feed};
+use captura_types::EntryView;
 use sea_orm::{
     ColumnTrait, Condition, DatabaseConnection, EntityTrait, JoinType, QueryFilter, QuerySelect,
     RelationTrait,

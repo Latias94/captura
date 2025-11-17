@@ -21,7 +21,7 @@ pub struct Sorting {
 
 /// Logical entry view used by first-party clients to switch between
 /// article / picture / video / etc. timelines.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub enum EntryView {
     /// Do not apply any view-based filtering.
@@ -56,6 +56,7 @@ impl EntryView {
     }
 
     /// Parse from a snake_case string, returning `None` for unknown values.
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Option<Self> {
         match s {
             "all" => Some(EntryView::All),
@@ -66,6 +67,37 @@ impl EntryView {
             "social" => Some(EntryView::Social),
             "notifications" => Some(EntryView::Notifications),
             _ => None,
+        }
+    }
+
+    /// Decode from an optional database string column.
+    ///
+    /// This is a small convenience wrapper around `from_str` so that callers
+    /// don't have to repeat `as_deref().and_then(EntryView::from_str)` in
+    /// every handler.
+    pub fn from_db(raw: Option<&str>) -> Option<Self> {
+        raw.and_then(Self::from_str)
+    }
+
+    /// Encode into the string representation stored in the database.
+    pub fn to_db(self) -> String {
+        self.as_str().to_string()
+    }
+
+    /// Compute the effective view for a feed when both feed-level and
+    /// category-level views are available.
+    ///
+    /// Semantics:
+    /// - If `feed_view` is set and valid, it wins;
+    /// - Otherwise, if `category_view` is set and valid, it is used;
+    /// - Otherwise, fall back to the default article-centric view.
+    pub fn effective(feed_view: Option<&str>, category_view: Option<&str>) -> Self {
+        if let Some(v) = Self::from_db(feed_view) {
+            v
+        } else if let Some(v) = Self::from_db(category_view) {
+            v
+        } else {
+            EntryView::Articles
         }
     }
 }
@@ -79,7 +111,10 @@ pub struct FeedDto {
     pub site_url: Option<String>,
     pub disabled: bool,
     pub category_id: Option<i64>,
-    pub view: Option<EntryView>,
+    /// Preferred view for this feed. This is always a concrete `EntryView`
+    /// value on the wire; when the server had no explicit preference stored
+    /// it will default to `EntryView::Articles`.
+    pub view: EntryView,
 }
 
 /// Minimal entry representation exposed by `/api/v1/entries` and `/api/v1/entries/{id}`.
@@ -123,7 +158,9 @@ pub struct CategoryCounterDto {
 pub struct CategoryDto {
     pub id: i64,
     pub name: String,
-    pub view: Option<EntryView>,
+    /// Preferred view for this category; feeds can inherit from it when
+    /// created without an explicit view. Always non-null on the wire.
+    pub view: EntryView,
 }
 
 /// Generic `{ id }` response used by multiple create endpoints.
@@ -141,6 +178,34 @@ pub struct ViewDto {
     pub label: String,
     /// Optional description to explain when this view is useful.
     pub description: Option<String>,
+}
+
+/// Summary counters per view, used by `/api/v1/views/summary`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ViewSummaryDto {
+    pub view: EntryView,
+    pub feed_count: i64,
+    pub unread_count: i64,
+}
+
+/// Unified timeline descriptor used by `/api/v1/timelines`.
+///
+/// This surface merges built-in views (Articles/Pictures/...) and user-defined
+/// smart views into a single list that clients can present as “timelines”.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TimelineDto {
+    /// Timeline kind, e.g. "view" or "smart_view".
+    pub kind: String,
+    /// Smart view id for kind="smart_view"; null for built-in view timelines.
+    pub id: Option<i64>,
+    /// Logical view used by this timeline.
+    pub view: EntryView,
+    /// Human-friendly name of the timeline.
+    pub name: String,
+    /// Optional description suitable for tooltips or settings.
+    pub description: Option<String>,
+    /// Whether this timeline is pinned/highlighted in UI (for smart views).
+    pub pinned: bool,
 }
 
 /// Filters payload used by smart views and stored as JSON.
@@ -164,4 +229,93 @@ pub struct SmartViewDto {
     pub sort_by: Option<String>,
     pub sort_order: Option<String>,
     pub pinned: bool,
+}
+
+/// Captura-native, view-aware JSON export payload used by
+/// `/api/v1/export/full` and `/api/v1/import/full`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FullExport {
+    pub version: String,
+    pub exported_at: String,
+    pub categories: Vec<ExportCategory>,
+    pub feeds: Vec<ExportFeed>,
+    pub smart_views: Vec<ExportSmartView>,
+    /// Optional label snapshot for the current user. Older payloads may omit this
+    /// field; consumers should treat missing/empty as "no labels exported".
+    #[serde(default)]
+    pub labels: Vec<ExportLabel>,
+    /// Optional user preference snapshot for the current user, modeled as a list
+    /// of key/value pairs. Missing/empty means "no prefs exported".
+    #[serde(default)]
+    pub user_prefs: Vec<ExportUserPref>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExportCategory {
+    pub id: i64,
+    pub name: String,
+    /// Preferred view for this category. Exposed as `EntryView` on the wire.
+    pub view: EntryView,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExportFeed {
+    pub id: i64,
+    pub title: Option<String>,
+    pub site_url: Option<String>,
+    pub feed_url: String,
+    pub category_id: Option<i64>,
+    /// Preferred view for this feed; same key space as `ExportCategory.view`.
+    pub view: EntryView,
+    pub r#type: String,
+    pub fetch: ExportFeedFetch,
+    pub filters: ExportFeedFilters,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExportFeedFetch {
+    pub user_agent: Option<String>,
+    pub headers_json: Option<serde_json::Value>,
+    pub cookies: Option<String>,
+    pub proxy_url: Option<String>,
+    pub fetch_via_proxy: bool,
+    pub disable_http2: bool,
+    pub allow_invalid_certs: bool,
+    pub request_timeout_ms: Option<i32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExportFeedFilters {
+    pub scraper_rules: Option<String>,
+    pub rewrite_rules: Option<String>,
+    pub blocklist_rules: Option<String>,
+    pub keeplist_rules: Option<String>,
+    pub url_rewrite_rules: Option<String>,
+    pub block_filter_entry_rules: Option<String>,
+    pub keep_filter_entry_rules: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExportSmartView {
+    pub id: i64,
+    pub name: String,
+    /// Logical view used by this smart view timeline.
+    pub view: EntryView,
+    pub filters: serde_json::Value,
+    pub sort_by: Option<String>,
+    pub sort_order: Option<String>,
+    pub pinned: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExportLabel {
+    pub id: i64,
+    pub name: String,
+    pub color: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExportUserPref {
+    pub key: String,
+    pub value: Option<serde_json::Value>,
 }

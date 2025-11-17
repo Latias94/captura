@@ -38,6 +38,7 @@ pub const META_BILIBILI_BANGUMI_MEDIA: RouteMeta = RouteMeta {
     maintainers: &["captura"],
     url: "https://www.bilibili.com/bangumi",
     description: "Bangumi media route (mediaid → season episodes), aligned with RSSHub.",
+    default_view: Some("videos"),
 };
 
 pub async fn handler(ctx: &mut HubCtx<'_>) -> captura_common::Result<HubData> {

@@ -19,11 +19,7 @@ impl MigrationTrait for Migration {
                             .primary_key(),
                     )
                     .col(ColumnDef::new(SmartView::UserId).big_integer().not_null())
-                    .col(
-                        ColumnDef::new(SmartView::Name)
-                            .string_len(190)
-                            .not_null(),
-                    )
+                    .col(ColumnDef::new(SmartView::Name).string_len(190).not_null())
                     .col(ColumnDef::new(SmartView::View).string().not_null())
                     .col(ColumnDef::new(SmartView::FiltersJson).json_binary())
                     .col(ColumnDef::new(SmartView::SortBy).string_len(32))
@@ -83,4 +79,3 @@ enum User {
     Table,
     Id,
 }
-

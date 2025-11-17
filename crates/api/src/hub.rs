@@ -103,7 +103,7 @@ pub(crate) async fn list_routes(
 ) -> ApiResult<Json<HubRouteListResp>> {
     let _user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
     let routes = captura_rules::routes::registry::builtin_routes()
-        .into_iter()
+        .iter()
         .map(|r| {
             let meta = r.meta;
             HubRouteDto {
@@ -133,7 +133,7 @@ pub(crate) async fn get_route(
     let _user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
     let hub_id = format!("{}/{}", namespace, name);
     let Some(r) = captura_rules::routes::registry::builtin_routes()
-        .into_iter()
+        .iter()
         .find(|r| r.meta.hub_id == hub_id)
     else {
         return Err(not_found("hub route not found"));

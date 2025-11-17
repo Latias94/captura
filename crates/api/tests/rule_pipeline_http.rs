@@ -4,7 +4,6 @@ use captura_service::refresh_and_persist;
 use captura_storage::entity::{entry, feed, rule};
 use chrono::{FixedOffset, Utc};
 use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set};
-use tracing_subscriber::EnvFilter;
 
 /// Use a local HTTP server to verify that a `rule`-type feed with YAML rules
 /// can go through the full service pipeline and persist entries.
@@ -298,6 +297,161 @@ source:
     assert!(
         has_expected,
         "no entry matched expected title/url from JSON fragment"
+    );
+}
+
+/// Verify that `fetch.proxies` (rule-level proxy config) overrides feed-level
+/// proxy settings for JSON rules, so rules can steer traffic through dedicated
+/// proxy pools independent of per-feed defaults.
+#[tokio::test]
+async fn rule_feed_json_uses_rule_level_proxy_over_feed_proxy() {
+    use axum::http::StatusCode;
+    use axum::routing::any;
+
+    // 1) Start a simple HTTP server acting as a dummy proxy. It ignores the
+    // upstream URL and always returns a JSON payload compatible with the rule
+    // mapping below.
+    async fn proxy_handler() -> (StatusCode, &'static str) {
+        (
+            StatusCode::OK,
+            r#"{"items":[{"title":"ViaProxy","url":"https://example.com/via_proxy"}]}"#,
+        )
+    }
+
+    let app = Router::new().fallback(any(proxy_handler));
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind proxy listener");
+    let addr = listener.local_addr().expect("proxy local_addr");
+    let proxy_base = format!("http://{}", addr);
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.expect("serve proxy");
+    });
+
+    // 2) Init in-memory DB + user + rule + rule-type feed with a bogus feed-level
+    // proxy, and a valid rule-level proxy pointing to our dummy proxy server.
+    let db = captura_testkit::setup_db().await;
+    let (uid, _token) = captura_testkit::seed_user_and_token(&db, "rule_user_json_proxy").await;
+    let now = Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
+
+    // JSON rule: target URL is an unreachable host; only the proxy can make it work.
+    let yaml = format!(
+        r#"id: "test.rule.json_proxy"
+version: 1
+description: "json proxy override test"
+fetch:
+  proxies:
+    - "{proxy}"
+source:
+  type: json
+  request:
+    url: "http://unreachable.example.local/json"
+  root: "items"
+  mapping:
+    title: "title"
+    url: "url"
+"#,
+        proxy = proxy_base
+    );
+
+    let spec = parse_rule_v1(&yaml).expect("parse json proxy rule yaml");
+    let spec_json = serde_json::to_value(&spec).expect("encode rule spec_json in json_proxy test");
+    let examples_json =
+        serde_json::to_value(&spec.examples).expect("encode rule examples_json in json_proxy test");
+    let namespace = spec.id.rsplit_once('.').map(|(ns, _)| ns.to_string());
+
+    let rule_am = rule::ActiveModel {
+        rule_id: Set(spec.id.clone()),
+        kind: Set("dsl".to_string()),
+        version: Set(None),
+        namespace: Set(namespace),
+        description: Set(spec.description.clone()),
+        spec_json: Set(Some(spec_json)),
+        handler_target: Set(None),
+        examples_json: Set(Some(examples_json)),
+        verified_at: Set(Some(now)),
+        maintainer: Set(None),
+        created_at: Set(now),
+        updated_at: Set(now),
+        ..Default::default()
+    };
+    let r = rule_am.insert(&db).await.expect("insert rule");
+
+    // Feed-level proxy is intentionally bogus; if rule-level proxies were not
+    // respected, refresh would fail due to proxy connection errors.
+    let feed_am = feed::ActiveModel {
+        user_id: Set(uid),
+        category_id: Set(None),
+        r#type: Set(feed::FeedType::Rule),
+        title: Set(Some("RuleFeedJsonProxy".into())),
+        site_url: Set(Some("http://unreachable.example.local".into())),
+        feed_url: Set("rule://test-json-proxy".into()),
+        rule_id: Set(Some(r.id)),
+        rule_params_json: Set(None),
+        user_agent: Set(None),
+        username: Set(None),
+        password: Set(None),
+        headers_json: Set(None),
+        cookies: Set(None),
+        proxy_url: Set(Some("http://127.0.0.1:1".into())),
+        fetch_via_proxy: Set(true),
+        disable_http2: Set(false),
+        allow_invalid_certs: Set(false),
+        request_timeout_ms: Set(None),
+        checked_at: Set(None),
+        next_run_at: Set(None),
+        etag: Set(None),
+        last_modified: Set(None),
+        last_status: Set(None),
+        error_count: Set(0),
+        last_error_message: Set(None),
+        disabled: Set(false),
+        scraper_rules: Set(None),
+        rewrite_rules: Set(None),
+        blocklist_rules: Set(None),
+        keeplist_rules: Set(None),
+        url_rewrite_rules: Set(None),
+        block_filter_entry_rules: Set(None),
+        keep_filter_entry_rules: Set(None),
+        integrations_json: Set(None),
+        created_at: Set(now),
+        updated_at: Set(now),
+        ..Default::default()
+    };
+    let f = feed_am.insert(&db).await.expect("insert feed");
+
+    // 3) Refresh the rule feed; this should succeed only if the rule-level proxy
+    // configuration is applied (i.e. the engine uses `fetch.proxies[0]`).
+    let inserted = refresh_and_persist(&db, &f)
+        .await
+        .expect("refresh json-proxy rule feed");
+    assert!(
+        inserted >= 1,
+        "expected at least one entry inserted via proxy, got {}",
+        inserted
+    );
+
+    // 4) Verify that entry title and URL match the JSON returned by the proxy.
+    let entries = entry::Entity::find()
+        .filter(entry::Column::FeedId.eq(f.id))
+        .all(&db)
+        .await
+        .expect("query entries");
+    assert!(
+        !entries.is_empty(),
+        "no entries persisted for json-proxy rule feed"
+    );
+    let has_expected = entries.iter().any(|e| {
+        e.title.as_deref().map(|t| t == "ViaProxy").unwrap_or(false)
+            && e.url
+                .as_deref()
+                .map(|u| u == "https://example.com/via_proxy")
+                .unwrap_or(false)
+    });
+    assert!(
+        has_expected,
+        "no entry matched expected title/url from proxy JSON"
     );
 }
 

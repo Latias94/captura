@@ -36,6 +36,7 @@ pub(crate) struct EntriesQuery {
     pub feed_id: Option<i64>,
     pub category_id: Option<i64>,
     pub status: Option<StatusFilter>,
+    #[serde(alias = "search")]
     pub q: Option<String>,
     pub view: Option<EntryView>,
     #[serde(flatten)]

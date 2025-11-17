@@ -184,7 +184,7 @@ pub fn apply_rule_filters_v1(spec: &RuleSpecV1, entries: &mut Vec<NormalizedEntr
 }
 
 /// Apply DSL v1 transform.description_template to entries.
-pub fn apply_description_template_v1(spec: &RuleSpecV1, entries: &mut Vec<NormalizedEntry>) {
+pub fn apply_description_template_v1(spec: &RuleSpecV1, entries: &mut [NormalizedEntry]) {
     let tpl = match spec
         .transform
         .as_ref()

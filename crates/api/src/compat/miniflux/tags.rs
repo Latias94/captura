@@ -114,7 +114,7 @@ pub(crate) async fn get(
         .await
         .map_err(internal)?
     else {
-        return Err(not_found("tag").into());
+        return Err(not_found("tag"));
     };
     let cnt = entry_label::Entity::find()
         .filter(entry_label::Column::LabelId.eq(l.id))
@@ -140,7 +140,7 @@ pub(crate) async fn delete(
         .await
         .map_err(internal)?
     else {
-        return Err(not_found("tag").into());
+        return Err(not_found("tag"));
     };
     let _ = entry_label::Entity::delete_many()
         .filter(entry_label::Column::LabelId.eq(l.id))
@@ -176,7 +176,7 @@ pub(crate) async fn rename(
         .await
         .map_err(internal)?
     else {
-        return Err(not_found("tag").into());
+        return Err(not_found("tag"));
     };
     if let Some(existing) = label::Entity::find()
         .filter(label::Column::UserId.eq(auth.user_id))
@@ -220,7 +220,7 @@ pub(crate) async fn mark_all_read(
         .await
         .map_err(internal)?
     else {
-        return Err(not_found("tag").into());
+        return Err(not_found("tag"));
     };
     let _ = captura_service::query::mark_entries_read_for_labels(&st.db, auth.user_id, &[l.id])
         .await
