@@ -456,8 +456,35 @@ async fn ui_toggle_star(Path(id): Path<i64>, headers: HeaderMap) -> impl IntoRes
     let Some(cli) = http_client(3) else {
         return Redirect::to(&format!("/entries/{}", id));
     };
-    let url = format!("{}/v1/entries/{}/star", api_base(), id);
-    let _ = cli.put(url).header("X-Auth-Token", token).send().await;
+    // Fetch current star state, then toggle via native /api/v1 endpoint.
+    let get_url = format!("{}/api/v1/entries/{}", api_base(), id);
+    #[derive(serde::Deserialize)]
+    struct ApiEntry {
+        is_starred: bool,
+    }
+    let current = match cli
+        .get(&get_url)
+        .header(
+            axum::http::header::AUTHORIZATION,
+            format!("Bearer {}", token),
+        )
+        .send()
+        .await
+        .and_then(|r| r.error_for_status())
+    {
+        Ok(resp) => resp.json::<ApiEntry>().await.map(|e| e.is_starred).unwrap_or(false),
+        Err(_) => false,
+    };
+    let url = format!("{}/api/v1/entries/{}/star", api_base(), id);
+    let _ = cli
+        .post(url)
+        .header(
+            axum::http::header::AUTHORIZATION,
+            format!("Bearer {}", read_token_cookie(&headers).unwrap_or_default()),
+        )
+        .json(&serde_json::json!({ "value": !current }))
+        .send()
+        .await;
     // redirect back to Referer or entry page
     let back = headers
         .get(axum::http::header::REFERER)
@@ -489,11 +516,15 @@ async fn ui_mark_status(Path(id): Path<i64>, headers: HeaderMap) -> impl IntoRes
     let Some(cli) = http_client(3) else {
         return Redirect::to(&format!("/entries/{}", id));
     };
-    let url = format!("{}/v1/entries/{}", api_base(), id);
+    let url = format!("{}/api/v1/entries/{}/read", api_base(), id);
+    let value = desired.to_ascii_lowercase() == "read";
     let _ = cli
-        .put(url)
-        .header("X-Auth-Token", token)
-        .json(&serde_json::json!({"status": desired}))
+        .post(url)
+        .header(
+            axum::http::header::AUTHORIZATION,
+            format!("Bearer {}", token),
+        )
+        .json(&serde_json::json!({ "value": value }))
         .send()
         .await;
     let back = headers
@@ -531,11 +562,14 @@ async fn ui_bulk_mark(headers: HeaderMap, body: Bytes) -> impl IntoResponse {
         let Some(cli) = http_client(5) else {
             return Redirect::to("/feeds");
         };
-        let url = format!("{}/v1/entries", api_base());
+        let url = format!("{}/api/v1/entries/bulk-status", api_base());
         let _ = cli
-            .put(url)
-            .header("X-Auth-Token", token)
-            .json(&serde_json::json!({"entry_ids": ids, "status": status}))
+            .post(url)
+            .header(
+                axum::http::header::AUTHORIZATION,
+                format!("Bearer {}", token),
+            )
+            .json(&serde_json::json!({"entry_ids": ids, "status": status }))
             .send()
             .await;
     }
@@ -554,8 +588,16 @@ async fn ui_feed_mark_all_read(Path(id): Path<i64>, headers: HeaderMap) -> impl 
     let Some(cli) = http_client(5) else {
         return Redirect::to("/feeds");
     };
-    let url = format!("{}/v1/feeds/{}/mark-all-as-read", api_base(), id);
-    let _ = cli.put(url).header("X-Auth-Token", token).send().await;
+    let url = format!("{}/api/v1/entries/mark-all-read", api_base());
+    let _ = cli
+        .post(url)
+        .header(
+            axum::http::header::AUTHORIZATION,
+            format!("Bearer {}", token),
+        )
+        .json(&serde_json::json!({ "feed_id": id }))
+        .send()
+        .await;
     let back = headers
         .get(axum::http::header::REFERER)
         .and_then(|v| v.to_str().ok())
@@ -571,8 +613,16 @@ async fn ui_feed_refresh(Path(id): Path<i64>, headers: HeaderMap) -> impl IntoRe
     let Some(cli) = http_client(10) else {
         return Redirect::to(&format!("/feeds/{}", id));
     };
-    let url = format!("{}/v1/feeds/{}/refresh", api_base(), id);
-    let ok = match cli.put(url).header("X-Auth-Token", token).send().await {
+    let url = format!("{}/api/v1/feeds/{}/refresh", api_base(), id);
+    let ok = match cli
+        .post(url)
+        .header(
+            axum::http::header::AUTHORIZATION,
+            format!("Bearer {}", token),
+        )
+        .send()
+        .await
+    {
         Ok(r) => r.status().is_success(),
         Err(_) => false,
     };
@@ -597,6 +647,7 @@ async fn ui_feed_create(headers: HeaderMap, body: Bytes) -> impl IntoResponse {
     let mut url = String::new();
     let mut title = None::<String>;
     let mut category_id = None::<i64>;
+    let mut view: Option<String> = None;
     for (k, v) in url::form_urlencoded::parse(&body) {
         match &*k {
             "feed_url" => url = v.to_string(),
@@ -613,22 +664,48 @@ async fn ui_feed_create(headers: HeaderMap, body: Bytes) -> impl IntoResponse {
                     }
                 }
             }
+            "view" => {
+                let s = v.to_string();
+                if !s.trim().is_empty() {
+                    view = Some(s);
+                }
+            }
             _ => {}
         }
     }
     if url.trim().is_empty() {
         return Redirect::to("/feeds").into_response();
     }
-    let payload = serde_json::json!({ "url": url, "title": title, "category_id": category_id });
-    let cli = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
-        .build()
-        .unwrap();
-    let api = format!("{}/v1/feeds", api_base());
+    let mut payload = serde_json::Map::new();
+    payload.insert("feed_url".into(), serde_json::Value::String(url));
+    if let Some(t) = title {
+        payload.insert("title".into(), serde_json::Value::String(t));
+    }
+    if let Some(cid) = category_id {
+        payload.insert(
+            "category_id".into(),
+            serde_json::Value::Number(cid.into()),
+        );
+    }
+    if let Some(v) = view {
+        // send only when not "all"; server already rejects "all" for feeds.
+        if !v.trim().is_empty() && v.trim() != "all" {
+            payload.insert("view".into(), serde_json::Value::String(v));
+        }
+    }
+    // default type is rss for WebUI quick add.
+    payload.insert("type".into(), serde_json::Value::String("rss".into()));
+    let Some(cli) = crate::util::http_client(10) else {
+        return Redirect::to("/feeds").into_response();
+    };
+    let api = format!("{}/api/v1/feeds", api_base());
     let resp = cli
         .post(api)
-        .header("X-Auth-Token", token)
-        .json(&payload)
+        .header(
+            axum::http::header::AUTHORIZATION,
+            format!("Bearer {}", token),
+        )
+        .json(&serde_json::Value::Object(payload))
         .send()
         .await;
     if let Ok(r) = resp.and_then(|r| r.error_for_status()) {
@@ -694,35 +771,74 @@ async fn ui_feed_edit(Path(id): Path<i64>, headers: HeaderMap) -> impl IntoRespo
     let dict = i18n::load(&lang);
     let snippets = load_snippets(&headers).await;
     let nonce = gen_csp_nonce();
-    let cli = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(4))
-        .build()
-        .unwrap();
-    let url = format!("{}/v1/feeds/{}", api_base(), id);
+    let Some(cli) = crate::util::http_client(4) else {
+        return Redirect::to("/feeds").into_response();
+    };
+    // Fetch feed details via native /api/v1/feeds/{id}` and map into UiFeedFull.
+    let url = format!("{}/api/v1/feeds/{}", api_base(), id);
+    #[derive(serde::Deserialize)]
+    struct ApiFeedFullDto {
+        id: i64,
+        title: Option<String>,
+        feed_url: String,
+        site_url: Option<String>,
+        disabled: bool,
+        category_id: Option<i64>,
+        view: captura_types::EntryView,
+        error_count: i32,
+        last_error_message: Option<String>,
+    }
     let feed: UiFeedFull = match cli
         .get(&url)
-        .header("X-Auth-Token", &token)
+        .header(
+            axum::http::header::AUTHORIZATION,
+            format!("Bearer {}", token),
+        )
         .send()
         .await
         .and_then(|r| r.error_for_status())
     {
-        Ok(resp) => resp.json().await.unwrap_or(UiFeedFull {
-            id,
-            title: None,
-            category: None,
-            user_agent: None,
-            proxy_url: None,
-            fetch_via_proxy: None,
-            disable_http2: None,
-            allow_invalid_certs: None,
-            request_timeout_ms: None,
-            cookie: None,
-            scraper_rules: None,
-            rewrite_rules: None,
-            url_rewrite_rules: None,
-            blocklist_rules: None,
-            keeplist_rules: None,
-        }),
+        Ok(resp) => match resp.json::<ApiFeedFullDto>().await {
+            Ok(f) => UiFeedFull {
+                id: f.id,
+                title: f.title,
+                category: f.category_id.map(|cid| pages_feeds::UiCategory {
+                    id: cid,
+                    title: String::new(),
+                    feed_count: None,
+                    total_unread: None,
+                }),
+                user_agent: None,
+                proxy_url: None,
+                fetch_via_proxy: None,
+                disable_http2: None,
+                allow_invalid_certs: None,
+                request_timeout_ms: None,
+                cookie: None,
+                scraper_rules: None,
+                rewrite_rules: None,
+                url_rewrite_rules: None,
+                blocklist_rules: None,
+                keeplist_rules: None,
+            },
+            Err(_) => UiFeedFull {
+                id,
+                title: None,
+                category: None,
+                user_agent: None,
+                proxy_url: None,
+                fetch_via_proxy: None,
+                disable_http2: None,
+                allow_invalid_certs: None,
+                request_timeout_ms: None,
+                cookie: None,
+                scraper_rules: None,
+                rewrite_rules: None,
+                url_rewrite_rules: None,
+                blocklist_rules: None,
+                keeplist_rules: None,
+            },
+        },
         Err(_) => UiFeedFull {
             id,
             title: None,
@@ -741,10 +857,13 @@ async fn ui_feed_edit(Path(id): Path<i64>, headers: HeaderMap) -> impl IntoRespo
             keeplist_rules: None,
         },
     };
-    let cats_url = format!("{}/v1/categories?counts=false", api_base());
+    let cats_url = format!("{}/api/v1/categories", api_base());
     let categories: Vec<pages_feeds::UiCategory> = match cli
         .get(cats_url)
-        .header("X-Auth-Token", token)
+        .header(
+            axum::http::header::AUTHORIZATION,
+            format!("Bearer {}", read_token_cookie(&headers).unwrap()),
+        )
         .send()
         .await
         .and_then(|r| r.error_for_status())
@@ -776,6 +895,8 @@ async fn ui_feed_update(Path(id): Path<i64>, headers: HeaderMap, body: Bytes) ->
     let mut category_id: Option<i64> = None;
     let mut user_agent: Option<String> = None;
     let mut proxy_url: Option<String> = None;
+    // Advanced fields like cookie/scraper_rules/... are currently managed via
+    // Miniflux-compatible endpoints and are not sent to `/api/v1/feeds`.
     let mut cookie: Option<String> = None;
     let mut fetch_via_proxy: Option<bool> = None;
     let mut disable_http2: Option<bool> = None;
@@ -883,9 +1004,11 @@ async fn ui_feed_update(Path(id): Path<i64>, headers: HeaderMap, body: Bytes) ->
     if let Some(s) = proxy_url {
         payload.insert("proxy_url".into(), serde_json::Value::String(s));
     }
-    if let Some(s) = cookie {
-        payload.insert("cookie".into(), serde_json::Value::String(s));
-    }
+    // NOTE: `/api/v1/feeds` currently exposes only core fetch options. Advanced
+    // fields like cookie/scraper_rules/rewrite_rules/urlrewrite_rules/blocklist/keeplist
+    // are still managed via the Miniflux-compatible `/v1/feeds` endpoints.
+    // For now, we only send the subset that native API understands.
+    // (cookie/scraper_rules/... are preserved at the compatibility layer.)
     if let Some(b) = fetch_via_proxy {
         payload.insert("fetch_via_proxy".into(), serde_json::Value::Bool(b));
     }
@@ -893,10 +1016,7 @@ async fn ui_feed_update(Path(id): Path<i64>, headers: HeaderMap, body: Bytes) ->
         payload.insert("disable_http2".into(), serde_json::Value::Bool(b));
     }
     if let Some(b) = allow_invalid_certs {
-        payload.insert(
-            "allow_self_signed_certificates".into(),
-            serde_json::Value::Bool(b),
-        );
+        payload.insert("allow_invalid_certs".into(), serde_json::Value::Bool(b));
     }
     if let Some(n) = request_timeout_ms {
         payload.insert(
@@ -904,28 +1024,16 @@ async fn ui_feed_update(Path(id): Path<i64>, headers: HeaderMap, body: Bytes) ->
             serde_json::Value::Number((n as i64).into()),
         );
     }
-    if let Some(s) = scraper_rules {
-        payload.insert("scraper_rules".into(), serde_json::Value::String(s));
-    }
-    if let Some(s) = rewrite_rules {
-        payload.insert("rewrite_rules".into(), serde_json::Value::String(s));
-    }
-    if let Some(s) = url_rewrite_rules {
-        payload.insert("urlrewrite_rules".into(), serde_json::Value::String(s));
-    }
-    if let Some(s) = blocklist_rules {
-        payload.insert("blocklist_rules".into(), serde_json::Value::String(s));
-    }
-    if let Some(s) = keeplist_rules {
-        payload.insert("keeplist_rules".into(), serde_json::Value::String(s));
-    }
     let Some(cli) = http_client(5) else {
         return Redirect::to("/feeds").into_response();
     };
-    let url = format!("{}/v1/feeds/{}", api_base(), id);
+    let url = format!("{}/api/v1/feeds/{}", api_base(), id);
     let _ = cli
-        .put(url)
-        .header("X-Auth-Token", token)
+        .patch(url)
+        .header(
+            axum::http::header::AUTHORIZATION,
+            format!("Bearer {}", token),
+        )
         .json(&payload)
         .send()
         .await;
@@ -939,8 +1047,15 @@ async fn ui_feed_delete(Path(id): Path<i64>, headers: HeaderMap) -> impl IntoRes
     let Some(cli) = http_client(5) else {
         return Redirect::to("/feeds").into_response();
     };
-    let url = format!("{}/v1/feeds/{}", api_base(), id);
-    let _ = cli.delete(url).header("X-Auth-Token", token).send().await;
+    let url = format!("{}/api/v1/feeds/{}", api_base(), id);
+    let _ = cli
+        .delete(url)
+        .header(
+            axum::http::header::AUTHORIZATION,
+            format!("Bearer {}", token),
+        )
+        .send()
+        .await;
     Redirect::to("/feeds").into_response()
 }
 
@@ -948,22 +1063,24 @@ async fn ui_category_create(headers: HeaderMap, body: Bytes) -> impl IntoRespons
     let Some(token) = read_token_cookie(&headers) else {
         return Redirect::to("/login").into_response();
     };
-    let mut title = String::new();
+    let mut name = String::new();
     for (k, v) in url::form_urlencoded::parse(&body) {
         if k == "title" {
-            title = v.to_string();
+            name = v.to_string();
         }
     }
-    if !title.trim().is_empty() {
-        let cli = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(5))
-            .build()
-            .unwrap();
-        let url = format!("{}/v1/categories", api_base());
+    if !name.trim().is_empty() {
+        let Some(cli) = crate::util::http_client(5) else {
+            return Redirect::to("/feeds").into_response();
+        };
+        let url = format!("{}/api/v1/categories", api_base());
         let _ = cli
             .post(url)
-            .header("X-Auth-Token", token)
-            .json(&serde_json::json!({"title": title}))
+            .header(
+                axum::http::header::AUTHORIZATION,
+                format!("Bearer {}", token),
+            )
+            .json(&serde_json::json!({"name": name}))
             .send()
             .await;
     }
@@ -978,23 +1095,25 @@ async fn ui_category_update(
     let Some(token) = read_token_cookie(&headers) else {
         return Redirect::to("/login").into_response();
     };
-    let mut title = None;
+    let mut name = None;
     for (k, v) in url::form_urlencoded::parse(&body) {
         if k == "title" {
-            title = Some(v.to_string());
+            name = Some(v.to_string());
         }
     }
-    if let Some(t) = title {
-        if !t.trim().is_empty() {
-            let cli = reqwest::Client::builder()
-                .timeout(std::time::Duration::from_secs(5))
-                .build()
-                .unwrap();
-            let url = format!("{}/v1/categories/{}", api_base(), id);
+    if let Some(n) = name {
+        if !n.trim().is_empty() {
+            let Some(cli) = crate::util::http_client(5) else {
+                return Redirect::to("/feeds").into_response();
+            };
+            let url = format!("{}/api/v1/categories/{}", api_base(), id);
             let _ = cli
                 .put(url)
-                .header("X-Auth-Token", token)
-                .json(&serde_json::json!({"title": t}))
+                .header(
+                    axum::http::header::AUTHORIZATION,
+                    format!("Bearer {}", token),
+                )
+                .json(&serde_json::json!({"name": n}))
                 .send()
                 .await;
         }
@@ -1006,11 +1125,17 @@ async fn ui_category_delete(Path(id): Path<i64>, headers: HeaderMap) -> impl Int
     let Some(token) = read_token_cookie(&headers) else {
         return Redirect::to("/login").into_response();
     };
-    let cli = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(5))
-        .build()
-        .unwrap();
-    let url = format!("{}/v1/categories/{}", api_base(), id);
-    let _ = cli.delete(url).header("X-Auth-Token", token).send().await;
+    let Some(cli) = crate::util::http_client(5) else {
+        return Redirect::to("/feeds").into_response();
+    };
+    let url = format!("{}/api/v1/categories/{}", api_base(), id);
+    let _ = cli
+        .delete(url)
+        .header(
+            axum::http::header::AUTHORIZATION,
+            format!("Bearer {}", token),
+        )
+        .send()
+        .await;
     Redirect::to("/feeds").into_response()
 }

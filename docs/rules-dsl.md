@@ -5,7 +5,10 @@ It is designed to absorb practices from FreshRSS, Miniflux and RSSHub, while
 remaining ergonomic for rule authors and stable for the engine.
 
 The previous minimal DSL used before this refactor is considered **legacy**
-and will be replaced by this v1 design.
+and will be replaced by this v1 design. Legacy YAML files that may still live
+under `rules/` are treated as **examples/seeds only** – the canonical source
+of truth for v1 rules is the `rule` table in the database, managed via the
+`/api/v1/rules/*` API and executed through the v1 engine.
 
 ---
 

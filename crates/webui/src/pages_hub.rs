@@ -5,7 +5,6 @@ use axum::{
     response::{Html, IntoResponse, Redirect},
 };
 use serde::Deserialize;
-use std::time::Duration;
 
 use crate::filters;
 use crate::i18n;

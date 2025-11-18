@@ -7,20 +7,40 @@
 
   function showAlert(text){ if(window.showToast){ window.showToast(text); } else { const container = document.querySelector('.main') || document.body; const div = document.createElement('div'); div.className = 'alert'; div.textContent = text; container.insertBefore(div, container.firstChild); setTimeout(()=>{ div.remove(); }, 3000); } }
 
+  function isStarred(btn){
+    if(!btn) return false;
+    const text = (btn.textContent || '').trim();
+    const starLabel = btn.getAttribute('data-label-star') || 'Star';
+    const unstarLabel = btn.getAttribute('data-label-unstar') || 'Unstar';
+    if(text === '★') return true;
+    if(text === '☆') return false;
+    if(text === unstarLabel) return true;
+    if(text === starLabel) return false;
+    return false;
+  }
+
   async function toggleStar(entryId, btn){
     const token = getToken();
     if(!token) return false;
+    const next = !isStarred(btn);
     try{
-      const resp = await fetch(`/v1/entries/${entryId}/star`, { method: 'PUT', headers: { 'X-Auth-Token': token } });
+      const resp = await fetch(`/api/v1/entries/${entryId}/star`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'content-type': 'application/json'
+        },
+        body: JSON.stringify({ value: next })
+      });
       if(!resp.ok) return false;
       // entries list uses glyph ★/☆; entry page uses localized labels
       if(btn){
-        if(btn.textContent.trim() === '★') btn.textContent = '☆';
-        else if(btn.textContent.trim() === '☆') btn.textContent = '★';
-        else {
-          const star = btn.getAttribute('data-label-star') || 'Star';
-          const unstar = btn.getAttribute('data-label-unstar') || 'Unstar';
-          btn.textContent = (btn.textContent.trim() === unstar) ? star : unstar;
+        const starLabel = btn.getAttribute('data-label-star') || 'Star';
+        const unstarLabel = btn.getAttribute('data-label-unstar') || 'Unstar';
+        if(btn.textContent.trim() === '★' || btn.textContent.trim() === '☆'){
+          btn.textContent = next ? '★' : '☆';
+        } else {
+          btn.textContent = next ? unstarLabel : starLabel;
         }
       }
       return true;
@@ -31,10 +51,13 @@
     const token = getToken();
     if(!token) return false;
     try{
-      const resp = await fetch(`/v1/entries/${entryId}`, {
-        method: 'PUT',
-        headers: { 'X-Auth-Token': token, 'content-type': 'application/json' },
-        body: JSON.stringify({ status })
+      const resp = await fetch(`/api/v1/entries/${entryId}/read`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'content-type': 'application/json'
+        },
+        body: JSON.stringify({ value: status === 'read' })
       });
       if(!resp.ok) return false;
       if(root){ root.dataset.status = status; }
@@ -84,22 +107,62 @@
     }
     async function saveEntry(entryId){
       const token = getToken(); if(!token) return false;
-      try{ const r = await fetch(`/v1/entries/${entryId}/save`, { method: 'POST', headers: { 'X-Auth-Token': token }}); return r.ok; }catch(_){ return false; }
+      try{
+        const r = await fetch(`/api/v1/entries/${entryId}/save`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'content-type': 'application/json'
+          },
+          body: JSON.stringify({ value: true })
+        });
+        return r.ok;
+      }catch(_){ return false; }
     }
     if(btnSave){ btnSave.addEventListener('click', async function(){ if(!getToken()) return; const ok = await saveEntry(id); if(ok) showAlert('Saved entry'); }); }
     async function loadFull(entryId, persist){
       const token = getToken(); if(!token) return null;
-      const url = `/v1/entries/${entryId}/fetch-content` + (persist ? '?update_content=true' : '');
-      try{ const r = await fetch(url, { headers: { 'X-Auth-Token': token }}); if(!r.ok) return null; return await r.json(); }catch(_){ return null; }
+      const url = `/api/v1/entries/${entryId}/content` + (persist ? '?update_content=true' : '');
+      try{
+        const r = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` }});
+        if(!r.ok) return null;
+        return await r.json();
+      }catch(_){ return null; }
     }
-    if(btnFull){ btnFull.addEventListener('click', async function(){ const data = await loadFull(id, true); if(data && data.content){ const el = document.querySelector('.article__content'); if(el){ el.innerHTML = data.content; showAlert('Loaded full content'); } }}); }
+    if(btnFull){ btnFull.addEventListener('click', async function(){ const data = await loadFull(id, true); if(data && data.content_html){ const el = document.querySelector('.article__content'); if(el){ el.innerHTML = data.content_html; showAlert('Loaded full content'); } }}); }
     // tags add/remove
     const tagsBox = document.getElementById('tagsList');
     const tagsInput = document.getElementById('tagsAdd');
     const tagsBtn = document.getElementById('tagsAddBtn');
     function renderTags(tags){ if(!tagsBox) return; tagsBox.innerHTML = (tags||[]).map(t => `<span class="tag" data-tag="${t}">${t} <button class="tag__remove" type="button" data-tag="${t}">×</button></span>`).join(' '); }
-    async function addTags(entryId, tags){ const token=getToken(); if(!token) return false; try{ const r= await fetch(`/v1/entries/${entryId}/tags`, { method:'POST', headers:{ 'X-Auth-Token':token, 'content-type':'application/json' }, body: JSON.stringify({tags})}); return r.ok; }catch(_){ return false; } }
-    async function removeTags(entryId, tags){ const token=getToken(); if(!token) return false; try{ const r= await fetch(`/v1/entries/${entryId}/tags`, { method:'DELETE', headers:{ 'X-Auth-Token':token, 'content-type':'application/json' }, body: JSON.stringify({tags})}); return r.ok; }catch(_){ return false; } }
+    async function addTags(entryId, tags){
+      const token=getToken(); if(!token) return false;
+      try{
+        const r= await fetch(`/api/v1/entries/${entryId}/tags`, {
+          method:'POST',
+          headers:{
+            'Authorization': `Bearer ${token}`,
+            'content-type':'application/json'
+          },
+          body: JSON.stringify({tags})
+        });
+        return r.ok;
+      }catch(_){ return false; }
+    }
+    async function removeTags(entryId, tags){
+      const token=getToken(); if(!token) return false;
+      try{
+        const r= await fetch(`/api/v1/entries/${entryId}/tags`, {
+          method:'DELETE',
+          headers:{
+            'Authorization': `Bearer ${token}`,
+            'content-type':'application/json'
+          },
+          body: JSON.stringify({tags})
+        });
+        return r.ok;
+      }catch(_){ return false; }
+    }
     if(tagsBtn && tagsInput){ tagsBtn.addEventListener('click', async function(){ const raw=(tagsInput.value||'').trim(); if(!raw) return; const tags=raw.split(',').map(s=>s.trim()).filter(Boolean); const ok= await addTags(id, tags); if(ok){ // fetch entry to update tags list
           // simply append without refetch
           const current = Array.from((tagsBox||{}).querySelectorAll('[data-tag]')||[]).map(el=>el.getAttribute('data-tag'));
@@ -135,12 +198,15 @@
     function tNoTitle(){ return (view && view.dataset.noTitle) ? view.dataset.noTitle : 'No title'; }
     function picks(){ return Array.from(list.querySelectorAll('.card__pick')); }
     function selectedIds(){ return picks().filter(cb => cb.checked).map(cb => cb.dataset.id); }
-    async function bulkMark(ids, status){
+  async function bulkMark(ids, status){
       const token = getToken();
       if(!token || ids.length === 0) return false;
-      const resp = await fetch('/v1/entries', {
-        method: 'PUT',
-        headers: { 'X-Auth-Token': token, 'content-type': 'application/json' },
+      const resp = await fetch('/api/v1/entries/bulk-status', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'content-type': 'application/json'
+        },
         body: JSON.stringify({ entry_ids: ids.map(Number), status })
       });
       if(!resp.ok) return false;
@@ -167,7 +233,9 @@
       const fid = getFeedId();
       if(!fid) return;
       try{
-        const resp = await fetch('/v1/feeds/counters', { headers: { 'X-Auth-Token': getToken() }});
+        const resp = await fetch('/api/v1/feeds/counters', {
+          headers: { 'Authorization': `Bearer ${getToken()}` }
+        });
         if(!resp.ok) return;
         const json = await resp.json();
         const n = (json && json.unreads) ? (json.unreads[String(fid)] || 0) : 0;
@@ -198,7 +266,14 @@
       formFeedAll.addEventListener('submit', async function(e){
         if(!getToken()) return; e.preventDefault();
         try{
-          const resp = await fetch(`/v1/feeds/${feedId}/mark-all-as-read`, { method: 'POST', headers: { 'X-Auth-Token': getToken() } });
+          const resp = await fetch('/api/v1/entries/mark-all-read', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${getToken()}`,
+              'content-type': 'application/json'
+            },
+            body: JSON.stringify({ feed_id: Number(feedId) })
+          });
           if(resp.ok){
             // Hide all cards in unread filter
             if(getFilter() === 'unread'){
@@ -216,7 +291,10 @@
       formRefresh.addEventListener('submit', async function(e){
         if(!getToken()) return; e.preventDefault();
         try{
-          const resp = await fetch(`/v1/feeds/${feedId}/refresh`, { method: 'POST', headers: { 'X-Auth-Token': getToken() } });
+          const resp = await fetch(`/api/v1/feeds/${feedId}/refresh`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${getToken()}` }
+          });
           if(resp.ok){
             showAlert('Refresh requested');
             // Poll for new entries up to 3 times

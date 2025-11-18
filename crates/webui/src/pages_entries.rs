@@ -5,7 +5,6 @@ use axum::{
     response::{Html, IntoResponse, Redirect},
 };
 use serde::Deserialize;
-use std::time::Duration;
 
 use crate::filters;
 use crate::i18n;
@@ -90,11 +89,14 @@ pub async fn ui_feed_entries(
     let limit = if let Some(l) = q.limit {
         l.clamp(1, 200)
     } else {
-        // fallback: use entries_per_page from /v1/me
-        let me_url = format!("{}/v1/me", api_base());
+        // fallback: use entries_per_page from native /api/v1/me
+        let me_url = format!("{}/api/v1/me", api_base());
         match cli
             .get(&me_url)
-            .header("X-Auth-Token", &token)
+            .header(
+                axum::http::header::AUTHORIZATION,
+                format!("Bearer {}", token),
+            )
             .send()
             .await
             .and_then(|r| r.error_for_status())
@@ -115,8 +117,11 @@ pub async fn ui_feed_entries(
     };
     let page = q.page.unwrap_or(1).max(1);
     let offset = (page - 1) * limit;
+    // Use native `/api/v1/entries` as the canonical timeline endpoint, scoped
+    // by `feed_id`. This aligns WebUI with Captura's unified timeline model
+    // instead of Miniflux-compatible `/v1/feeds/{id}/entries`.
     let mut url = format!(
-        "{}/v1/feeds/{}/entries?limit={}&offset={}&order=published_at&direction=desc",
+        "{}/api/v1/entries?feed_id={}&limit={}&offset={}&sort_by=published_at&order=desc",
         api_base(),
         id,
         limit,
@@ -167,23 +172,36 @@ pub async fn ui_feed_entries(
     }
     let res = cli
         .get(url)
-        .header("X-Auth-Token", token.clone())
+        .header(
+            axum::http::header::AUTHORIZATION,
+            format!("Bearer {}", token.clone()),
+        )
         .send()
         .await;
-    let set: UiEntrySet = match res.and_then(|r| r.error_for_status()) {
-        Ok(resp) => resp.json().await.unwrap_or(UiEntrySet {
-            total: 0,
-            entries: vec![],
-        }),
-        Err(_) => UiEntrySet {
-            total: 0,
-            entries: vec![],
-        },
+    let api_entries: Vec<ApiSmartEntry> = match res.and_then(|r| r.error_for_status()) {
+        Ok(resp) => resp.json().await.unwrap_or_default(),
+        Err(_) => Vec::new(),
     };
-    let total = set.total.max(0) as usize;
-    let end_index = offset + set.entries.len();
+    let mut items: Vec<UiEntryBrief> = Vec::with_capacity(api_entries.len());
+    for e in api_entries {
+        items.push(UiEntryBrief {
+            id: e.id,
+            title: e.title,
+            url: e.url,
+            author: e.author,
+            date: e.date,
+            starred: e.is_starred,
+            status: if e.is_read {
+                "read".into()
+            } else {
+                "unread".into()
+            },
+            tags: None,
+        });
+    }
     let prev_page = if page > 1 { Some(page - 1) } else { None };
-    let next_page = if end_index < total {
+    // We do not know total count; show "next" when we filled the current page.
+    let next_page = if items.len() >= limit {
         Some(page + 1)
     } else {
         None
@@ -197,7 +215,7 @@ pub async fn ui_feed_entries(
     let tpl = EntriesPage {
         title: "Entries",
         feed_id: id,
-        items: &set.entries,
+        items: &items,
         limit,
         prev_page,
         next_page,
@@ -298,10 +316,13 @@ pub async fn ui_smart_view_entries(
     let limit = if let Some(l) = q.limit {
         l.clamp(1, 200)
     } else {
-        let me_url = format!("{}/v1/me", api_base());
+        let me_url = format!("{}/api/v1/me", api_base());
         match cli
             .get(me_url)
-            .header("X-Auth-Token", &token)
+            .header(
+                axum::http::header::AUTHORIZATION,
+                format!("Bearer {}", token),
+            )
             .send()
             .await
             .and_then(|r| r.error_for_status())
@@ -435,24 +456,54 @@ pub async fn ui_entry(Path(id): Path<i64>, headers: HeaderMap) -> impl IntoRespo
         )
             .into_response();
     };
-    let url = format!("{}/v1/entries/{}", api_base(), id);
+    let url = format!("{}/api/v1/entries/{}", api_base(), id);
     let res = cli
         .get(url)
         .header("X-Auth-Token", token.clone())
         .send()
         .await;
+    #[derive(serde::Deserialize)]
+    struct ApiEntryDto {
+        id: i64,
+        feed_id: i64,
+        url: Option<String>,
+        title: Option<String>,
+        summary: Option<String>,
+        content_html: Option<String>,
+        author: Option<String>,
+        published_at: Option<String>,
+        is_read: bool,
+        is_starred: bool,
+    }
     let entry: UiEntryFull = match res.and_then(|r| r.error_for_status()) {
-        Ok(resp) => resp.json().await.unwrap_or(UiEntryFull {
-            id,
-            title: None,
-            author: None,
-            url: None,
-            content: None,
-            status: String::new(),
-            starred: false,
-            feed_id: 0,
-            tags: None,
-        }),
+        Ok(resp) => match resp.json::<ApiEntryDto>().await {
+            Ok(e) => UiEntryFull {
+                id: e.id,
+                title: e.title,
+                author: e.author,
+                url: e.url,
+                content: e.content_html.or(e.summary),
+                status: if e.is_read {
+                    "read".into()
+                } else {
+                    "unread".into()
+                },
+                starred: e.is_starred,
+                feed_id: e.feed_id,
+                tags: None,
+            },
+            Err(_) => UiEntryFull {
+                id,
+                title: None,
+                author: None,
+                url: None,
+                content: None,
+                status: String::new(),
+                starred: false,
+                feed_id: 0,
+                tags: None,
+            },
+        },
         Err(_) => UiEntryFull {
             id,
             title: None,
@@ -467,9 +518,9 @@ pub async fn ui_entry(Path(id): Path<i64>, headers: HeaderMap) -> impl IntoRespo
     };
     let (mut prev_id, mut next_id) = (None, None);
     if entry.feed_id > 0 {
-        // prev: before_id current
+        // prev: before_id current (id-based cursor on native timeline)
         let prev_url = format!(
-            "{}/v1/entries?feed_id={}&before_id={}&order=id&direction=desc&limit=1",
+            "{}/api/v1/entries?feed_id={}&before_id={}&sort_by=id&order=desc&limit=1",
             api_base(),
             entry.feed_id,
             entry.id
@@ -489,7 +540,7 @@ pub async fn ui_entry(Path(id): Path<i64>, headers: HeaderMap) -> impl IntoRespo
         }
         // next: after_id current
         let next_url = format!(
-            "{}/v1/entries?feed_id={}&after_id={}&order=id&direction=asc&limit=1",
+            "{}/api/v1/entries?feed_id={}&after_id={}&sort_by=id&order=asc&limit=1",
             api_base(),
             entry.feed_id,
             entry.id

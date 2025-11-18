@@ -77,7 +77,10 @@
       e.preventDefault();
       const id = m[1];
       try{
-        const resp = await fetch(`/v1/feeds/${id}/refresh`, { method: 'POST', headers: { 'X-Auth-Token': token }});
+        const resp = await fetch(`/api/v1/feeds/${id}/refresh`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
         if(resp && (resp.ok || resp.status === 204)){
           showAlert('Refresh requested');
           if(window.feedsCountersTick){ setTimeout(window.feedsCountersTick, 1500); }
@@ -100,7 +103,14 @@
             if(window.feedsCountersTick){ setTimeout(window.feedsCountersTick, 1500); }
           }
         }else if(btn.classList.contains('cat-markall')){
-          const resp = await fetch(`/v1/categories/${cat}/mark-all-as-read`, { method: 'PUT', headers: { 'X-Auth-Token': token }});
+          const resp = await fetch('/api/v1/entries/mark-all-read', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'content-type': 'application/json'
+            },
+            body: JSON.stringify({ category_id: Number(cat) })
+          });
           if(resp && (resp.ok || resp.status === 204)){
             showAlert('Marked category as read');
             if(window.feedsCountersTick){ setTimeout(window.feedsCountersTick, 1500); }

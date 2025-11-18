@@ -26,9 +26,9 @@ For first-party clients maintained together with Captura (such as `captura-tui`)
   - Both `/api/v1` and `/v1` accept bearer tokens; prefer bearer over `X-Auth-Token` or `Basic` for new clients.
 - Preferred `/api/v1` endpoints:
   - Feeds:
-    - `GET /api/v1/feeds` – list feeds for the current user（包含每个 feed 的 `view` 字段，用于视图过滤；该字段总是一个有效的 `EntryView` 值，默认 `articles`）。
-    - `GET /api/v1/feeds/{id}` – get a single feed（包含 `view`，永不为 null）。
-    - `GET /api/v1/feeds/counters` – read/unread counters per feed.
+    - `GET /api/v1/feeds` – list feeds for the current user（包含每个 feed 的 `view` 字段和错误统计，用于视图过滤与错误提示；`view` 总是一个有效的 `EntryView` 值，默认 `articles`）。
+    - `GET /api/v1/feeds/{id}` – get a single feed（包含 `view` 和 `error_count/last_error_message`，永不为 null）。
+    - `GET /api/v1/feeds/counters` – read/unread counters per feed（返回 `FeedCountersDto`，包含 `reads/unreads` 两个 `feed_id -> count` 的映射）。
     - `POST /api/v1/feeds/{id}/refresh` – synchronous refresh of a single feed.
     - `POST /api/v1/feeds/{id}/enqueue-refresh` – enqueue refresh job.
     - `POST /api/v1/feeds/bulk-view` – bulk update the preferred view for multiple feeds（用于“批量移动到某视图”的场景，Body: `{ "feed_ids": [1,2,3], "view": "articles|pictures|videos|audios|social|notifications" }`，返回 `{ "updated": 3 }`）。
@@ -58,6 +58,64 @@ For first-party clients maintained together with Captura (such as `captura-tui`)
   - `/fever` and `/reader/api/0/*` are intended for Fever / Google Reader compatible clients.
   - First-party clients should prefer `/api/v1/*` for most operations and only use compatibility endpoints when strictly necessary.
 
+## View & Timeline model (概念速览)
+
+这一小节总结 Captura 目前已经存在的与视图相关的几个核心概念，帮助客户端快速对齐心智模型。更详细的说明可以参考 `docs/timeline.md` 和 `docs/data-model.md`。
+
+- **EntryView（视图枚举）**
+  - 值：`all | articles | pictures | videos | audios | social | notifications`。
+  - 定位：**配置属性**，用于描述“这类内容属于哪种时间线视图”，而不是一个独立接口。
+  - 出现位置：
+    - `CategoryDto.view`（`GET /api/v1/categories`）。
+    - `FeedDto.view`（`GET /api/v1/feeds` / `GET /api/v1/feeds/{id}`）。
+    - SmartView 的 `view` 字段（`/api/v1/smart-views`）。
+    - `ViewDto.key`、`TimelineDto.view`（`/api/v1/views`、`/api/v1/timelines`）。
+  - 配置入口：
+    - 分类：`POST/PUT /api/v1/categories` 中的 `view`（禁止 `"all"`）。
+    - 订阅：`POST /api/v1/feeds`、`PATCH /api/v1/feeds/{id}`、`POST /api/v1/feeds/bulk-view`。
+    - SmartView：`POST/PUT /api/v1/smart-views`。
+
+- **Category.view（分类视图属性）**
+  - 表字段：`category.view`（非空字符串）。
+  - 语义：该分类下订阅的默认视图，用于在创建订阅或求“有效视图”时作为 fallback。
+  - HTTP：
+    - `GET /api/v1/categories` 返回 `CategoryDto { id, name, view }`。
+    - `POST /api/v1/categories` / `PUT /api/v1/categories/{id}` 用于创建/更新 `view`。
+
+- **Feed.view（订阅视图属性）**
+  - 表字段：`feed.view`（可空字符串）。
+  - 语义：该订阅的首选视图；当自身缺省时，通过 `EntryView::effective(feed.view, category.view)` 与分类视图一起决定“有效视图”。
+  - HTTP：
+    - `GET /api/v1/feeds` / `GET /api/v1/feeds/{id}` 以 `FeedDto.view` 暴露一个具体 `EntryView` 值（永不为 null）。
+    - `POST /api/v1/feeds` / `PATCH /api/v1/feeds/{id}` 允许设置/更新视图（拒绝 `"all"`）。
+    - `POST /api/v1/feeds/bulk-view` 用于“批量移动到某视图”。
+
+- **SmartView.view（命名时间线视图）**
+  - 表字段：`smart_view.view`。
+  - 语义：该 SmartView 所属的视图（例如“未读图片”属于 `pictures` 视图），用于 UI 分组与 `/api/v1/timelines`。
+  - HTTP：
+    - `GET /api/v1/smart-views` / `GET /api/v1/smart-views/{id}` 暴露 `view` 字段。
+
+- **TimelineDto（时间线描述）**
+  - 由 `/api/v1/timelines` 返回，用于构建侧边栏/时间线目录。
+  - 结构：`{ kind: "view"|"smart_view", id: null|number, view: EntryView, name, description?, pinned }`。
+  - 用法：
+    - kind=`view` → 客户端通常调用 `/api/v1/entries?view=<view>&status=unread`；
+    - kind=`smart_view` → 客户端调用 `/api/v1/smart-views/{id}/entries`。
+
+- **TimelineQuery（统一时间线查询模型）**
+  - 服务层结构：`captura_service::query::TimelineQuery`。
+  - 由 `/api/v1/entries` 和 `/api/v1/smart-views/{id}/entries` 的请求参数映射而来。
+  - 关键字段：
+    - `view: Option<EntryView>` – 按视图过滤（基于 feed.view/category.view）。
+    - `feed_ids[] / category_ids[] / label_ids[]` – 子集过滤。
+    - `status: Option<Read|Unread|Starred>` – 条目状态。
+    - `search: Option<String>` – 搜索。
+    - `sort_by/sort_order/limit/offset/before_id/after_id` – 排序与分页。
+  - 语义：
+    - `/api/v1/entries` / `/api/v1/smart-views/{id}/entries` 都只是不同的“入口”，最终都会构造一个 `TimelineQuery` 调用 `list_entries_for_user`。
+    - `view` 在这里仅作为过滤条件，不会修改任何实体的视图属性（feed/category/smart_view）。
+
 ## Auth
 
 - `POST /users`
@@ -76,6 +134,57 @@ For first-party clients maintained together with Captura (such as `captura-tui`)
   - Effect: stores `md5("username:api_password")` (lowercase hex) into the user's Fever key for Fever-compatible clients.
   - Resp: `ok`
 
+## User & Preferences
+
+- `GET /me`
+  - Auth required (Bearer)
+  - Resp (subset):
+    ```jsonc
+    {
+      "id": 1,
+      "username": "alice",
+      "is_admin": true,
+      "theme": "system_serif",
+      "language": "en_US",
+      "entries_per_page": 100,
+      "entry_sorting_direction": "desc",
+      "stylesheet": "",
+      "custom_js": "",
+      "external_font_hosts": "",
+      "keyboard_shortcuts": true,
+      "show_reading_time": true,
+      "open_external_links_in_new_tab": false,
+      "mark_read_on_view": false
+    }
+    ```
+  - Notes:
+    - `theme` values mirror Miniflux themes (`system_serif|light_serif|dark_serif`) for compatibility.
+    - Preferences are stored in the `user_pref` table as JSON values; missing keys fall back to sensible defaults.
+
+- `PUT /me/prefs`
+  - Auth required (Bearer)
+  - Body (all fields optional; only provided keys are updated):
+    ```jsonc
+    {
+      "theme": "system_serif|light_serif|dark_serif",
+      "language": "en_US",
+      "entries_per_page": 50,
+      "entry_sorting_direction": "asc|desc",
+      "stylesheet": "...",
+      "custom_js": "...",
+      "external_font_hosts": "fonts.example.com",
+      "keyboard_shortcuts": true,
+      "show_reading_time": true,
+      "open_external_links_in_new_tab": true,
+      "mark_read_on_view": false
+    }
+    ```
+  - Effect:
+    - For each provided field, upserts a corresponding `user_pref` record (`key` = field name, `value_json` = JSON value).
+    - Existing preferences are overwritten; missing fields are left unchanged.
+  - Typical usage:
+    - WebUI/TUI can call this endpoint to persist settings such as entries per page, sort direction, theme, and reading-time display, while still using cookies for immediate UI response when needed.
+
 ## Health
 
 - `GET /healthz`
@@ -93,7 +202,9 @@ For first-party clients maintained together with Captura (such as `captura-tui`)
     - 视图是订阅属性：后续 `/api/v1/entries?view=...` 会基于 `feed.view` 进行过滤，而不仅仅是一个前端查询参数。
 - `GET /feeds` (list)
   - Query: `category_id?`
+  - Resp: `[{ "id": 1, "title": "Example", "feed_url": "...", "site_url": "...", "disabled": false, "category_id": 1, "view": "articles|pictures|videos|audios|social|notifications", "favicon_id?": 123, "error_count": 0, "last_error_message": null }]`
 - `GET /feeds/:id` (get)
+  - Resp: 单个订阅对象（结构同上）
 - `PATCH /feeds/:id` (update)
   - Body (any subset): `{ "title": "...", "category_id": 1, "view?": "articles|pictures|videos|audios|social|notifications", "disabled": false, "user_agent": "...", "headers_json": {...}, "cookies": "...", "proxy_url": "...", "fetch_via_proxy": false, "disable_http2": false, "allow_invalid_certs": false, "request_timeout_ms": 15000 }`
 - `DELETE /feeds/:id` (delete)
@@ -263,10 +374,38 @@ For first-party clients maintained together with Captura (such as `captura-tui`)
 ## Entries
 
 - `GET /entries`
-  - Query: `feed_id?`, `category_id?`, `status?=read|unread|starred`, `view?=all|articles|pictures|videos|audios|social|notifications`, `q?` / `search?`（等价，推荐使用 `search`）、`limit?`, `offset?`
+  - Query:
+    - 过滤：`feed_id?`, `category_id?`, `status?=read|unread|starred`, `view?=all|articles|pictures|videos|audios|social|notifications`, `q?` / `search?`（等价，推荐使用 `search`）
+    - 排序：`sort_by?=published_at|created_at|relevance|id`, `order?=asc|desc`
+    - 分页：`limit?`, `offset?`
+    - 可选游标：`before_id?`, `after_id?`（对 id 做 `<` / `>` 过滤，配合 `sort_by=id` 可实现基于 id 的 prev/next 导航）
   - Resp: `[{ id, feed_id, url, title, summary, content_html, author, published_at, is_read, is_starred }]`
+  - 统一时间线：该端点已经在服务层映射为一个 `TimelineQuery`，其语义详见 `docs/timeline.md`。
+- `POST /entries/bulk-status`
+  - Auth required
+  - Body: `{ "entry_ids": [1, 2, 3], "status": "read|unread" }`
+  - 语义：仅对当前用户拥有的条目生效（通过 feed.user_id 约束），批量将这些条目的 `is_read` 设置为对应布尔值，常用于 WebUI 的“批量标记已读/未读”操作。
 - `POST /entries/:id/read` Body: `{ "value": true }`
 - `POST /entries/:id/star` Body: `{ "value": true }`
+- `POST /entries/:id/save`
+  - Auth required
+  - Body: `{ "value": true|false }`
+  - Semantics:
+    - `value = true`：将该条目标记为“已保存”，在 `extras_json` 中写入 `{ "saved": true, "saved_at": "<rfc3339>" }`，并触发保存条目的 webhook / 集成事件（行为与 `/v1/entries/:id/save` 保持一致）。
+    - `value = false`：当前实现为清空该条目的 `extras_json`，不触发 webhook / 集成事件。
+- `POST /entries/:id/tags`
+  - Auth required
+  - Body: `{ "tags": ["x", "y"] }`
+  - Semantics:
+    - 对当前用户：
+      - 去空格、去重、过滤空字符串；
+      - 为不存在的标签名创建 label（`/api/v1/labels` 的简化变体）；
+      - 为每个标签创建 `entry_label` 记录（若不存在），实现“给条目打标签”。
+- `DELETE /entries/:id/tags`
+  - Auth required
+  - Body: `{ "tags": ["x", "y"] }`
+  - Semantics:
+    - 从当前用户的标签集中找到这些标签名对应的 label id，并从 `entry_label` 中删除与该条目关联的关系。
 - `POST /entries/mark-all-read` Body: `{ "feed_id?": 1, "category_id?": 2, "view?": "all|articles|pictures|videos|audios|social|notifications" }`（至少提供 `feed_id`、`category_id`、`view` 之一）
 
 ## Views

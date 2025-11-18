@@ -115,6 +115,16 @@ pub struct FeedDto {
     /// value on the wire; when the server had no explicit preference stored
     /// it will default to `EntryView::Articles`.
     pub view: EntryView,
+    /// Optional favicon identifier associated with this feed.
+    /// When present, the corresponding binary can be fetched via
+    /// `/api/v1/favicons/{favicon_id}`.
+    pub favicon_id: Option<i64>,
+    /// Number of parsing/fetch errors recorded for this feed.
+    /// This mirrors `feed.error_count` and is primarily intended for
+    /// first-party UIs to display error badges.
+    pub error_count: i32,
+    /// Last parsing/fetch error message, if any.
+    pub last_error_message: Option<String>,
 }
 
 /// Minimal entry representation exposed by `/api/v1/entries` and `/api/v1/entries/{id}`.

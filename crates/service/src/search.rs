@@ -1,10 +1,18 @@
+//! Shared search query parsing and Postgres FTS helpers.
+//!
+//! This module is used by both the native API timeline queries and
+//! Miniflux-compatible endpoints. It lives in the service crate so
+//! that read-side query logic can be centralized here instead of
+//! being duplicated across HTTP layers.
+
 use once_cell::sync::Lazy;
 use regex::Regex;
 use sea_orm::sea_query::{Expr, SimpleExpr};
 use sea_orm::DatabaseBackend;
 
+/// Parsed representation of a user search query.
 #[derive(Debug, Default, Clone)]
-pub(crate) struct ParsedQuery {
+pub struct ParsedQuery {
     pub general: Option<String>,
     pub title: Vec<String>,
     pub author: Vec<String>,
@@ -12,11 +20,13 @@ pub(crate) struct ParsedQuery {
     pub tags: Vec<String>,
 }
 
-// Support field syntax: title:, author:, url:; values can be in double quotes, single quotes, or unquoted non-whitespace
+// Support field syntax: title:, author:, url:; values can be in double quotes,
+// single quotes, or unquoted non-whitespace.
 static FIELD_RE: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r#"(?i)(?P<field>title|author|url):(?P<val>"[^"]+"|'[^']+'|\S+)"#).unwrap()
 });
-// Support tag syntax: #tag, also allowing quoted values
+
+// Support tag syntax: #tag, also allowing quoted values.
 static TAG_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r#"(?i)#(?P<val>"[^"]+"|'[^']+'|\S+)"#).unwrap());
 
@@ -29,8 +39,9 @@ fn strip_quotes(s: &str) -> String {
     }
 }
 
-/// Parse the simple query syntax, returning field filters and remaining general search terms
-pub(crate) fn parse_query(input: &str) -> ParsedQuery {
+/// Parse the simple query syntax, returning field filters and remaining
+/// general search terms.
+pub fn parse_query(input: &str) -> ParsedQuery {
     let mut parsed = ParsedQuery::default();
     let mut remove_spans: Vec<(usize, usize)> = Vec::new();
 
@@ -53,7 +64,7 @@ pub(crate) fn parse_query(input: &str) -> ParsedQuery {
         }
     }
 
-    // Remove matched spans and construct the leftover general query string
+    // Remove matched spans and construct the leftover general query string.
     remove_spans.sort_by_key(|x| x.0);
     let mut last = 0usize;
     let mut leftover = String::new();
@@ -74,22 +85,24 @@ pub(crate) fn parse_query(input: &str) -> ParsedQuery {
     parsed
 }
 
-/// Build a Postgres FTS filter expression (using entry.tsv + websearch_to_tsquery)
-pub(crate) fn fts_filter_expr_pg(q: &str) -> SimpleExpr {
+/// Build a Postgres FTS filter expression (using entry.tsv + websearch_to_tsquery).
+pub fn fts_filter_expr_pg(q: &str) -> SimpleExpr {
     Expr::cust_with_values(
         "entry.tsv @@ websearch_to_tsquery('simple', ?)",
         [sea_orm::Value::from(q.to_string())],
     )
 }
 
-pub(crate) fn fts_rank_expr_pg(q: &str) -> SimpleExpr {
+/// Postgres rank expression used for ordering search results.
+pub fn fts_rank_expr_pg(q: &str) -> SimpleExpr {
     Expr::cust_with_values(
         "ts_rank_cd(entry.tsv, websearch_to_tsquery('simple', ?))",
         [sea_orm::Value::from(q.to_string())],
     )
 }
 
-pub(crate) fn fts_field_expr_pg(field: &str, q: &str) -> SimpleExpr {
+/// Postgres field-specific FTS expression (e.g. title/author/url).
+pub fn fts_field_expr_pg(field: &str, q: &str) -> SimpleExpr {
     let sql = format!(
         "to_tsvector('simple', coalesce(entry.{},'')) @@ websearch_to_tsquery('simple', ?)",
         field
@@ -97,22 +110,27 @@ pub(crate) fn fts_field_expr_pg(field: &str, q: &str) -> SimpleExpr {
     Expr::cust_with_values(sql, [sea_orm::Value::from(q.to_string())])
 }
 
-pub(crate) fn tag_exists_expr_pg(tag: &str) -> SimpleExpr {
+/// Tag existence check using Postgres and ILIKE.
+pub fn tag_exists_expr_pg(tag: &str) -> SimpleExpr {
     Expr::cust_with_values(
-        "EXISTS (SELECT 1 FROM entry_label el JOIN label l ON l.id=el.label_id WHERE el.entry_id=entry.id AND l.name ILIKE ?)",
+        "EXISTS (SELECT 1 FROM entry_label el JOIN label l ON l.id=el.label_id \
+         WHERE el.entry_id=entry.id AND l.name ILIKE ?)",
         [sea_orm::Value::from(format!("%{}%", tag))],
     )
 }
 
-pub(crate) fn tag_exists_expr_like(tag: &str) -> SimpleExpr {
+/// Tag existence check using a portable LIKE fallback.
+pub fn tag_exists_expr_like(tag: &str) -> SimpleExpr {
     // Non-Postgres fallback: LOWER(name) LIKE LOWER(?)
     Expr::cust_with_values(
-        "EXISTS (SELECT 1 FROM entry_label el JOIN label l ON l.id=el.label_id WHERE el.entry_id=entry.id AND LOWER(l.name) LIKE LOWER(?))",
+        "EXISTS (SELECT 1 FROM entry_label el JOIN label l ON l.id=el.label_id \
+         WHERE el.entry_id=entry.id AND LOWER(l.name) LIKE LOWER(?))",
         [sea_orm::Value::from(format!("%{}%", tag))],
     )
 }
 
-/// Whether the backend is Postgres
-pub(crate) fn is_pg(backend: DatabaseBackend) -> bool {
+/// Whether the backend is Postgres.
+pub fn is_pg(backend: DatabaseBackend) -> bool {
     matches!(backend, DatabaseBackend::Postgres)
 }
+

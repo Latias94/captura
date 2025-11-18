@@ -42,10 +42,13 @@ pub async fn load_snippets(headers: &HeaderMap) -> UiSnippets {
     let Some(cli) = http_client(3) else {
         return UiSnippets::default();
     };
-    let me = format!("{}/v1/me", api_base());
+    let me = format!("{}/api/v1/me", api_base());
     if let Ok(resp) = cli
         .get(me)
-        .header("X-Auth-Token", token)
+        .header(
+            axum::http::header::AUTHORIZATION,
+            format!("Bearer {}", token),
+        )
         .send()
         .await
         .and_then(|r| r.error_for_status())
@@ -103,17 +106,20 @@ pub fn cookie_value(headers: &HeaderMap, name: &str) -> Option<String> {
     None
 }
 
-/// Resolve UI language from cookie, `/v1/me` prefs or Accept-Language.
+/// Resolve UI language from cookie, `/api/v1/me` prefs or Accept-Language.
 pub async fn resolve_lang(headers: &HeaderMap) -> String {
     if let Some(lang) = cookie_value(headers, "lang") {
         return lang;
     }
     if let Some(token) = cookie_value(headers, "X-Auth-Token") {
         if let Some(cli) = http_client(2) {
-            let me = format!("{}/v1/me", api_base());
+            let me = format!("{}/api/v1/me", api_base());
             if let Ok(resp) = cli
                 .get(me)
-                .header("X-Auth-Token", token)
+                .header(
+                    axum::http::header::AUTHORIZATION,
+                    format!("Bearer {}", token),
+                )
                 .send()
                 .await
                 .and_then(|r| r.error_for_status())

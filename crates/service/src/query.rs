@@ -8,8 +8,8 @@ use captura_common::Result;
 use captura_storage::entity::{entry, entry_label, feed};
 use captura_types::EntryView;
 use sea_orm::{
-    ColumnTrait, Condition, DatabaseConnection, EntityTrait, JoinType, QueryFilter, QuerySelect,
-    RelationTrait,
+    ColumnTrait, Condition, DatabaseConnection, EntityTrait, JoinType, Order, QueryFilter,
+    QueryOrder, QuerySelect, RelationTrait,
 };
 use std::collections::HashMap;
 
@@ -234,4 +234,191 @@ pub async fn mark_entries_read_for_labels(
         view: None,
     };
     mark_entries_read_with_filter(db, user_id, &filter).await
+}
+
+/// Logical status filter for timeline queries.
+#[derive(Debug, Clone, Copy)]
+pub enum TimelineStatus {
+    Read,
+    Unread,
+    Starred,
+}
+
+/// Unified timeline query used by first-party APIs and SmartViews.
+///
+/// This captures the core dimensions used by Captura and Folo-style
+/// timelines: view, feed/category/label subsets, status and search,
+/// plus simple sort/paging parameters.
+#[derive(Debug, Clone)]
+pub struct TimelineQuery {
+    pub view: Option<EntryView>,
+    pub feed_ids: Vec<i64>,
+    pub category_ids: Vec<i64>,
+    pub label_ids: Vec<i64>,
+    pub status: Option<TimelineStatus>,
+    pub search: Option<String>,
+    pub sort_by: Option<String>,   // published_at | created_at | relevance
+    pub sort_order: Option<String>, // asc | desc
+    pub limit: u64,
+    pub offset: u64,
+    pub before_id: Option<i64>,
+    pub after_id: Option<i64>,
+}
+
+/// List entries for a user according to a unified timeline query.
+///
+/// This function is intentionally view-aware and reuses the same
+/// semantics across:
+/// - `/api/v1/entries` (global timeline);
+/// - `/api/v1/smart-views/{id}/entries` (named timelines);
+/// - future timeline-style surfaces.
+pub async fn list_entries_for_user(
+    db: &DatabaseConnection,
+    user_id: i64,
+    q: &TimelineQuery,
+) -> Result<Vec<entry::Model>> {
+    let backend = db.get_database_backend();
+
+    let mut sel = entry::Entity::find()
+        .join(JoinType::InnerJoin, entry::Relation::Feed.def())
+        .filter(feed::Column::UserId.eq(user_id));
+
+    if !q.feed_ids.is_empty() {
+        sel = sel.filter(entry::Column::FeedId.is_in(q.feed_ids.clone()));
+    }
+    if !q.category_ids.is_empty() {
+        sel = sel.filter(feed::Column::CategoryId.is_in(q.category_ids.clone()));
+    }
+    if let Some(cond) = view_filter_condition(q.view) {
+        sel = sel.filter(cond);
+    }
+    if !q.label_ids.is_empty() {
+        sel = sel
+            .join(JoinType::InnerJoin, entry_label::Relation::Entry.def())
+            .filter(entry_label::Column::LabelId.is_in(q.label_ids.clone()));
+    }
+    if let Some(status) = q.status {
+        match status {
+            TimelineStatus::Read => {
+                sel = sel.filter(entry::Column::IsRead.eq(true));
+            }
+            TimelineStatus::Unread => {
+                sel = sel.filter(entry::Column::IsRead.eq(false));
+            }
+            TimelineStatus::Starred => {
+                sel = sel.filter(entry::Column::IsStarred.eq(true));
+            }
+        }
+    }
+
+    if let Some(b) = q.before_id {
+        sel = sel.filter(entry::Column::Id.lt(b));
+    }
+    if let Some(a) = q.after_id {
+        sel = sel.filter(entry::Column::Id.gt(a));
+    }
+
+    if let Some(ref search_str) = q.search {
+        let pq = crate::search::parse_query(search_str);
+        if crate::search::is_pg(backend) {
+            if let Some(ref g) = pq.general {
+                sel = sel.filter(crate::search::fts_filter_expr_pg(g));
+                // Align with Miniflux/Folo-style UX: when searching and no
+                // explicit sort_by is provided, default to relevance; only
+                // use sort_by when explicitly requested.
+                let want_rank = q
+                    .sort_by
+                    .as_deref()
+                    .map(|s| s == "relevance")
+                    .unwrap_or(true);
+                if want_rank {
+                    let ord = match q.sort_order.as_deref() {
+                        Some("asc") => Order::Asc,
+                        _ => Order::Desc,
+                    };
+                    sel = sel
+                        .order_by(crate::search::fts_rank_expr_pg(g), ord)
+                        .order_by_desc(entry::Column::PublishedAt)
+                        .order_by_desc(entry::Column::CreatedAt);
+                }
+            }
+            for v in &pq.title {
+                sel = sel.filter(crate::search::fts_field_expr_pg("title", v));
+            }
+            for v in &pq.author {
+                sel = sel.filter(crate::search::fts_field_expr_pg("author", v));
+            }
+            for v in &pq.url {
+                sel = sel.filter(crate::search::fts_field_expr_pg("url", v));
+            }
+            if !pq.tags.is_empty() {
+                let mut tag_cond = Condition::any();
+                for t in &pq.tags {
+                    tag_cond = tag_cond.add(crate::search::tag_exists_expr_pg(t));
+                }
+                sel = sel.filter(tag_cond);
+            }
+        } else {
+            // Non-Postgres fallback: LIKE matching
+            if let Some(ref g) = pq.general {
+                let like = format!("%{}%", g);
+                let cond = Condition::any()
+                    .add(entry::Column::Title.like(like.as_str()))
+                    .add(entry::Column::Summary.like(like.as_str()))
+                    .add(entry::Column::ContentHtml.like(like.as_str()));
+                sel = sel.filter(cond);
+            }
+            for v in &pq.title {
+                sel = sel.filter(entry::Column::Title.like(format!("%{}%", v)));
+            }
+            for v in &pq.author {
+                sel = sel.filter(entry::Column::Author.like(format!("%{}%", v)));
+            }
+            for v in &pq.url {
+                sel = sel.filter(entry::Column::Url.like(format!("%{}%", v)));
+            }
+            if !pq.tags.is_empty() {
+                let mut tag_cond = Condition::any();
+                for t in &pq.tags {
+                    tag_cond = tag_cond.add(crate::search::tag_exists_expr_like(t));
+                }
+                sel = sel.filter(tag_cond);
+            }
+        }
+    }
+
+    match q.sort_by.as_deref() {
+        Some("created_at") => {
+            sel = match q.sort_order.as_deref() {
+                Some("asc") => sel.order_by_asc(entry::Column::CreatedAt),
+                _ => sel.order_by_desc(entry::Column::CreatedAt),
+            };
+        }
+        Some("id") => {
+            sel = match q.sort_order.as_deref() {
+                Some("asc") => sel.order_by_asc(entry::Column::Id),
+                _ => sel.order_by_desc(entry::Column::Id),
+            };
+        }
+        // Default: published_at (desc) with created_at as tie-breaker.
+        _ => {
+            sel = match q.sort_order.as_deref() {
+                Some("asc") => sel.order_by_asc(entry::Column::PublishedAt),
+                _ => sel.order_by_desc(entry::Column::PublishedAt),
+            };
+            sel = sel.order_by_desc(entry::Column::CreatedAt);
+        }
+    }
+
+    let limit = q.limit.max(1);
+    sel = sel.limit(limit);
+    if q.offset > 0 {
+        sel = sel.offset(q.offset);
+    }
+
+    let list = sel
+        .all(db)
+        .await
+        .map_err(|e| captura_common::Error::Storage(e.to_string()))?;
+    Ok(list)
 }

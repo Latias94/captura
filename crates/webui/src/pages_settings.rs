@@ -112,12 +112,15 @@ pub async fn ui_settings(headers: HeaderMap) -> impl IntoResponse {
     // read current default_filter from cookie (fallback to "all")
     let default_filter_cookie =
         cookie_value(&headers, "default_filter").unwrap_or_else(|| "all".into());
-    // read entries_per_page from /v1/me for hint
-    let me_url = format!("{}/v1/me", api_base());
+    // read entries_per_page from native /api/v1/me for hint
+    let me_url = format!("{}/api/v1/me", api_base());
     let mut entries_per_page: i32 = 50;
     if let Ok(resp) = cli
         .get(me_url)
-        .header("X-Auth-Token", &read_token_cookie(&headers).unwrap())
+        .header(
+            axum::http::header::AUTHORIZATION,
+            format!("Bearer {}", read_token_cookie(&headers).unwrap()),
+        )
         .send()
         .await
         .and_then(|r| r.error_for_status())
@@ -167,33 +170,21 @@ pub async fn ui_prefs_language(headers: HeaderMap, body: Bytes) -> impl IntoResp
         }
         out.unwrap_or_else(|| "en_US".into())
     };
-    // Try update user prefs via /v1/me -> id, then PUT /v1/users/{id}
+    // Update user prefs via native /api/v1/me/prefs
     if let Some(token) = read_token_cookie(&headers) {
         let Some(cli) = http_client(5) else {
             return Redirect::to("/settings").into_response();
         };
-        let me = format!("{}/v1/me", api_base());
-        if let Ok(resp) = cli
-            .get(me)
-            .header("X-Auth-Token", &token)
+        let url = format!("{}/api/v1/me/prefs", api_base());
+        let _ = cli
+            .put(url)
+            .header(
+                axum::http::header::AUTHORIZATION,
+                format!("Bearer {}", token),
+            )
+            .json(&serde_json::json!({ "language": lang }))
             .send()
-            .await
-            .and_then(|r| r.error_for_status())
-        {
-            #[derive(serde::Deserialize)]
-            struct Me {
-                id: i64,
-            }
-            if let Ok(m) = resp.json::<Me>().await {
-                let url = format!("{}/v1/users/{}", api_base(), m.id);
-                let _ = cli
-                    .put(url)
-                    .header("X-Auth-Token", token)
-                    .json(&serde_json::json!({"language": lang}))
-                    .send()
-                    .await;
-            }
-        }
+            .await;
     }
     // Always set cookie for immediate effect
     let res = axum::response::Response::builder()
@@ -248,32 +239,19 @@ pub async fn ui_prefs_entries_per_page(headers: HeaderMap, body: Bytes) -> impl 
             }
         }
     }
-    // PUT /v1/users/{id}
     let Some(cli) = http_client(5) else {
         return Redirect::to("/settings").into_response();
     };
-    let me = format!("{}/v1/me", api_base());
-    if let Ok(resp) = cli
-        .get(&me)
-        .header("X-Auth-Token", &token)
+    let url = format!("{}/api/v1/me/prefs", api_base());
+    let _ = cli
+        .put(url)
+        .header(
+            axum::http::header::AUTHORIZATION,
+            format!("Bearer {}", token),
+        )
+        .json(&serde_json::json!({"entries_per_page": num}))
         .send()
-        .await
-        .and_then(|r| r.error_for_status())
-    {
-        #[derive(serde::Deserialize)]
-        struct Me {
-            id: i64,
-        }
-        if let Ok(m) = resp.json::<Me>().await {
-            let url = format!("{}/v1/users/{}", api_base(), m.id);
-            let _ = cli
-                .put(url)
-                .header("X-Auth-Token", token)
-                .json(&serde_json::json!({"entries_per_page": num}))
-                .send()
-                .await;
-        }
-    }
+        .await;
     Redirect::to("/settings").into_response()
 }
 
@@ -293,28 +271,16 @@ pub async fn ui_prefs_sort_direction(headers: HeaderMap, body: Bytes) -> impl In
     let Some(cli) = http_client(5) else {
         return Redirect::to("/settings").into_response();
     };
-    let me = format!("{}/v1/me", api_base());
-    if let Ok(resp) = cli
-        .get(&me)
-        .header("X-Auth-Token", &token)
+    let url = format!("{}/api/v1/me/prefs", api_base());
+    let _ = cli
+        .put(url)
+        .header(
+            axum::http::header::AUTHORIZATION,
+            format!("Bearer {}", token),
+        )
+        .json(&serde_json::json!({"entry_sorting_direction": dir}))
         .send()
-        .await
-        .and_then(|r| r.error_for_status())
-    {
-        #[derive(serde::Deserialize)]
-        struct Me {
-            id: i64,
-        }
-        if let Ok(m) = resp.json::<Me>().await {
-            let url = format!("{}/v1/users/{}", api_base(), m.id);
-            let _ = cli
-                .put(url)
-                .header("X-Auth-Token", token)
-                .json(&serde_json::json!({"entry_sorting_direction": dir}))
-                .send()
-                .await;
-        }
-    }
+        .await;
     Redirect::to("/settings").into_response()
 }
 
@@ -332,28 +298,16 @@ pub async fn ui_prefs_keyboard_shortcuts(headers: HeaderMap, body: Bytes) -> imp
     let Some(cli) = http_client(5) else {
         return Redirect::to("/settings").into_response();
     };
-    let me = format!("{}/v1/me", api_base());
-    if let Ok(resp) = cli
-        .get(&me)
-        .header("X-Auth-Token", &token)
+    let url = format!("{}/api/v1/me/prefs", api_base());
+    let _ = cli
+        .put(url)
+        .header(
+            axum::http::header::AUTHORIZATION,
+            format!("Bearer {}", token),
+        )
+        .json(&serde_json::json!({"keyboard_shortcuts": enabled}))
         .send()
-        .await
-        .and_then(|r| r.error_for_status())
-    {
-        #[derive(serde::Deserialize)]
-        struct Me {
-            id: i64,
-        }
-        if let Ok(m) = resp.json::<Me>().await {
-            let url = format!("{}/v1/users/{}", api_base(), m.id);
-            let _ = cli
-                .put(url)
-                .header("X-Auth-Token", token)
-                .json(&serde_json::json!({"keyboard_shortcuts": enabled}))
-                .send()
-                .await;
-        }
-    }
+        .await;
     Redirect::to("/settings").into_response()
 }
 
@@ -371,28 +325,16 @@ pub async fn ui_prefs_show_reading_time(headers: HeaderMap, body: Bytes) -> impl
     let Some(cli) = http_client(5) else {
         return Redirect::to("/settings").into_response();
     };
-    let me = format!("{}/v1/me", api_base());
-    if let Ok(resp) = cli
-        .get(&me)
-        .header("X-Auth-Token", &token)
+    let url = format!("{}/api/v1/me/prefs", api_base());
+    let _ = cli
+        .put(url)
+        .header(
+            axum::http::header::AUTHORIZATION,
+            format!("Bearer {}", token),
+        )
+        .json(&serde_json::json!({"show_reading_time": enabled}))
         .send()
-        .await
-        .and_then(|r| r.error_for_status())
-    {
-        #[derive(serde::Deserialize)]
-        struct Me {
-            id: i64,
-        }
-        if let Ok(m) = resp.json::<Me>().await {
-            let url = format!("{}/v1/users/{}", api_base(), m.id);
-            let _ = cli
-                .put(url)
-                .header("X-Auth-Token", token)
-                .json(&serde_json::json!({"show_reading_time": enabled}))
-                .send()
-                .await;
-        }
-    }
+        .await;
     Redirect::to("/settings").into_response()
 }
 
@@ -412,28 +354,16 @@ pub async fn ui_prefs_open_ext_newtab(headers: HeaderMap, body: Bytes) -> impl I
         let Some(cli) = http_client(5) else {
             return Redirect::to("/settings").into_response();
         };
-        let me = format!("{}/v1/me", api_base());
-        if let Ok(resp) = cli
-            .get(&me)
-            .header("X-Auth-Token", &token)
+        let url = format!("{}/api/v1/me/prefs", api_base());
+        let _ = cli
+            .put(url)
+            .header(
+                axum::http::header::AUTHORIZATION,
+                format!("Bearer {}", token),
+            )
+            .json(&serde_json::json!({"open_external_links_in_new_tab": enabled}))
             .send()
-            .await
-            .and_then(|r| r.error_for_status())
-        {
-            #[derive(serde::Deserialize)]
-            struct Me {
-                id: i64,
-            }
-            if let Ok(m) = resp.json::<Me>().await {
-                let url = format!("{}/v1/users/{}", api_base(), m.id);
-                let _ = cli
-                    .put(url)
-                    .header("X-Auth-Token", token)
-                    .json(&serde_json::json!({"open_external_links_in_new_tab": enabled}))
-                    .send()
-                    .await;
-            }
-        }
+            .await;
     }
     let res = axum::response::Response::builder()
         .status(axum::http::StatusCode::SEE_OTHER)
@@ -464,37 +394,24 @@ pub async fn ui_prefs_theme(headers: HeaderMap, body: Bytes) -> impl IntoRespons
     };
     // persist to server theme if possible
     if let Some(token) = read_token_cookie(&headers) {
-        let cli = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(5))
-            .build()
-            .unwrap();
-        let me = format!("{}/v1/me", api_base());
-        if let Ok(resp) = cli
-            .get(&me)
-            .header("X-Auth-Token", &token)
+        let Some(cli) = http_client(5) else {
+            return Redirect::to("/settings").into_response();
+        };
+        let server_theme = match theme.as_str() {
+            "light" => "light_serif",
+            "dark" => "dark_serif",
+            _ => "system_serif",
+        };
+        let url = format!("{}/api/v1/me/prefs", api_base());
+        let _ = cli
+            .put(url)
+            .header(
+                axum::http::header::AUTHORIZATION,
+                format!("Bearer {}", token),
+            )
+            .json(&serde_json::json!({"theme": server_theme}))
             .send()
-            .await
-            .and_then(|r| r.error_for_status())
-        {
-            #[derive(serde::Deserialize)]
-            struct Me {
-                id: i64,
-            }
-            if let Ok(m) = resp.json::<Me>().await {
-                let url = format!("{}/v1/users/{}", api_base(), m.id);
-                let server_theme = match theme.as_str() {
-                    "light" => "light_serif",
-                    "dark" => "dark_serif",
-                    _ => "system_serif",
-                };
-                let _ = cli
-                    .put(url)
-                    .header("X-Auth-Token", token)
-                    .json(&serde_json::json!({"theme": server_theme}))
-                    .send()
-                    .await;
-            }
-        }
+            .await;
     }
     let res = axum::response::Response::builder()
         .status(axum::http::StatusCode::SEE_OTHER)
@@ -528,34 +445,22 @@ pub async fn ui_prefs_custom_css(headers: HeaderMap, body: Bytes) -> impl IntoRe
     let Some(cli) = http_client(5) else {
         return Redirect::to("/settings").into_response();
     };
-    let me = format!("{}/v1/me", api_base());
-    if let Ok(resp) = cli
-        .get(&me)
-        .header("X-Auth-Token", &token)
-        .send()
-        .await
-        .and_then(|r| r.error_for_status())
-    {
-        #[derive(serde::Deserialize)]
-        struct Me {
-            id: i64,
-        }
-        if let Ok(m) = resp.json::<Me>().await {
-            let url = format!("{}/v1/users/{}", api_base(), m.id);
-            let mut payload = serde_json::json!({ "stylesheet": css });
-            if let Some(hosts) = font_hosts {
-                if let Some(obj) = payload.as_object_mut() {
-                    obj.insert("external_font_hosts".to_string(), serde_json::json!(hosts));
-                }
-            }
-            let _ = cli
-                .put(url)
-                .header("X-Auth-Token", token)
-                .json(&payload)
-                .send()
-                .await;
+    let mut payload = serde_json::json!({ "stylesheet": css });
+    if let Some(hosts) = font_hosts {
+        if let Some(obj) = payload.as_object_mut() {
+            obj.insert("external_font_hosts".to_string(), serde_json::json!(hosts));
         }
     }
+    let url = format!("{}/api/v1/me/prefs", api_base());
+    let _ = cli
+        .put(url)
+        .header(
+            axum::http::header::AUTHORIZATION,
+            format!("Bearer {}", token),
+        )
+        .json(&payload)
+        .send()
+        .await;
     Redirect::to("/settings").into_response()
 }
 
@@ -569,32 +474,19 @@ pub async fn ui_prefs_custom_js(headers: HeaderMap, body: Bytes) -> impl IntoRes
             js = v.to_string();
         }
     }
-    let cli = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(5))
-        .build()
-        .unwrap();
-    let me = format!("{}/v1/me", api_base());
-    if let Ok(resp) = cli
-        .get(&me)
-        .header("X-Auth-Token", &token)
+    let Some(cli) = http_client(5) else {
+        return Redirect::to("/settings").into_response();
+    };
+    let url = format!("{}/api/v1/me/prefs", api_base());
+    let _ = cli
+        .put(url)
+        .header(
+            axum::http::header::AUTHORIZATION,
+            format!("Bearer {}", token),
+        )
+        .json(&serde_json::json!({ "custom_js": js }))
         .send()
-        .await
-        .and_then(|r| r.error_for_status())
-    {
-        #[derive(serde::Deserialize)]
-        struct Me {
-            id: i64,
-        }
-        if let Ok(m) = resp.json::<Me>().await {
-            let url = format!("{}/v1/users/{}", api_base(), m.id);
-            let _ = cli
-                .put(url)
-                .header("X-Auth-Token", token)
-                .json(&serde_json::json!({ "custom_js": js }))
-                .send()
-                .await;
-        }
-    }
+        .await;
     Redirect::to("/settings").into_response()
 }
 
@@ -649,28 +541,16 @@ pub async fn ui_prefs_auto_mark_read(headers: HeaderMap, body: Bytes) -> impl In
         let Some(cli) = http_client(5) else {
             return Redirect::to("/settings").into_response();
         };
-        let me = format!("{}/v1/me", api_base());
-        if let Ok(resp) = cli
-            .get(&me)
-            .header("X-Auth-Token", &token)
+        let url = format!("{}/api/v1/me/prefs", api_base());
+        let _ = cli
+            .put(url)
+            .header(
+                axum::http::header::AUTHORIZATION,
+                format!("Bearer {}", token),
+            )
+            .json(&serde_json::json!({ "mark_read_on_view": on }))
             .send()
-            .await
-            .and_then(|r| r.error_for_status())
-        {
-            #[derive(serde::Deserialize)]
-            struct Me {
-                id: i64,
-            }
-            if let Ok(m) = resp.json::<Me>().await {
-                let url = format!("{}/v1/users/{}", api_base(), m.id);
-                let _ = cli
-                    .put(url)
-                    .header("X-Auth-Token", token)
-                    .json(&serde_json::json!({ "mark_read_on_view": on }))
-                    .send()
-                    .await;
-            }
-        }
+            .await;
     }
     set_cookie_redirect(headers, "auto_mark_read", on)
 }

@@ -16,7 +16,6 @@ pub mod media;
 pub mod oidc;
 pub mod opml;
 pub mod rules;
-pub mod search;
 pub mod smart_views;
 pub mod state;
 pub mod users;
@@ -52,6 +51,8 @@ pub fn build_router(app_state: AppState) -> Router {
         // users & auth
         .route("/users", post(crate::users::create_user))
         .route("/users/{id}/fever-key", post(crate::users::set_fever_key))
+        .route("/me", get(crate::users::me))
+        .route("/me/prefs", put(crate::users::update_prefs))
         .route("/auth/login", post(crate::auth_endpoints::auth_login))
         .route(
             "/auth/proxy/token",
@@ -110,6 +111,10 @@ pub fn build_router(app_state: AppState) -> Router {
         )
         .route("/entries", get(crate::entries::list_entries))
         .route(
+            "/entries/bulk-status",
+            post(crate::entries::bulk_status),
+        )
+        .route(
             "/entries/mark-all-read",
             post(crate::entries::mark_all_read),
         )
@@ -117,6 +122,11 @@ pub fn build_router(app_state: AppState) -> Router {
         .route("/entries/{id}/content", get(crate::entries::entry_content))
         .route("/entries/{id}/read", post(crate::entries::mark_read))
         .route("/entries/{id}/star", post(crate::entries::mark_star))
+        .route("/entries/{id}/save", post(crate::entries::save_entry))
+        .route(
+            "/entries/{id}/tags",
+            post(crate::entries::add_tags).delete(crate::entries::remove_tags),
+        )
         .route(
             "/smart-views",
             get(crate::smart_views::list_smart_views).post(crate::smart_views::create_smart_view),

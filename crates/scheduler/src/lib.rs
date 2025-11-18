@@ -1,11 +1,9 @@
 //! Job scheduling and background workers.
 
 use captura_common::{FeedId, IntegrationEvent, Result, UserId};
-// use captura_pipeline::{refresh_feed_with_meta, refresh_rule_with_yaml};
 use captura_service as service;
-use captura_storage::entity::{favicon as fv, feed, job};
+use captura_storage::entity::{feed, job};
 use chrono::{FixedOffset, Utc};
-use reqwest::Url;
 use sea_orm::PaginatorTrait;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder,
@@ -218,61 +216,10 @@ async fn refresh_feed_job(db: &DatabaseConnection, j: &job::Model) -> Result<()>
 }
 
 async fn refresh_favicon_job(db: &DatabaseConnection, j: &job::Model) -> Result<()> {
-    let Some(f) = feed::Entity::find_by_id(j.feed_id.unwrap_or_default())
-        .one(db)
-        .await
-        .map_err(|e| captura_common::Error::Storage(e.to_string()))?
-    else {
-        return Err(captura_common::Error::NotFound("feed missing".into()));
-    };
-    let site = f.site_url.clone().unwrap_or(f.feed_url.clone());
-    let mut base = Url::parse(&site).map_err(|e| captura_common::Error::Config(e.to_string()))?;
-    base.set_path("/favicon.ico");
-    base.set_query(None);
-    base.set_fragment(None);
-    let cli = captura_service::http_client_basic()?;
-    let res = cli
-        .get(base.as_str())
-        .send()
-        .await
-        .map_err(|e| captura_common::Error::Network(e.to_string()))?;
-    if !res.status().is_success() {
-        return Err(captura_common::Error::NotFound(format!(
-            "status {}",
-            res.status()
-        )));
-    }
-    let mime = res
-        .headers()
-        .get(reqwest::header::CONTENT_TYPE)
-        .and_then(|v| v.to_str().ok())
-        .map(|s| s.to_string());
-    let bytes = res
-        .bytes()
-        .await
-        .map_err(|e| captura_common::Error::Network(e.to_string()))?
-        .to_vec();
-    let now = Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
-    let am = fv::ActiveModel {
-        feed_id: Set(Some(f.id)),
-        url: Set(Some(base.to_string())),
-        mime: Set(mime),
-        data: Set(Some(bytes)),
-        created_at: Set(now),
-        updated_at: Set(now),
-        ..Default::default()
-    };
-    let fav = am
-        .insert(db)
-        .await
-        .map_err(|e| captura_common::Error::Storage(e.to_string()))?;
-    let mut fm: feed::ActiveModel = f.into();
-    fm.favicon_id = Set(Some(fav.id));
-    let _ = fm
-        .update(db)
-        .await
-        .map_err(|e| captura_common::Error::Storage(e.to_string()))?;
-    Ok(())
+    let feed_id = j
+        .feed_id
+        .ok_or_else(|| captura_common::Error::Config("favicon job missing feed_id".into()))?;
+    captura_service::favicon::refresh_for_feed_id(db, feed_id).await
 }
 
 #[instrument]

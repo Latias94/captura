@@ -7,7 +7,9 @@
     const token = getToken();
     if(!token) return null;
     try{
-      const resp = await fetch('/v1/feeds/counters', { headers: { 'X-Auth-Token': token }});
+      const resp = await fetch('/api/v1/feeds/counters', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
       if(!resp.ok) return null;
       return await resp.json();
     }catch(_){ return null; }

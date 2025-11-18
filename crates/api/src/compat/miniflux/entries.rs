@@ -13,6 +13,7 @@ use sea_orm::{
 
 use axum::response::IntoResponse;
 use captura_pipeline::extractor;
+use captura_service::search;
 use captura_storage::entity::{enclosure, entry, entry_label, feed, label};
 
 #[derive(serde::Deserialize, Default)]
@@ -75,24 +76,24 @@ pub(crate) async fn list(
     }
     if let Some(ref k) = q.search {
         let backend = st.db.get_database_backend();
-        let pq = crate::search::parse_query(k);
-        if crate::search::is_pg(backend) {
+        let pq = search::parse_query(k);
+        if search::is_pg(backend) {
             if let Some(ref g) = pq.general {
-                sel = sel.filter(crate::search::fts_filter_expr_pg(g));
+                sel = sel.filter(search::fts_filter_expr_pg(g));
             }
             for v in &pq.title {
-                sel = sel.filter(crate::search::fts_field_expr_pg("title", v));
+                sel = sel.filter(search::fts_field_expr_pg("title", v));
             }
             for v in &pq.author {
-                sel = sel.filter(crate::search::fts_field_expr_pg("author", v));
+                sel = sel.filter(search::fts_field_expr_pg("author", v));
             }
             for v in &pq.url {
-                sel = sel.filter(crate::search::fts_field_expr_pg("url", v));
+                sel = sel.filter(search::fts_field_expr_pg("url", v));
             }
             if !pq.tags.is_empty() {
                 let mut tag_cond = Condition::any();
                 for t in &pq.tags {
-                    tag_cond = tag_cond.add(crate::search::tag_exists_expr_pg(t));
+                    tag_cond = tag_cond.add(search::tag_exists_expr_pg(t));
                 }
                 sel = sel.filter(tag_cond);
             }
@@ -117,7 +118,7 @@ pub(crate) async fn list(
             if !pq.tags.is_empty() {
                 let mut tag_cond = Condition::any();
                 for t in &pq.tags {
-                    tag_cond = tag_cond.add(crate::search::tag_exists_expr_like(t));
+                    tag_cond = tag_cond.add(search::tag_exists_expr_like(t));
                 }
                 sel = sel.filter(tag_cond);
             }

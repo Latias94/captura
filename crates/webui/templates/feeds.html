@@ -71,7 +71,9 @@
         {% if f.category.is_some() %}
         {% if f.category.as_ref().unwrap().id == c.id %}
         <li class="list__item" data-feed-id="{{ f.id }}" data-cat-id="{{ c.id }}">
-          <img src="/v1/feeds/{{ f.id }}/icon" alt="" width="16" height="16" style="vertical-align:middle;margin-right:.5rem" onerror="this.style.display='none'" />
+          {% if f.favicon_id.is_some() %}
+          <img src="/api/v1/favicons/{{ f.favicon_id.as_ref().unwrap() }}" alt="" width="16" height="16" style="vertical-align:middle;margin-right:.5rem" onerror="this.style.display='none'" />
+          {% endif %}
           <a class="link" href="/feeds/{{ f.id }}">{% if f.title.is_some() %}{{ f.title.as_ref().unwrap() }}{% else %}{{ dict["misc.untitled"] }}{% endif %}</a>
           <span class="badge" id="feedBadge-{{ f.id }}">{{ f.unread_count.unwrap_or(0) }}</span>
           {% if f.parsing_error_count | gt0_i32 %}
@@ -126,7 +128,9 @@
       {% for f in feeds %}
         {% if f.category.is_none() %}
         <li class="list__item" data-feed-id="{{ f.id }}" data-cat-id="uncat">
-          <img src="/v1/feeds/{{ f.id }}/icon" alt="" width="16" height="16" style="vertical-align:middle;margin-right:.5rem" onerror="this.style.display='none'" />
+          {% if f.favicon_id.is_some() %}
+          <img src="/api/v1/favicons/{{ f.favicon_id.as_ref().unwrap() }}" alt="" width="16" height="16" style="vertical-align:middle;margin-right:.5rem" onerror="this.style.display='none'" />
+          {% endif %}
           <a class="link" href="/feeds/{{ f.id }}">{% if f.title.is_some() %}{{ f.title.as_ref().unwrap() }}{% else %}{{ dict["misc.untitled"] }}{% endif %}</a>
           <span class="badge" id="feedBadge-{{ f.id }}">{{ f.unread_count.unwrap_or(0) }}</span>
           {% if f.parsing_error_count | gt0_i32 %}

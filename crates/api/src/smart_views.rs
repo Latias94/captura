@@ -6,18 +6,15 @@ use axum_extra::typed_header::TypedHeader;
 use chrono::{FixedOffset, Utc};
 use headers::authorization::Bearer;
 use headers::Authorization;
-use sea_orm::{
-    ActiveModelTrait, ColumnTrait, Condition, EntityTrait, JoinType, QueryFilter, QueryOrder,
-    QuerySelect, RelationTrait, Set,
-};
+use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, QueryOrder, Set};
 use serde::Deserialize;
 
 use crate::auth::AuthUser;
 use crate::error::{bad_request, internal, not_found, ApiResult};
-use crate::search;
 use crate::util::{validate_limit_offset, validate_sort};
 use crate::AppState;
-use captura_storage::entity::{entry, entry_label, feed, smart_view};
+use captura_service::query::{list_entries_for_user, TimelineQuery, TimelineStatus};
+use captura_storage::entity::smart_view;
 use captura_types::{EntryDto, EntryView, SmartViewDto, SmartViewFiltersDto, Sorting};
 
 #[derive(Deserialize)]
@@ -244,89 +241,6 @@ pub(crate) async fn list_smart_view_entries(
         .and_then(|j| serde_json::from_value(j.clone()).ok())
         .unwrap_or_default();
 
-    let mut sel = entry::Entity::find()
-        .join(JoinType::InnerJoin, entry::Relation::Feed.def())
-        .filter(feed::Column::UserId.eq(user.user_id));
-
-    if let Some(feed_ids) = &filters.feed_ids {
-        if !feed_ids.is_empty() {
-            sel = sel.filter(entry::Column::FeedId.is_in(feed_ids.clone()));
-        }
-    }
-    if let Some(category_ids) = &filters.category_ids {
-        if !category_ids.is_empty() {
-            sel = sel.filter(feed::Column::CategoryId.is_in(category_ids.clone()));
-        }
-    }
-    if let Some(label_ids) = &filters.label_ids {
-        if !label_ids.is_empty() {
-            sel = sel
-                .join(JoinType::InnerJoin, entry_label::Relation::Entry.def())
-                .filter(entry_label::Column::LabelId.is_in(label_ids.clone()));
-        }
-    }
-    if let Some(cond) = captura_service::query::view_filter_condition(Some(view)) {
-        sel = sel.filter(cond);
-    }
-    if let Some(ref sts) = filters.status {
-        match sts.as_str() {
-            "read" => sel = sel.filter(entry::Column::IsRead.eq(true)),
-            "unread" => sel = sel.filter(entry::Column::IsRead.eq(false)),
-            "starred" => sel = sel.filter(entry::Column::IsStarred.eq(true)),
-            _ => {}
-        }
-    }
-    if let Some(ref qstr) = filters.search {
-        let backend = st.db.get_database_backend();
-        let pq = crate::search::parse_query(qstr);
-        if search::is_pg(backend) {
-            if let Some(ref g) = pq.general {
-                sel = sel.filter(search::fts_filter_expr_pg(g));
-            }
-            for v in &pq.title {
-                sel = sel.filter(search::fts_field_expr_pg("title", v));
-            }
-            for v in &pq.author {
-                sel = sel.filter(search::fts_field_expr_pg("author", v));
-            }
-            for v in &pq.url {
-                sel = sel.filter(search::fts_field_expr_pg("url", v));
-            }
-            if !pq.tags.is_empty() {
-                let mut tag_cond = Condition::any();
-                for t in &pq.tags {
-                    tag_cond = tag_cond.add(search::tag_exists_expr_pg(t));
-                }
-                sel = sel.filter(tag_cond);
-            }
-        } else {
-            if let Some(ref g) = pq.general {
-                let like = format!("%{}%", g);
-                let cond = Condition::any()
-                    .add(entry::Column::Title.like(like.as_str()))
-                    .add(entry::Column::Summary.like(like.as_str()))
-                    .add(entry::Column::ContentHtml.like(like.as_str()));
-                sel = sel.filter(cond);
-            }
-            for v in &pq.title {
-                sel = sel.filter(entry::Column::Title.like(format!("%{}%", v)));
-            }
-            for v in &pq.author {
-                sel = sel.filter(entry::Column::Author.like(format!("%{}%", v)));
-            }
-            for v in &pq.url {
-                sel = sel.filter(entry::Column::Url.like(format!("%{}%", v)));
-            }
-            if !pq.tags.is_empty() {
-                let mut tag_cond = Condition::any();
-                for t in &pq.tags {
-                    tag_cond = tag_cond.add(search::tag_exists_expr_like(t));
-                }
-                sel = sel.filter(tag_cond);
-            }
-        }
-    }
-
     // Determine effective sort key: query parameter overrides stored preference.
     let sort_by = q
         .sorting
@@ -341,29 +255,44 @@ pub(crate) async fn list_smart_view_entries(
         .or(sv.sort_order.as_deref())
         .unwrap_or("desc");
 
-    match sort_by {
-        "created_at" => {
-            sel = match sort_order {
-                "asc" => sel.order_by_asc(entry::Column::CreatedAt),
-                _ => sel.order_by_desc(entry::Column::CreatedAt),
-            };
-        }
-        _ => {
-            sel = match sort_order {
-                "asc" => sel.order_by_asc(entry::Column::PublishedAt),
-                _ => sel.order_by_desc(entry::Column::PublishedAt),
-            };
-            sel = sel.order_by_desc(entry::Column::CreatedAt);
-        }
+    let mut feed_ids = filters.feed_ids.unwrap_or_default();
+    let mut category_ids = filters.category_ids.unwrap_or_default();
+    let mut label_ids = filters.label_ids.unwrap_or_default();
+    // Normalize potential None values to empty vectors.
+    if feed_ids.is_empty() {
+        feed_ids = Vec::new();
     }
-
-    let l = q.limit.unwrap_or(100);
-    sel = sel.limit(l);
-    if let Some(o) = q.offset {
-        sel = sel.offset(o);
+    if category_ids.is_empty() {
+        category_ids = Vec::new();
     }
-
-    let list = sel.all(&st.db).await.map_err(internal)?;
+    if label_ids.is_empty() {
+        label_ids = Vec::new();
+    }
+    let status = filters.status.as_deref().and_then(|s| match s {
+        "read" => Some(TimelineStatus::Read),
+        "unread" => Some(TimelineStatus::Unread),
+        "starred" => Some(TimelineStatus::Starred),
+        _ => None,
+    });
+    let limit = q.limit.unwrap_or(100);
+    let offset = q.offset.unwrap_or(0);
+    let tquery = TimelineQuery {
+        view: Some(view),
+        feed_ids,
+        category_ids,
+        label_ids,
+        status,
+        search: filters.search.clone(),
+        sort_by: Some(sort_by.to_string()),
+        sort_order: Some(sort_order.to_string()),
+        limit,
+        offset,
+        before_id: None,
+        after_id: None,
+    };
+    let list = list_entries_for_user(&st.db, user.user_id, &tquery)
+        .await
+        .map_err(internal)?;
     Ok(Json(
         list.into_iter()
             .map(|e| EntryDto {
