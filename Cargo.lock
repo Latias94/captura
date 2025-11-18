@@ -935,9 +935,9 @@ dependencies = [
 
 [[package]]
 name = "clap"
-version = "4.5.51"
+version = "4.5.52"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4c26d721170e0295f191a69bd9a1f93efcdb0aff38684b61ab5750468972e5f5"
+checksum = "aa8120877db0e5c011242f96806ce3c94e0737ab8108532a76a3300a01db2ab8"
 dependencies = [
  "clap_builder",
  "clap_derive",
@@ -945,9 +945,9 @@ dependencies = [
 
 [[package]]
 name = "clap_builder"
-version = "4.5.51"
+version = "4.5.52"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "75835f0c7bf681bfd05abe44e965760fea999a5286c6eb2d59883634fd02011a"
+checksum = "02576b399397b659c26064fbc92a75fede9d18ffd5f80ca1cd74ddab167016e1"
 dependencies = [
  "anstream",
  "anstyle",
@@ -4023,9 +4023,9 @@ dependencies = [
 
 [[package]]
 name = "sea-query"
-version = "1.0.0-rc.17"
+version = "1.0.0-rc.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "30d190945ff6b2914ef0631c1933ef67ee142b15f00b72d40bf241147d24b522"
+checksum = "1c71f6d768c8bb1003bbfce01431374f677abbcf7582d6a0ec4ea4c5ae20adbb"
 dependencies = [
  "bigdecimal",
  "chrono",
@@ -4070,9 +4070,9 @@ dependencies = [
 
 [[package]]
 name = "sea-schema"
-version = "0.17.0-rc.14"
+version = "0.17.0-rc.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "da2e92a98855cfdc2e32daac3f48517a3d9911209db012e5c74af1ff13a24946"
+checksum = "59f99598cda516443eb35c06fe5b4496d60c8f7afca708bd998087b63ac56775"
 dependencies = [
  "async-trait",
  "sea-query",
@@ -4463,9 +4463,9 @@ dependencies = [
 
 [[package]]
 name = "spider"
-version = "2.37.180"
+version = "2.37.191"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4e31028b5404515b549a8326ee247266767bf9685b3ac9450b1a5784f30fda4d"
+checksum = "5ec1786df613719fe243660dbca9b6c038fdbbe4500fc4629f8aa1e685cc7e02"
 dependencies = [
  "ahash 0.8.12",
  "aho-corasick",
@@ -4497,9 +4497,9 @@ dependencies = [
 
 [[package]]
 name = "spider_fingerprint"
-version = "2.37.214"
+version = "2.37.216"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e54d672d52d9a5f62c4f5f6d8011a17654ec5a87b16f770760d85bfd881ff5fa"
+checksum = "957d141d736500a906bcbb9360f44838550c80cc20cbae40f9fce2300c1ce16c"
 dependencies = [
  "aho-corasick",
  "case_insensitive_string",
@@ -4534,9 +4534,9 @@ dependencies = [
 
 [[package]]
 name = "spider_utils"
-version = "2.37.180"
+version = "2.37.191"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3b9128ed9013ddc6340589a730cf5ae3ce8811347053919c23c9bcf1093340ff"
+checksum = "22b4646a7b9a03779840ce4c7230b04d4e7a2cad4d6ac423069b61531e849c95"
 dependencies = [
  "hashbrown 0.15.5",
  "lazy_static",
