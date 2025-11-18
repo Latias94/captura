@@ -77,4 +77,3 @@ pub async fn refresh_for_feed(db: &DatabaseConnection, f: &feed::Model) -> Resul
 
     Ok(())
 }
-

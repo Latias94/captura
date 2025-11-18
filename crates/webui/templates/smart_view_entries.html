@@ -50,6 +50,68 @@
     </form>
   </div>
   <div class="toolbar my-2">
+    <form method="post" action="/ui/smart-views/{{ smart_view.id }}/update" class="inline-block">
+      <fieldset class="panel">
+        <legend class="label">{{ dict["feeds.title"] }}</legend>
+        {% if feeds | length == 0 %}
+          <span class="muted">{{ dict["empty.feeds"] }}</span>
+        {% else %}
+          {% for f in feeds %}
+          <label class="mr-2">
+            <input type="checkbox" name="feed_ids" value="{{ f.id }}"
+              {% if smart_view.filters.is_some()
+                    && smart_view.filters.as_ref().unwrap().feed_ids.is_some()
+                    && filters::contains_i64(smart_view.filters.as_ref().unwrap().feed_ids.as_ref().unwrap(), f.id) %}
+              checked
+              {% endif %}
+            />
+            {% if f.title.is_some() %}{{ f.title.as_ref().unwrap() }}{% else %}feed {{ f.id }}{% endif %}
+          </label>
+          {% endfor %}
+        {% endif %}
+      </fieldset>
+      <fieldset class="panel mt-2">
+        <legend class="label">{{ dict["categories.title"] }}</legend>
+        {% if categories | length == 0 %}
+          <span class="muted">{{ dict["empty.categories"] }}</span>
+        {% else %}
+          {% for c in categories %}
+          <label class="mr-2">
+            <input type="checkbox" name="category_ids" value="{{ c.id }}"
+              {% if smart_view.filters.is_some()
+                    && smart_view.filters.as_ref().unwrap().category_ids.is_some()
+                    && filters::contains_i64(smart_view.filters.as_ref().unwrap().category_ids.as_ref().unwrap(), c.id) %}
+              checked
+              {% endif %}
+            />
+            {{ c.name }}
+          </label>
+          {% endfor %}
+        {% endif %}
+      </fieldset>
+      <fieldset class="panel mt-2">
+        <legend class="label">{{ dict["tags.title"] }}</legend>
+        {% if labels | length == 0 %}
+          <span class="muted">{{ dict["tags.empty"] }}</span>
+        {% else %}
+          {% for l in labels %}
+          <label class="mr-2">
+            <input type="checkbox" name="label_ids" value="{{ l.id }}"
+              {% if smart_view.filters.is_some()
+                    && smart_view.filters.as_ref().unwrap().label_ids.is_some()
+                    && filters::contains_i64(smart_view.filters.as_ref().unwrap().label_ids.as_ref().unwrap(), l.id) %}
+              checked
+              {% endif %}
+            />
+            {{ l.name }}
+          </label>
+          {% endfor %}
+        {% endif %}
+      </fieldset>
+      <button class="button mt-2" type="submit">{{ dict["btn.save"] }}</button>
+    </form>
+  </div>
+  <div class="toolbar my-2">
     <button type="button" class="button" id="btnSelectAll">{{ dict["btn.select_all"] }}</button>
     <form id="formMarkRead" method="post" action="/ui/entries/bulk-mark" class="inline-block ml-2">
       <input type="hidden" name="ids" id="idsRead" value="" />

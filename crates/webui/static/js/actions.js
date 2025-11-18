@@ -303,9 +303,9 @@
             while(tries-- > 0){
               await new Promise(r => setTimeout(r, 2000));
               const data = await fetchUiEntries(getFeedId(), getLimit(), getFilter());
-              if(data && data.entries && data.entries.length){
-                if(!topId || String(data.entries[0].id) !== String(topId)){
-                  mergeList(data.entries);
+              if(data && data && data.length){
+                if(!topId || String(data[0].id) !== String(topId)){
+                  mergeList(data);
                   showAlert('Entries updated');
                   updateCounterBadge();
                   break;
@@ -320,17 +320,22 @@
     async function fetchUiEntries(feedId, limit, filter){
       if(!feedId) return null;
       const token = getToken();
+      if(!token) return null;
       const p = new URLSearchParams();
+      p.set('feed_id', String(feedId));
       p.set('limit', String(limit || 50));
       p.set('offset', '0');
-      p.set('order', 'published_at');
-      p.set('direction', 'desc');
+      p.set('sort_by', 'published_at');
+      p.set('order', 'desc');
       if(filter === 'unread') p.set('status', 'unread');
-      if(filter === 'starred') p.set('starred', 'true');
-      const url = `/v1/feeds/${feedId}/entries?` + p.toString();
+      if(filter === 'starred') p.set('status', 'starred');
+      const url = `/api/v1/entries?` + p.toString();
       try{
-        const resp = await fetch(url, { headers: { 'X-Auth-Token': token }});
+        const resp = await fetch(url, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
         if(!resp.ok) return null;
+        // `/api/v1/entries` returns a plain array of EntryDto.
         return await resp.json();
       }catch(_){ return null; }
     }

@@ -1,0 +1,72 @@
+{% extends "layout.html" %}
+{% block body %}
+<div class="view view--hub">
+  <h1 class="title">{{ dict["hub.stats.title"] }}</h1>
+  <p class="muted">{{ dict["hub.stats.desc"] }}</p>
+
+  <section class="panel mt-4">
+    <h2 class="title">{{ dict["hub.stats.rules_title"] }}</h2>
+    {% if rules | length == 0 %}
+    <p class="muted">{{ dict["hub.stats.rules_empty"] }}</p>
+    {% else %}
+    <table class="table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>{{ dict["rules.id"] }}</th>
+          <th>{{ dict["rules.desc"] }}</th>
+          <th>{{ dict["hub.stats.total"] }}</th>
+          <th>{{ dict["hub.stats.done"] }}</th>
+          <th>{{ dict["hub.stats.failed"] }}</th>
+          <th>{{ dict["hub.stats.last_error"] }}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rules %}
+        <tr>
+          <td>{{ r.id }}</td>
+          <td><code>{{ r.rule_id }}</code></td>
+          <td>{% if r.description.is_some() %}{{ r.description.as_ref().unwrap() }}{% endif %}</td>
+          <td>{{ r.total_jobs }}</td>
+          <td>{{ r.done_jobs }}</td>
+          <td>{% if r.failed_jobs > 0 %}<span class="badge badge--error">{{ r.failed_jobs }}</span>{% else %}0{% endif %}</td>
+          <td>{% if r.last_error.is_some() %}<span class="muted">{{ r.last_error.as_ref().unwrap() }}</span>{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </section>
+
+  <section class="panel mt-4">
+    <h2 class="title">{{ dict["hub.stats.routes_title"] }}</h2>
+    {% if hubs | length == 0 %}
+    <p class="muted">{{ dict["hub.stats.routes_empty"] }}</p>
+    {% else %}
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Hub ID</th>
+          <th>{{ dict["hub.stats.total"] }}</th>
+          <th>{{ dict["hub.stats.done"] }}</th>
+          <th>{{ dict["hub.stats.failed"] }}</th>
+          <th>{{ dict["hub.stats.last_error"] }}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for h in hubs %}
+        <tr>
+          <td><code>{{ h.hub_id }}</code></td>
+          <td>{{ h.total_jobs }}</td>
+          <td>{{ h.done_jobs }}</td>
+          <td>{% if h.failed_jobs > 0 %}<span class="badge badge--error">{{ h.failed_jobs }}</span>{% else %}0{% endif %}</td>
+          <td>{% if h.last_error.is_some() %}<span class="muted">{{ h.last_error.as_ref().unwrap() }}</span>{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}
+

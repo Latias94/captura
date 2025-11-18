@@ -283,13 +283,7 @@ pub async fn update_prefs(
         upsert_pref(&st.db, user_id, "language", serde_json::json!(s)).await?;
     }
     if let Some(n) = body.entries_per_page {
-        upsert_pref(
-            &st.db,
-            user_id,
-            "entries_per_page",
-            serde_json::json!(n),
-        )
-        .await?;
+        upsert_pref(&st.db, user_id, "entries_per_page", serde_json::json!(n)).await?;
     }
     if let Some(s) = &body.entry_sorting_direction {
         upsert_pref(
@@ -307,31 +301,13 @@ pub async fn update_prefs(
         upsert_pref(&st.db, user_id, "custom_js", serde_json::json!(s)).await?;
     }
     if let Some(s) = &body.external_font_hosts {
-        upsert_pref(
-            &st.db,
-            user_id,
-            "external_font_hosts",
-            serde_json::json!(s),
-        )
-        .await?;
+        upsert_pref(&st.db, user_id, "external_font_hosts", serde_json::json!(s)).await?;
     }
     if let Some(b) = body.keyboard_shortcuts {
-        upsert_pref(
-            &st.db,
-            user_id,
-            "keyboard_shortcuts",
-            serde_json::json!(b),
-        )
-        .await?;
+        upsert_pref(&st.db, user_id, "keyboard_shortcuts", serde_json::json!(b)).await?;
     }
     if let Some(b) = body.show_reading_time {
-        upsert_pref(
-            &st.db,
-            user_id,
-            "show_reading_time",
-            serde_json::json!(b),
-        )
-        .await?;
+        upsert_pref(&st.db, user_id, "show_reading_time", serde_json::json!(b)).await?;
     }
     if let Some(b) = body.open_external_links_in_new_tab {
         upsert_pref(
@@ -343,13 +319,7 @@ pub async fn update_prefs(
         .await?;
     }
     if let Some(b) = body.mark_read_on_view {
-        upsert_pref(
-            &st.db,
-            user_id,
-            "mark_read_on_view",
-            serde_json::json!(b),
-        )
-        .await?;
+        upsert_pref(&st.db, user_id, "mark_read_on_view", serde_json::json!(b)).await?;
     }
 
     Ok("ok")

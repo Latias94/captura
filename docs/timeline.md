@@ -152,6 +152,15 @@ Named timeline endpoint based on stored SmartView definition.
   - into a unified timeline query and returns entries using the same
     semantics as `/api/v1/entries`.
 
+  - Label filter behavior:
+    - when `filters.label_ids` is non-empty, entries must have at least one
+      of the specified labels (logical OR across labels);
+    - the `view` still applies first: only feeds whose effective view
+      matches the SmartView `view` are considered, and label filtering
+      is evaluated within that subset;
+    - this matches the behaviour of `search` tag filters (`#tag`) at the
+      service layer, but uses explicit label ids instead of names.
+
 In other words, a SmartView is a **saved timeline query** and this endpoint
 is equivalent to calling `/api/v1/entries` with pre-filled parameters.
 

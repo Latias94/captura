@@ -46,6 +46,10 @@ pub mod filters {
     pub fn non_empty_str(v: &str) -> ::askama::Result<bool> {
         Ok(!v.is_empty())
     }
+    // Check whether a list of i64 contains a given id.
+    pub fn contains_i64(list: &[i64], id: &i64) -> bool {
+        list.contains(id)
+    }
 }
 
 /// Build a UI router with generic state.
@@ -60,6 +64,7 @@ where
         .route("/signup", get(pages_index::signup))
         .route("/settings", get(pages_settings::ui_settings))
         .route("/hub", get(pages_hub::ui_hub_routes))
+        .route("/hub/stats", get(pages_hub::ui_hub_stats))
         .route("/hub/test", get(pages_hub::ui_hub_test))
         .route(
             "/rules/test",
@@ -207,11 +212,32 @@ where
 #[template(path = "smart_view_new.html")]
 struct SmartViewNewPage<'a> {
     title: &'a str,
+    feeds: &'a [SmartViewFeedOption],
+    categories: &'a [SmartViewCategoryOption],
+    labels: &'a [SmartViewLabelOption],
     dict: &'a std::collections::HashMap<String, String>,
     csp_nonce: &'a str,
     custom_css: &'a str,
     custom_js: &'a str,
     external_font_hosts: &'a str,
+}
+
+#[derive(serde::Deserialize, Clone)]
+pub struct SmartViewFeedOption {
+    pub id: i64,
+    pub title: Option<String>,
+}
+
+#[derive(serde::Deserialize, Clone)]
+pub struct SmartViewCategoryOption {
+    pub id: i64,
+    pub name: String,
+}
+
+#[derive(serde::Deserialize, Clone)]
+pub struct SmartViewLabelOption {
+    pub id: i64,
+    pub name: String,
 }
 
 async fn ui_smart_view_new(headers: HeaderMap) -> impl IntoResponse {
@@ -222,8 +248,61 @@ async fn ui_smart_view_new(headers: HeaderMap) -> impl IntoResponse {
     let dict = i18n::load(&lang);
     let snippets = load_snippets(&headers).await;
     let nonce = gen_csp_nonce();
+    // Load feeds/categories/labels for SmartView filter options.
+    let mut feeds: Vec<SmartViewFeedOption> = Vec::new();
+    let mut categories: Vec<SmartViewCategoryOption> = Vec::new();
+    let mut labels: Vec<SmartViewLabelOption> = Vec::new();
+    if let Some(token) = read_token_cookie(&headers) {
+        if let Some(cli) = http_client(4) {
+            // Feeds
+            let f_url = format!("{}/api/v1/feeds?sort_by=title&order=asc", api_base());
+            if let Ok(resp) = cli
+                .get(&f_url)
+                .header(
+                    axum::http::header::AUTHORIZATION,
+                    format!("Bearer {}", token),
+                )
+                .send()
+                .await
+                .and_then(|r| r.error_for_status())
+            {
+                feeds = resp.json().await.unwrap_or_default();
+            }
+            // Categories
+            let c_url = format!("{}/api/v1/categories", api_base());
+            if let Ok(resp) = cli
+                .get(&c_url)
+                .header(
+                    axum::http::header::AUTHORIZATION,
+                    format!("Bearer {}", token),
+                )
+                .send()
+                .await
+                .and_then(|r| r.error_for_status())
+            {
+                categories = resp.json().await.unwrap_or_default();
+            }
+            // Labels
+            let l_url = format!("{}/api/v1/labels", api_base());
+            if let Ok(resp) = cli
+                .get(&l_url)
+                .header(
+                    axum::http::header::AUTHORIZATION,
+                    format!("Bearer {}", token),
+                )
+                .send()
+                .await
+                .and_then(|r| r.error_for_status())
+            {
+                labels = resp.json().await.unwrap_or_default();
+            }
+        }
+    }
     let tpl = SmartViewNewPage {
         title: "New Smart View",
+        feeds: &feeds,
+        categories: &categories,
+        labels: &labels,
         dict: &dict,
         csp_nonce: &nonce,
         custom_css: &snippets.custom_css,
@@ -278,6 +357,9 @@ async fn ui_smart_view_create(headers: HeaderMap, body: Bytes) -> impl IntoRespo
     let mut view: Option<String> = None;
     let mut status: Option<String> = None;
     let mut search: Option<String> = None;
+    let mut feed_ids: Vec<i64> = Vec::new();
+    let mut category_ids: Vec<i64> = Vec::new();
+    let mut label_ids: Vec<i64> = Vec::new();
     for (k, v) in url::form_urlencoded::parse(&body) {
         match &*k {
             "name" => {
@@ -304,6 +386,21 @@ async fn ui_smart_view_create(headers: HeaderMap, body: Bytes) -> impl IntoRespo
                     search = Some(s);
                 }
             }
+            "feed_ids" => {
+                if let Ok(n) = v.parse::<i64>() {
+                    feed_ids.push(n);
+                }
+            }
+            "category_ids" => {
+                if let Ok(n) = v.parse::<i64>() {
+                    category_ids.push(n);
+                }
+            }
+            "label_ids" => {
+                if let Ok(n) = v.parse::<i64>() {
+                    label_ids.push(n);
+                }
+            }
             _ => {}
         }
     }
@@ -312,6 +409,15 @@ async fn ui_smart_view_create(headers: HeaderMap, body: Bytes) -> impl IntoRespo
     };
     let view = view.unwrap_or_else(|| "all".to_string());
     let mut filters = serde_json::Map::new();
+    if !feed_ids.is_empty() {
+        filters.insert("feed_ids".into(), serde_json::json!(feed_ids));
+    }
+    if !category_ids.is_empty() {
+        filters.insert("category_ids".into(), serde_json::json!(category_ids));
+    }
+    if !label_ids.is_empty() {
+        filters.insert("label_ids".into(), serde_json::json!(label_ids));
+    }
     if let Some(st) = status {
         if st != "all" {
             filters.insert("status".into(), serde_json::json!(st));
@@ -361,6 +467,9 @@ async fn ui_smart_view_update(
     let mut view: Option<String> = None;
     let mut status: Option<String> = None;
     let mut search: Option<String> = None;
+    let mut feed_ids: Vec<i64> = Vec::new();
+    let mut category_ids: Vec<i64> = Vec::new();
+    let mut label_ids: Vec<i64> = Vec::new();
     for (k, v) in url::form_urlencoded::parse(&body) {
         match &*k {
             "name" => {
@@ -387,6 +496,21 @@ async fn ui_smart_view_update(
                     search = Some(s);
                 }
             }
+            "feed_ids" => {
+                if let Ok(n) = v.parse::<i64>() {
+                    feed_ids.push(n);
+                }
+            }
+            "category_ids" => {
+                if let Ok(n) = v.parse::<i64>() {
+                    category_ids.push(n);
+                }
+            }
+            "label_ids" => {
+                if let Ok(n) = v.parse::<i64>() {
+                    label_ids.push(n);
+                }
+            }
             _ => {}
         }
     }
@@ -399,6 +523,9 @@ async fn ui_smart_view_update(
         payload.insert("view".into(), serde_json::json!(v));
     }
     let mut filters = serde_json::Map::new();
+    filters.insert("feed_ids".into(), serde_json::json!(feed_ids));
+    filters.insert("category_ids".into(), serde_json::json!(category_ids));
+    filters.insert("label_ids".into(), serde_json::json!(label_ids));
     if let Some(st) = status {
         if st != "all" {
             filters.insert("status".into(), serde_json::json!(st));
@@ -472,7 +599,11 @@ async fn ui_toggle_star(Path(id): Path<i64>, headers: HeaderMap) -> impl IntoRes
         .await
         .and_then(|r| r.error_for_status())
     {
-        Ok(resp) => resp.json::<ApiEntry>().await.map(|e| e.is_starred).unwrap_or(false),
+        Ok(resp) => resp
+            .json::<ApiEntry>()
+            .await
+            .map(|e| e.is_starred)
+            .unwrap_or(false),
         Err(_) => false,
     };
     let url = format!("{}/api/v1/entries/{}/star", api_base(), id);
@@ -517,7 +648,7 @@ async fn ui_mark_status(Path(id): Path<i64>, headers: HeaderMap) -> impl IntoRes
         return Redirect::to(&format!("/entries/{}", id));
     };
     let url = format!("{}/api/v1/entries/{}/read", api_base(), id);
-    let value = desired.to_ascii_lowercase() == "read";
+    let value = desired.eq_ignore_ascii_case("read");
     let _ = cli
         .post(url)
         .header(
@@ -682,10 +813,7 @@ async fn ui_feed_create(headers: HeaderMap, body: Bytes) -> impl IntoResponse {
         payload.insert("title".into(), serde_json::Value::String(t));
     }
     if let Some(cid) = category_id {
-        payload.insert(
-            "category_id".into(),
-            serde_json::Value::Number(cid.into()),
-        );
+        payload.insert("category_id".into(), serde_json::Value::Number(cid.into()));
     }
     if let Some(v) = view {
         // send only when not "all"; server already rejects "all" for feeds.
@@ -777,6 +905,7 @@ async fn ui_feed_edit(Path(id): Path<i64>, headers: HeaderMap) -> impl IntoRespo
     // Fetch feed details via native /api/v1/feeds/{id}` and map into UiFeedFull.
     let url = format!("{}/api/v1/feeds/{}", api_base(), id);
     #[derive(serde::Deserialize)]
+    #[allow(dead_code)]
     struct ApiFeedFullDto {
         id: i64,
         title: Option<String>,
@@ -897,16 +1026,16 @@ async fn ui_feed_update(Path(id): Path<i64>, headers: HeaderMap, body: Bytes) ->
     let mut proxy_url: Option<String> = None;
     // Advanced fields like cookie/scraper_rules/... are currently managed via
     // Miniflux-compatible endpoints and are not sent to `/api/v1/feeds`.
-    let mut cookie: Option<String> = None;
+    let mut _cookie: Option<String> = None;
     let mut fetch_via_proxy: Option<bool> = None;
     let mut disable_http2: Option<bool> = None;
     let mut allow_invalid_certs: Option<bool> = None;
     let mut request_timeout_ms: Option<i32> = None;
-    let mut scraper_rules: Option<String> = None;
-    let mut rewrite_rules: Option<String> = None;
-    let mut url_rewrite_rules: Option<String> = None;
-    let mut blocklist_rules: Option<String> = None;
-    let mut keeplist_rules: Option<String> = None;
+    let mut _scraper_rules: Option<String> = None;
+    let mut _rewrite_rules: Option<String> = None;
+    let mut _url_rewrite_rules: Option<String> = None;
+    let mut _blocklist_rules: Option<String> = None;
+    let mut _keeplist_rules: Option<String> = None;
     for (k, v) in url::form_urlencoded::parse(&body) {
         match &*k {
             "title" => {
@@ -944,9 +1073,9 @@ async fn ui_feed_update(Path(id): Path<i64>, headers: HeaderMap, body: Bytes) ->
             "cookie" => {
                 let s = v.to_string();
                 if !s.trim().is_empty() {
-                    cookie = Some(s);
+                    _cookie = Some(s);
                 } else {
-                    cookie = None;
+                    _cookie = None;
                 }
             }
             "fetch_via_proxy" => {
@@ -965,23 +1094,23 @@ async fn ui_feed_update(Path(id): Path<i64>, headers: HeaderMap, body: Bytes) ->
             }
             "scraper_rules" => {
                 let s = v.to_string();
-                scraper_rules = Some(s);
+                _scraper_rules = Some(s);
             }
             "rewrite_rules" => {
                 let s = v.to_string();
-                rewrite_rules = Some(s);
+                _rewrite_rules = Some(s);
             }
             "url_rewrite_rules" => {
                 let s = v.to_string();
-                url_rewrite_rules = Some(s);
+                _url_rewrite_rules = Some(s);
             }
             "blocklist_rules" => {
                 let s = v.to_string();
-                blocklist_rules = Some(s);
+                _blocklist_rules = Some(s);
             }
             "keeplist_rules" => {
                 let s = v.to_string();
-                keeplist_rules = Some(s);
+                _keeplist_rules = Some(s);
             }
             _ => {}
         }

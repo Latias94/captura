@@ -335,6 +335,77 @@ impl Integration for Pocket {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use captura_storage::entity::{integration as integ, user};
+    use chrono::{FixedOffset, Utc};
+    use sea_orm::{ActiveModelTrait, Set};
+
+    async fn setup_db() -> DatabaseConnection {
+        captura_testkit::setup_db().await
+    }
+
+    #[tokio::test]
+    async fn ctx_cfg_missing_integration_returns_error() {
+        let db = setup_db().await;
+        let now = Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
+        let u = user::ActiveModel {
+            id: Default::default(),
+            username: Set("cfg_missing_user".into()),
+            password_hash: Set("h".into()),
+            created_at: Set(now),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+
+        let res: anyhow::Result<SlackCfg> = ctx_cfg(&db, UserId(u.id), "slack").await;
+        assert!(res.is_err(), "expected error when config is missing");
+    }
+
+    #[tokio::test]
+    async fn ctx_cfg_parses_enabled_integration_config() {
+        let db = setup_db().await;
+        let now = Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
+        let u = user::ActiveModel {
+            id: Default::default(),
+            username: Set("cfg_ok_user".into()),
+            password_hash: Set("h".into()),
+            created_at: Set(now),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+
+        // Insert a minimal Slack integration config.
+        let _row = integ::ActiveModel {
+            id: Default::default(),
+            user_id: Set(u.id),
+            kind: Set("slack".into()),
+            config_json: Set(Some(serde_json::json!({
+                "incoming_webhook_url": "http://127.0.0.1:9/webhook"
+            }))),
+            enabled: Set(true),
+            created_at: Set(now),
+            updated_at: Set(now),
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+
+        let cfg: SlackCfg = ctx_cfg(&db, UserId(u.id), "slack")
+            .await
+            .expect("config should be loaded");
+        assert_eq!(
+            cfg.incoming_webhook_url,
+            "http://127.0.0.1:9/webhook".to_string()
+        );
+    }
+}
+
 // ---------------- Instapaper ----------------
 // Simple API: https://www.instapaper.com/api (add)
 #[derive(Debug, Clone, serde::Deserialize)]

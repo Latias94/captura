@@ -306,6 +306,7 @@ pub(crate) async fn list_smart_view_entries(
                 published_at: e.published_at.map(|d| d.to_rfc3339()),
                 is_read: e.is_read,
                 is_starred: e.is_starred,
+                tags: None,
             })
             .collect(),
     ))

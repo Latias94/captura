@@ -13,11 +13,11 @@ use sea_orm::{
 };
 use tracing::debug;
 
+pub mod favicon;
 pub mod integration;
 pub mod query;
-pub mod webhook;
 pub mod search;
-pub mod favicon;
+pub mod webhook;
 
 /// Build a basic HTTP client used by scheduler/service integrations and webhooks.
 ///

@@ -151,7 +151,7 @@ pub(crate) async fn list_feeds(
                 disabled: f.disabled,
                 category_id: f.category_id,
                 view: EntryView::from_db(f.view.as_deref()).unwrap_or(EntryView::Articles),
-                 favicon_id: f.favicon_id,
+                favicon_id: f.favicon_id,
                 error_count: f.error_count,
                 last_error_message: f.last_error_message,
             })

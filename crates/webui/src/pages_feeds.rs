@@ -29,6 +29,7 @@ pub struct UiFeedDto {
 }
 
 #[derive(Deserialize)]
+#[allow(dead_code)]
 struct ApiFeedDto {
     pub id: i64,
     pub title: Option<String>,
@@ -43,6 +44,7 @@ struct ApiFeedDto {
 }
 
 #[derive(Deserialize)]
+#[allow(dead_code)]
 struct ApiFeedCountersDto {
     pub reads: std::collections::HashMap<i64, i64>,
     pub unreads: std::collections::HashMap<i64, i64>,
@@ -223,15 +225,12 @@ pub async fn ui_feeds(headers: HeaderMap, Query(fq): Query<UiFeedsQuery>) -> imp
     for f in api_feeds {
         let unread = unread_map.get(&f.id).copied();
         let cat = f.category_id.and_then(|cid| {
-            categories
-                .iter()
-                .find(|c| c.id == cid)
-                .map(|c| UiCategory {
-                    id: c.id,
-                    title: c.title.clone(),
-                    feed_count: None,
-                    total_unread: None,
-                })
+            categories.iter().find(|c| c.id == cid).map(|c| UiCategory {
+                id: c.id,
+                title: c.title.clone(),
+                feed_count: None,
+                total_unread: None,
+            })
         });
         feeds.push(UiFeedDto {
             id: f.id,

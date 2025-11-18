@@ -5,7 +5,7 @@
 //! reuse the same logic.
 
 use captura_common::Result;
-use captura_storage::entity::{entry, entry_label, feed};
+use captura_storage::entity::{entry, entry_label, feed, label};
 use captura_types::EntryView;
 use sea_orm::{
     ColumnTrait, Condition, DatabaseConnection, EntityTrait, JoinType, Order, QueryFilter,
@@ -128,9 +128,7 @@ pub struct EntryQueryFilter {
 /// - `Some(Articles)`      → `feed.view IS NULL OR feed.view = 'articles'`;
 /// - other concrete views  → `feed.view = '<view>'` (exact match).
 pub fn view_filter_condition(view: Option<EntryView>) -> Option<Condition> {
-    let Some(view) = view else {
-        return None;
-    };
+    let view = view?;
     if matches!(view, EntryView::All) {
         return None;
     }
@@ -165,11 +163,8 @@ async fn mark_entries_read_with_filter(
     if let Some(cond) = view_filter_condition(filter.view) {
         sel = sel.filter(cond);
     }
-    if !filter.label_ids.is_empty() {
-        sel = sel
-            .join(JoinType::InnerJoin, entry_label::Relation::Entry.def())
-            .filter(entry_label::Column::LabelId.is_in(filter.label_ids.clone()));
-    }
+    // NOTE: label-based scoping for mark-all-read is handled separately
+    // in `mark_entries_read_for_labels` to avoid complex joins here.
 
     let ids: Vec<i64> = sel
         .select_only()
@@ -227,13 +222,28 @@ pub async fn mark_entries_read_for_labels(
     if label_ids.is_empty() {
         return Ok(0);
     }
-    let filter = EntryQueryFilter {
-        feed_id: None,
-        category_id: None,
-        label_ids: label_ids.to_vec(),
-        view: None,
-    };
-    mark_entries_read_with_filter(db, user_id, &filter).await
+    // Select entry ids for the given labels, scoped to the current user.
+    let ids: Vec<i64> = entry_label::Entity::find()
+        .join(JoinType::InnerJoin, entry_label::Relation::Entry.def())
+        .join(JoinType::InnerJoin, entry_label::Relation::Label.def())
+        .filter(label::Column::UserId.eq(user_id))
+        .filter(entry_label::Column::LabelId.is_in(label_ids.to_vec()))
+        .select_only()
+        .column(entry::Column::Id)
+        .into_tuple()
+        .all(db)
+        .await
+        .map_err(|e| captura_common::Error::Storage(e.to_string()))?;
+    if ids.is_empty() {
+        return Ok(0);
+    }
+    let res = entry::Entity::update_many()
+        .col_expr(entry::Column::IsRead, sea_orm::sea_query::Expr::value(true))
+        .filter(entry::Column::Id.is_in(ids))
+        .exec(db)
+        .await
+        .map_err(|e| captura_common::Error::Storage(e.to_string()))?;
+    Ok(res.rows_affected as u64)
 }
 
 /// Logical status filter for timeline queries.
@@ -257,7 +267,7 @@ pub struct TimelineQuery {
     pub label_ids: Vec<i64>,
     pub status: Option<TimelineStatus>,
     pub search: Option<String>,
-    pub sort_by: Option<String>,   // published_at | created_at | relevance
+    pub sort_by: Option<String>, // published_at | created_at | relevance
     pub sort_order: Option<String>, // asc | desc
     pub limit: u64,
     pub offset: u64,
@@ -293,8 +303,10 @@ pub async fn list_entries_for_user(
         sel = sel.filter(cond);
     }
     if !q.label_ids.is_empty() {
+        // Join entry_label in reverse (entry has_many entry_label) so that we
+        // can filter by label ids without introducing a second `entry` alias.
         sel = sel
-            .join(JoinType::InnerJoin, entry_label::Relation::Entry.def())
+            .join_rev(JoinType::InnerJoin, entry_label::Relation::Entry.def())
             .filter(entry_label::Column::LabelId.is_in(q.label_ids.clone()));
     }
     if let Some(status) = q.status {

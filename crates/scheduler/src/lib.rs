@@ -387,7 +387,7 @@ async fn update_feed_on_failure(
 #[cfg(test)]
 mod it {
     use super::*;
-    use captura_storage::entity::{feed, job, user};
+    use captura_storage::entity::{entry, feed, job, user};
 
     #[tokio::test]
     async fn backoff_on_failed_feed_refresh() {
@@ -468,6 +468,120 @@ mod it {
             .unwrap();
         assert!(f2.next_run_at.unwrap() > now);
         assert_eq!(f2.error_count, 1);
+    }
+
+    /// Ensure that an `integration` job with a `save_entry` payload is processed
+    /// by `run_once` and transitions from Pending → Done with attempts incremented.
+    ///
+    /// This exercises the Integration branch of the scheduler without requiring
+    /// any external integrations to be configured. `emit_save_entry` swallows
+    /// integration errors, so the job should complete successfully.
+    #[tokio::test]
+    async fn run_once_processes_integration_save_entry_job() {
+        let db = captura_testkit::setup_db().await;
+        let now = Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
+
+        // Seed a user.
+        let u = user::ActiveModel {
+            username: Set("integration_user".into()),
+            password_hash: Set("h".into()),
+            created_at: Set(now),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+
+        // Seed a feed + entry for this user.
+        let f = feed::ActiveModel {
+            user_id: Set(u.id),
+            category_id: Set(None),
+            r#type: Set(feed::FeedType::Rss),
+            title: Set(Some("integration feed".into())),
+            site_url: Set(Some("https://example.com".into())),
+            feed_url: Set("https://example.com/integration.xml".into()),
+            rule_id: Set(None),
+            user_agent: Set(None),
+            headers_json: Set(None),
+            cookies: Set(None),
+            proxy_url: Set(None),
+            fetch_via_proxy: Set(false),
+            disable_http2: Set(false),
+            allow_invalid_certs: Set(false),
+            request_timeout_ms: Set(None),
+            checked_at: Set(None),
+            next_run_at: Set(Some(now)),
+            etag: Set(None),
+            last_modified: Set(None),
+            last_status: Set(None),
+            error_count: Set(0),
+            disabled: Set(false),
+            scraper_rules: Set(None),
+            rewrite_rules: Set(None),
+            blocklist_rules: Set(None),
+            keeplist_rules: Set(None),
+            url_rewrite_rules: Set(None),
+            block_filter_entry_rules: Set(None),
+            keep_filter_entry_rules: Set(None),
+            created_at: Set(now),
+            updated_at: Set(now),
+            favicon_id: Set(None),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+
+        let e = entry::ActiveModel {
+            id: Default::default(),
+            feed_id: Set(f.id),
+            guid: Set(Some("guid-integration".into())),
+            url: Set(Some("https://example.com/entry".into())),
+            title: Set(Some("integration entry".into())),
+            summary: Set(None),
+            content_html: Set(Some("<p>body</p>".into())),
+            author: Set(None),
+            published_at: Set(Some(now)),
+            created_at: Set(now),
+            updated_at: Set(now),
+            hash: Set(None),
+            is_read: Set(false),
+            is_starred: Set(false),
+            extras_json: Set(None),
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+
+        // Enqueue a single integration job with SaveEntry payload.
+        let payload = IntegrationEvent::SaveEntry {
+            entry_id: e.id,
+            feed_id: Some(f.id),
+        };
+        let job_id = enqueue_integration_event(&db, UserId(u.id), Some(f.id), payload)
+            .await
+            .unwrap();
+
+        // Before run_once: job should be Pending with attempts=0.
+        let j_before = job::Entity::find_by_id(job_id)
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(matches!(j_before.status, job::JobStatus::Pending));
+        assert_eq!(j_before.attempts, 0);
+
+        let processed = run_once(&db, 10).await.unwrap();
+        assert_eq!(processed, 1);
+
+        // After run_once: job should be Done with attempts incremented to 1.
+        let j_after = job::Entity::find_by_id(job_id)
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(matches!(j_after.status, job::JobStatus::Done));
+        assert_eq!(j_after.attempts, 1);
     }
 }
 

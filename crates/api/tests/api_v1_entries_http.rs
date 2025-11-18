@@ -15,8 +15,7 @@ async fn api_v1_entries_search_and_id_cursors_http() {
     let db = captura_testkit::setup_db().await;
     let st = AppState::new(db.clone());
     let app = build_router(st.clone()).into_service();
-    let (user_id, token) =
-        captura_testkit::seed_user_and_token(&db, "entries_search_http").await;
+    let (user_id, token) = captura_testkit::seed_user_and_token(&db, "entries_search_http").await;
     let auth = format!("Bearer {}", token);
 
     let now = Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
@@ -110,14 +109,14 @@ async fn api_v1_entries_search_and_id_cursors_http() {
     .body(Body::empty())
     .unwrap();
     let resp = app.clone().oneshot(req).await.unwrap();
-    assert!(
-        resp.status().is_success(),
-        "entries search failed: {}",
-        resp.status()
-    );
+    let status = resp.status();
     let bytes = axum::body::to_bytes(resp.into_body(), 1024 * 1024)
         .await
         .unwrap();
+    if !status.is_success() {
+        let body_str = String::from_utf8_lossy(&bytes);
+        panic!("entries search failed: {} body: {}", status, body_str);
+    }
     let arr: Vec<serde_json::Value> = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(arr.len(), 2, "expected 2 entries for q=hello");
     let titles_found: Vec<String> = arr
@@ -199,4 +198,3 @@ async fn api_v1_entries_search_and_id_cursors_http() {
         .iter()
         .all(|e| e["id"].as_i64().unwrap_or(i64::MIN) > all_ids[0]));
 }
-

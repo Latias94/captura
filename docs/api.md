@@ -379,8 +379,8 @@ For first-party clients maintained together with Captura (such as `captura-tui`)
     - 排序：`sort_by?=published_at|created_at|relevance|id`, `order?=asc|desc`
     - 分页：`limit?`, `offset?`
     - 可选游标：`before_id?`, `after_id?`（对 id 做 `<` / `>` 过滤，配合 `sort_by=id` 可实现基于 id 的 prev/next 导航）
-  - Resp: `[{ id, feed_id, url, title, summary, content_html, author, published_at, is_read, is_starred }]`
-  - 统一时间线：该端点已经在服务层映射为一个 `TimelineQuery`，其语义详见 `docs/timeline.md`。
+  - Resp: `[{ id, feed_id, url, title, summary, content_html, author, published_at, is_read, is_starred, tags? }]`
+  - 统一时间线：该端点已经在服务层映射为一个 `TimelineQuery`，其语义详见 `docs/timeline.md`；其中标签搜索使用 `#tag` 语法，对应于服务层的 label 存储（`label` / `entry_label`），与 SmartView 中显式的 `filters.label_ids` 一致：当存在标签条件时，条目需要至少包含其中一个标签（标签之间为 OR 关系）。
 - `POST /entries/bulk-status`
   - Auth required
   - Body: `{ "entry_ids": [1, 2, 3], "status": "read|unread" }`

@@ -29,6 +29,7 @@ pub struct UiEntryBrief {
 }
 
 #[derive(Deserialize)]
+#[allow(dead_code)]
 pub struct UiEntrySet {
     pub total: i64,
     pub entries: Vec<UiEntryBrief>,
@@ -121,7 +122,7 @@ pub async fn ui_feed_entries(
     // by `feed_id`. This aligns WebUI with Captura's unified timeline model
     // instead of Miniflux-compatible `/v1/feeds/{id}/entries`.
     let mut url = format!(
-        "{}/api/v1/entries?feed_id={}&limit={}&offset={}&sort_by=published_at&order=desc",
+        "{}/api/v1/entries?feed_id={}&limit={}&offset={}&sort_by=published_at&order=desc&include_tags=true",
         api_base(),
         id,
         limit,
@@ -139,9 +140,9 @@ pub async fn ui_feed_entries(
     }
     if let Some(st) = q.starred {
         if st {
-            url.push_str("&starred=true");
+            url.push_str("&status=starred");
             filter = "starred".into();
-            filter_q = "&starred=true".into();
+            filter_q = "&status=starred".into();
         }
     }
     // search query
@@ -196,7 +197,7 @@ pub async fn ui_feed_entries(
             } else {
                 "unread".into()
             },
-            tags: None,
+            tags: e.tags,
         });
     }
     let prev_page = if page > 1 { Some(page - 1) } else { None };
@@ -251,6 +252,8 @@ struct ApiSmartEntry {
     date: Option<String>,
     is_read: bool,
     is_starred: bool,
+    #[serde(default)]
+    tags: Option<Vec<String>>,
 }
 
 #[derive(Template)]
@@ -258,6 +261,9 @@ struct ApiSmartEntry {
 pub struct SmartEntriesPage<'a> {
     pub title: &'a str,
     pub smart_view: &'a crate::pages_feeds::UiSmartView,
+    pub feeds: &'a [crate::SmartViewFeedOption],
+    pub categories: &'a [crate::SmartViewCategoryOption],
+    pub labels: &'a [crate::SmartViewLabelOption],
     pub items: &'a [UiEntryBrief],
     pub limit: usize,
     pub prev_page: Option<usize>,
@@ -312,7 +318,51 @@ pub async fn ui_smart_view_entries(
             }
         };
 
-    // Determine pagination (reuse entries_per_page from /v1/me when limit is not provided)
+    // Load feeds/categories/labels for editing filters.
+    let mut feeds: Vec<crate::SmartViewFeedOption> = Vec::new();
+    let mut categories: Vec<crate::SmartViewCategoryOption> = Vec::new();
+    let mut labels: Vec<crate::SmartViewLabelOption> = Vec::new();
+    let feeds_url = format!("{}/api/v1/feeds?sort_by=title&order=asc", api_base());
+    if let Ok(resp) = cli
+        .get(&feeds_url)
+        .header(
+            axum::http::header::AUTHORIZATION,
+            format!("Bearer {}", token.clone()),
+        )
+        .send()
+        .await
+        .and_then(|r| r.error_for_status())
+    {
+        feeds = resp.json().await.unwrap_or_default();
+    }
+    let cats_url = format!("{}/api/v1/categories", api_base());
+    if let Ok(resp) = cli
+        .get(&cats_url)
+        .header(
+            axum::http::header::AUTHORIZATION,
+            format!("Bearer {}", token.clone()),
+        )
+        .send()
+        .await
+        .and_then(|r| r.error_for_status())
+    {
+        categories = resp.json().await.unwrap_or_default();
+    }
+    let labels_url = format!("{}/api/v1/labels", api_base());
+    if let Ok(resp) = cli
+        .get(&labels_url)
+        .header(
+            axum::http::header::AUTHORIZATION,
+            format!("Bearer {}", token.clone()),
+        )
+        .send()
+        .await
+        .and_then(|r| r.error_for_status())
+    {
+        labels = resp.json().await.unwrap_or_default();
+    }
+
+    // Determine pagination (reuse entries_per_page from /api/v1/me when limit is not provided)
     let limit = if let Some(l) = q.limit {
         l.clamp(1, 200)
     } else {
@@ -393,6 +443,9 @@ pub async fn ui_smart_view_entries(
     let tpl = SmartEntriesPage {
         title: "Entries",
         smart_view: &smart_view,
+        feeds: &feeds,
+        categories: &categories,
+        labels: &labels,
         items: &items,
         limit,
         prev_page,
@@ -459,10 +512,14 @@ pub async fn ui_entry(Path(id): Path<i64>, headers: HeaderMap) -> impl IntoRespo
     let url = format!("{}/api/v1/entries/{}", api_base(), id);
     let res = cli
         .get(url)
-        .header("X-Auth-Token", token.clone())
+        .header(
+            axum::http::header::AUTHORIZATION,
+            format!("Bearer {}", token.clone()),
+        )
         .send()
         .await;
     #[derive(serde::Deserialize)]
+    #[allow(dead_code)]
     struct ApiEntryDto {
         id: i64,
         feed_id: i64,
@@ -474,6 +531,8 @@ pub async fn ui_entry(Path(id): Path<i64>, headers: HeaderMap) -> impl IntoRespo
         published_at: Option<String>,
         is_read: bool,
         is_starred: bool,
+        #[serde(default)]
+        tags: Option<Vec<String>>,
     }
     let entry: UiEntryFull = match res.and_then(|r| r.error_for_status()) {
         Ok(resp) => match resp.json::<ApiEntryDto>().await {
@@ -490,7 +549,7 @@ pub async fn ui_entry(Path(id): Path<i64>, headers: HeaderMap) -> impl IntoRespo
                 },
                 starred: e.is_starred,
                 feed_id: e.feed_id,
-                tags: None,
+                tags: e.tags,
             },
             Err(_) => UiEntryFull {
                 id,

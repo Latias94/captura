@@ -7,7 +7,8 @@ use chrono::FixedOffset;
 use headers::authorization::Bearer;
 use headers::Authorization;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QuerySelect, Set,
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QuerySelect,
+    RelationTrait, Set, TransactionTrait,
 };
 use serde::Deserialize;
 
@@ -44,6 +45,9 @@ pub(crate) struct EntriesQuery {
     pub paging: Paging,
     pub before_id: Option<i64>,
     pub after_id: Option<i64>,
+    /// Optional flag: when true, preload tags for list entries.
+    /// Defaults to false for performance reasons.
+    pub include_tags: Option<bool>,
 }
 
 pub(crate) async fn list_entries(
@@ -95,6 +99,29 @@ pub(crate) async fn list_entries(
     let list = list_entries_for_user(&st.db, user.user_id, &tquery)
         .await
         .map_err(internal)?;
+    // Optionally preload tags when requested.
+    let mut tags_map: std::collections::HashMap<i64, Vec<String>> =
+        std::collections::HashMap::new();
+    if q.include_tags.unwrap_or(false) && !list.is_empty() {
+        let ids: Vec<i64> = list.iter().map(|e| e.id).collect();
+        let pairs: Vec<(i64, String)> = entry_label::Entity::find()
+            .join(
+                sea_orm::JoinType::InnerJoin,
+                entry_label::Relation::Label.def(),
+            )
+            .filter(entry_label::Column::EntryId.is_in(ids))
+            .filter(label::Column::UserId.eq(user.user_id))
+            .select_only()
+            .column(entry_label::Column::EntryId)
+            .column(label::Column::Name)
+            .into_tuple()
+            .all(&st.db)
+            .await
+            .map_err(internal)?;
+        for (eid, name) in pairs {
+            tags_map.entry(eid).or_default().push(name);
+        }
+    }
     Ok(Json(
         list.into_iter()
             .map(|e| EntryDto {
@@ -108,6 +135,7 @@ pub(crate) async fn list_entries(
                 published_at: e.published_at.map(|d| d.to_rfc3339()),
                 is_read: e.is_read,
                 is_starred: e.is_starred,
+                tags: tags_map.remove(&e.id),
             })
             .collect(),
     ))
@@ -221,6 +249,22 @@ pub(crate) async fn get_entry(
     let Some(e) = load_owned_entry(&st.db, user.user_id, id).await? else {
         return Err(crate::error::not_found("entry"));
     };
+    // Load tag names for this entry for the current user.
+    let pairs: Vec<(i64, String)> = entry_label::Entity::find()
+        .join(
+            sea_orm::JoinType::InnerJoin,
+            entry_label::Relation::Label.def(),
+        )
+        .filter(entry_label::Column::EntryId.eq(id))
+        .filter(label::Column::UserId.eq(user.user_id))
+        .select_only()
+        .column(entry_label::Column::EntryId)
+        .column(label::Column::Name)
+        .into_tuple()
+        .all(&st.db)
+        .await
+        .map_err(internal)?;
+    let tag_names: Vec<String> = pairs.into_iter().map(|(_, n)| n).collect();
     Ok(Json(EntryDto {
         id: e.id,
         feed_id: e.feed_id,
@@ -232,6 +276,11 @@ pub(crate) async fn get_entry(
         published_at: e.published_at.map(|d| d.to_rfc3339()),
         is_read: e.is_read,
         is_starred: e.is_starred,
+        tags: if tag_names.is_empty() {
+            None
+        } else {
+            Some(tag_names)
+        },
     }))
 }
 
@@ -314,7 +363,7 @@ pub(crate) struct SaveEntryReq {
 /// - sets `entry.extras_json` to `{ "saved": true, "saved_at": "<rfc3339>" }`;
 /// - emits a webhook event and enqueues an integration job, mirroring the
 ///   Miniflux-compatible `/v1/entries/:id/save` semantics.
-/// When `value = false`:
+///   When `value = false`:
 /// - clears `entry.extras_json` for now (no webhook/integration side-effects).
 pub(crate) async fn save_entry(
     State(st): State<AppState>,
@@ -400,6 +449,9 @@ pub(crate) async fn add_tags(
     if names.is_empty() {
         return Ok("ok");
     }
+    // Run label creation and entry-label attachment in a single transaction
+    // so we do not end up with partially created labels or relations.
+    let txn = st.db.begin().await.map_err(internal)?;
 
     // Existing labels for this user (name -> id).
     let existing: Vec<(i64, String)> = label::Entity::find()
@@ -409,7 +461,7 @@ pub(crate) async fn add_tags(
         .column(label::Column::Id)
         .column(label::Column::Name)
         .into_tuple()
-        .all(&st.db)
+        .all(&txn)
         .await
         .map_err(internal)?;
     let mut name_to_id: std::collections::HashMap<String, i64> =
@@ -430,7 +482,7 @@ pub(crate) async fn add_tags(
             color: Set(None),
             created_at: Set(now),
         };
-        let l = am.insert(&st.db).await.map_err(internal)?;
+        let l = am.insert(&txn).await.map_err(internal)?;
         name_to_id.insert(n, l.id);
     }
 
@@ -446,7 +498,7 @@ pub(crate) async fn add_tags(
             .select_only()
             .column(entry_label::Column::LabelId)
             .into_tuple()
-            .all(&st.db)
+            .all(&txn)
             .await
             .map_err(internal)?;
         let exist_set: std::collections::HashSet<i64> = existing_pairs.into_iter().collect();
@@ -456,9 +508,11 @@ pub(crate) async fn add_tags(
                 label_id: Set(lid),
                 ..Default::default()
             };
-            let _ = am.insert(&st.db).await.map_err(internal)?;
+            let _ = am.insert(&txn).await.map_err(internal)?;
         }
     }
+
+    txn.commit().await.map_err(internal)?;
     Ok("ok")
 }
 
@@ -484,23 +538,29 @@ pub(crate) async fn remove_tags(
     if names.is_empty() {
         return Ok("ok");
     }
+
+    // Remove tag relations in a transaction so we do not leave
+    // partially removed state when errors occur mid-flight.
+    let txn = st.db.begin().await.map_err(internal)?;
+
     let label_ids: Vec<i64> = label::Entity::find()
         .filter(label::Column::UserId.eq(user.user_id))
         .filter(label::Column::Name.is_in(names))
         .select_only()
         .column(label::Column::Id)
         .into_tuple()
-        .all(&st.db)
+        .all(&txn)
         .await
         .map_err(internal)?;
     if !label_ids.is_empty() {
         let _ = entry_label::Entity::delete_many()
             .filter(entry_label::Column::EntryId.eq(e.id))
             .filter(entry_label::Column::LabelId.is_in(label_ids))
-            .exec(&st.db)
+            .exec(&txn)
             .await
             .map_err(internal)?;
     }
+    txn.commit().await.map_err(internal)?;
     Ok("ok")
 }
 

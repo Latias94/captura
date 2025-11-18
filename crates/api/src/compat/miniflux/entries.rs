@@ -8,7 +8,7 @@ use axum::Json;
 use chrono::{FixedOffset, Utc};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, Condition, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder,
-    QuerySelect, RelationTrait, Set,
+    QuerySelect, RelationTrait, Set, TransactionTrait,
 };
 
 use axum::response::IntoResponse;
@@ -787,6 +787,11 @@ pub(crate) async fn add_tags(
     if names.is_empty() {
         return Ok("ok");
     }
+
+    // Use a transaction so that label creation and entry-label
+    // attachment either both succeed or both roll back.
+    let txn = st.db.begin().await.map_err(internal)?;
+
     let existing: Vec<(i64, String)> = label::Entity::find()
         .filter(label::Column::UserId.eq(auth.user_id))
         .filter(label::Column::Name.is_in(names.clone()))
@@ -794,7 +799,7 @@ pub(crate) async fn add_tags(
         .column(label::Column::Id)
         .column(label::Column::Name)
         .into_tuple()
-        .all(&st.db)
+        .all(&txn)
         .await
         .map_err(internal)?;
     let mut name_to_id: std::collections::HashMap<String, i64> =
@@ -813,7 +818,7 @@ pub(crate) async fn add_tags(
             created_at: Set(now),
             ..Default::default()
         };
-        let l = am.insert(&st.db).await.map_err(internal)?;
+        let l = am.insert(&txn).await.map_err(internal)?;
         name_to_id.insert(n, l.id);
     }
     let label_ids: Vec<i64> = names
@@ -827,7 +832,7 @@ pub(crate) async fn add_tags(
             .select_only()
             .column(entry_label::Column::LabelId)
             .into_tuple()
-            .all(&st.db)
+            .all(&txn)
             .await
             .map_err(internal)?;
         let exist_set: std::collections::HashSet<i64> = existing_pairs.into_iter().collect();
@@ -837,9 +842,10 @@ pub(crate) async fn add_tags(
                 label_id: Set(lid),
                 ..Default::default()
             };
-            let _ = am.insert(&st.db).await.map_err(internal)?;
+            let _ = am.insert(&txn).await.map_err(internal)?;
         }
     }
+    txn.commit().await.map_err(internal)?;
     Ok("ok")
 }
 
@@ -878,23 +884,27 @@ pub(crate) async fn remove_tags(
     if names.is_empty() {
         return Ok("ok");
     }
+
+    let txn = st.db.begin().await.map_err(internal)?;
+
     let label_ids: Vec<i64> = label::Entity::find()
         .filter(label::Column::UserId.eq(auth.user_id))
         .filter(label::Column::Name.is_in(names))
         .select_only()
         .column(label::Column::Id)
         .into_tuple()
-        .all(&st.db)
+        .all(&txn)
         .await
         .map_err(internal)?;
     if !label_ids.is_empty() {
         let _ = entry_label::Entity::delete_many()
             .filter(entry_label::Column::EntryId.eq(id))
             .filter(entry_label::Column::LabelId.is_in(label_ids))
-            .exec(&st.db)
+            .exec(&txn)
             .await
             .map_err(internal)?;
     }
+    txn.commit().await.map_err(internal)?;
     Ok("ok")
 }
 

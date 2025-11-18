@@ -3,13 +3,41 @@
 //! by first-party clients (TUI/CLI/GUI) to keep
 //! request/response types in sync with the server.
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 /// Common paging parameters for list endpoints.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Paging {
+    #[serde(default, deserialize_with = "deserialize_opt_u64")]
     pub limit: Option<u64>,
+    #[serde(default, deserialize_with = "deserialize_opt_u64")]
     pub offset: Option<u64>,
+}
+
+fn deserialize_opt_u64<'de, D>(deserializer: D) -> Result<Option<u64>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum MaybeU64 {
+        Num(u64),
+        Str(String),
+    }
+
+    let value = Option::<MaybeU64>::deserialize(deserializer)?;
+    match value {
+        None => Ok(None),
+        Some(MaybeU64::Num(n)) => Ok(Some(n)),
+        Some(MaybeU64::Str(s)) => {
+            let s = s.trim();
+            if s.is_empty() {
+                Ok(None)
+            } else {
+                s.parse::<u64>().map(Some).map_err(serde::de::Error::custom)
+            }
+        }
+    }
 }
 
 /// Common sorting parameters for list endpoints.
@@ -140,6 +168,11 @@ pub struct EntryDto {
     pub published_at: Option<String>,
     pub is_read: bool,
     pub is_starred: bool,
+    /// Optional list of tag names associated with this entry for the current user.
+    /// For performance reasons, listing endpoints such as `/api/v1/entries`
+    /// may omit this field; it is primarily populated by `/api/v1/entries/{id}`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tags: Option<Vec<String>>,
 }
 
 /// Entry content payload returned by `/api/v1/entries/{id}/content`.

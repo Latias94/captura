@@ -15,6 +15,7 @@ pub mod labels;
 pub mod media;
 pub mod oidc;
 pub mod opml;
+pub mod records;
 pub mod rules;
 pub mod smart_views;
 pub mod state;
@@ -110,10 +111,7 @@ pub fn build_router(app_state: AppState) -> Router {
             put(crate::labels::update_label).delete(crate::labels::delete_label),
         )
         .route("/entries", get(crate::entries::list_entries))
-        .route(
-            "/entries/bulk-status",
-            post(crate::entries::bulk_status),
-        )
+        .route("/entries/bulk-status", post(crate::entries::bulk_status))
         .route(
             "/entries/mark-all-read",
             post(crate::entries::mark_all_read),
@@ -181,6 +179,12 @@ pub fn build_router(app_state: AppState) -> Router {
         .route(
             "/integrations/jobs",
             get(crate::jobs::list_integration_jobs),
+        )
+        // rule & hub execution records / stats
+        .route("/rules/stats", get(crate::records::list_rule_stats))
+        .route(
+            "/hub/routes/stats",
+            get(crate::records::list_hub_route_stats),
         )
         // rules
         .route(

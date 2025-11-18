@@ -133,4 +133,3 @@ pub fn tag_exists_expr_like(tag: &str) -> SimpleExpr {
 pub fn is_pg(backend: DatabaseBackend) -> bool {
     matches!(backend, DatabaseBackend::Postgres)
 }
-

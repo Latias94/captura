@@ -29,6 +29,39 @@
       <label class="label" for="sv_search">{{ dict["smart_views.search"] }}</label>
       <input id="sv_search" class="input" name="search" />
     </div>
+    <div class="field">
+      <label class="label">{{ dict["feeds.title"] }}</label>
+      <div class="panel">
+        {% for f in feeds %}
+        <label class="mr-2">
+          <input type="checkbox" name="feed_ids" value="{{ f.id }}" />
+          {% if f.title.is_some() %}{{ f.title.as_ref().unwrap() }}{% else %}feed {{ f.id }}{% endif %}
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+    <div class="field">
+      <label class="label">{{ dict["categories.title"] }}</label>
+      <div class="panel">
+        {% for c in categories %}
+        <label class="mr-2">
+          <input type="checkbox" name="category_ids" value="{{ c.id }}" />
+          {{ c.name }}
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+    <div class="field">
+      <label class="label">{{ dict["tags.title"] }}</label>
+      <div class="panel">
+        {% for l in labels %}
+        <label class="mr-2">
+          <input type="checkbox" name="label_ids" value="{{ l.id }}" />
+          {{ l.name }}
+        </label>
+        {% endfor %}
+      </div>
+    </div>
     <div class="actions">
       <button class="button" type="submit">{{ dict["btn.create"] }}</button>
       <a class="button ml-2" href="/feeds">{{ dict["nav.feeds"] }}</a>
@@ -36,4 +69,3 @@
   </form>
 </div>
 {% endblock %}
-

@@ -51,6 +51,19 @@ pub struct RulesTestPage<'a> {
     pub external_font_hosts: &'a str,
 }
 
+#[derive(Template)]
+#[template(path = "hub_stats.html")]
+pub struct HubStatsPage<'a> {
+    pub title: &'a str,
+    pub rules: &'a [UiRuleStats],
+    pub hubs: &'a [UiHubRouteStats],
+    pub dict: &'a std::collections::HashMap<String, String>,
+    pub csp_nonce: &'a str,
+    pub custom_css: &'a str,
+    pub custom_js: &'a str,
+    pub external_font_hosts: &'a str,
+}
+
 #[allow(dead_code)]
 #[derive(Deserialize, Clone)]
 pub struct UiHubRoute {
@@ -118,6 +131,29 @@ pub struct UiHubQuery {
     url: Option<String>,
 }
 
+#[derive(Deserialize, Clone)]
+pub struct UiRuleStats {
+    pub id: i64,
+    pub rule_id: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    pub total_jobs: i64,
+    pub done_jobs: i64,
+    pub failed_jobs: i64,
+    #[serde(default)]
+    pub last_error: Option<String>,
+}
+
+#[derive(Deserialize, Clone)]
+pub struct UiHubRouteStats {
+    pub hub_id: String,
+    pub total_jobs: i64,
+    pub done_jobs: i64,
+    pub failed_jobs: i64,
+    #[serde(default)]
+    pub last_error: Option<String>,
+}
+
 pub async fn ui_hub_routes(headers: HeaderMap, _q: Query<UiHubQuery>) -> impl IntoResponse {
     let Some(token) = read_token_cookie(&headers) else {
         return Redirect::to("/login").into_response();
@@ -174,6 +210,73 @@ pub async fn ui_hub_routes(headers: HeaderMap, _q: Query<UiHubQuery>) -> impl In
     let tpl = HubRoutesPage {
         title: "Hub Routes",
         groups: &groups,
+        dict: &dict,
+        csp_nonce: &nonce,
+        custom_css: &snippets.custom_css,
+        custom_js: &snippets.custom_js,
+        external_font_hosts: &snippets.external_font_hosts,
+    };
+    match tpl.render() {
+        Ok(s) => Html(s).into_response(),
+        Err(_) => (
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            "template error",
+        )
+            .into_response(),
+    }
+}
+
+pub async fn ui_hub_stats(headers: HeaderMap) -> impl IntoResponse {
+    let Some(token) = read_token_cookie(&headers) else {
+        return Redirect::to("/login").into_response();
+    };
+    let lang = resolve_lang(&headers).await;
+    let dict = i18n::load(&lang);
+    let snippets = load_snippets(&headers).await;
+    let nonce = gen_csp_nonce();
+    let Some(cli) = http_client(4) else {
+        return (
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            "http client error",
+        )
+            .into_response();
+    };
+
+    let mut rules: Vec<UiRuleStats> = Vec::new();
+    let mut hubs: Vec<UiHubRouteStats> = Vec::new();
+
+    let rules_url = format!("{}/api/v1/rules/stats", api_base());
+    if let Ok(resp) = cli
+        .get(&rules_url)
+        .header(
+            axum::http::header::AUTHORIZATION,
+            format!("Bearer {}", token),
+        )
+        .send()
+        .await
+        .and_then(|r| r.error_for_status())
+    {
+        rules = resp.json().await.unwrap_or_default();
+    }
+
+    let hubs_url = format!("{}/api/v1/hub/routes/stats", api_base());
+    if let Ok(resp) = cli
+        .get(&hubs_url)
+        .header(
+            axum::http::header::AUTHORIZATION,
+            format!("Bearer {}", token),
+        )
+        .send()
+        .await
+        .and_then(|r| r.error_for_status())
+    {
+        hubs = resp.json().await.unwrap_or_default();
+    }
+
+    let tpl = HubStatsPage {
+        title: "Hub & Rules Stats",
+        rules: &rules,
+        hubs: &hubs,
         dict: &dict,
         csp_nonce: &nonce,
         custom_css: &snippets.custom_css,
