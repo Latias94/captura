@@ -9,7 +9,7 @@ use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set};
 /// can go through the full service pipeline and persist entries.
 #[tokio::test]
 async fn rule_feed_pipeline_persists_entries() {
-    // 1) 启动本地 HTTP server，提供 list + article HTML
+    // 1) Start a local HTTP server that serves list + article HTML.
     async fn list_handler() -> &'static str {
         r#"<html><body>
             <a class="item" href="/article1">Item 1</a>
@@ -33,7 +33,7 @@ async fn rule_feed_pipeline_persists_entries() {
         axum::serve(listener, app).await.expect("serve");
     });
 
-    // 2) 初始化内存数据库 + 用户 + rule + rule-type feed
+    // 2) Initialize in-memory database, user, rule and rule-type feed.
     let db = captura_testkit::setup_db().await;
     let (uid, _token) = captura_testkit::seed_user_and_token(&db, "rule_user").await;
     let now = Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
@@ -154,7 +154,7 @@ source:
 /// JSON fragments and persist them.
 #[tokio::test]
 async fn rule_feed_json_from_html_persists_entries() {
-    // 1) 启动本地 HTTP server，返回嵌有 JSON 的 HTML
+    // 1) Start a local HTTP server that returns HTML embedding JSON.
     async fn html_json_handler() -> &'static str {
         r#"<html><body>
             <script id="data" type="application/json">
@@ -174,7 +174,7 @@ async fn rule_feed_json_from_html_persists_entries() {
         axum::serve(listener, app).await.expect("serve");
     });
 
-    // 2) 初始化内存数据库 + 用户 + rule + rule-type feed
+    // 2) Initialize in-memory database, user, rule and rule-type feed.
     let db = captura_testkit::setup_db().await;
     let (uid, _token) = captura_testkit::seed_user_and_token(&db, "rule_user_json").await;
     let now = Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
@@ -461,7 +461,7 @@ source:
 async fn rule_feed_full_content_when_persists_extracted_body() {
     use axum::routing::get;
 
-    // 1) 本地 HTTP server：/list 返回摘要列表，/article_full 返回完整正文。
+    // 1) Local HTTP server: `/list` returns a summary list and `/article_full` returns full content.
     async fn list_handler() -> &'static str {
         r#"<html><body>
             <ul>
@@ -491,7 +491,7 @@ async fn rule_feed_full_content_when_persists_extracted_body() {
         axum::serve(listener, app).await.expect("serve");
     });
 
-    // 2) 初始化内存数据库 + 用户 + rule + rule-type feed
+    // 2) Initialize in-memory database, user, rule and rule-type feed.
     let db = captura_testkit::setup_db().await;
     let (uid, _token) = captura_testkit::seed_user_and_token(&db, "rule_user_full").await;
     let now = Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
@@ -628,7 +628,7 @@ transform:
 async fn rule_feed_xpath_persists_entries() {
     use axum::routing::get;
 
-    // 1) 本地 HTTP server：/xpath_list 返回包含复杂结构的 HTML。
+    // 1) Local HTTP server: `/xpath_list` returns HTML with a complex structure.
     async fn xpath_list_handler() -> &'static str {
         r#"<html><body>
             <ul id="items">
@@ -651,7 +651,7 @@ async fn rule_feed_xpath_persists_entries() {
         axum::serve(listener, app).await.expect("serve");
     });
 
-    // 2) 初始化内存数据库 + 用户 + rule + rule-type feed
+    // 2) Initialize in-memory database, user, rule and rule-type feed.
     let db = captura_testkit::setup_db().await;
     let (uid, _token) = captura_testkit::seed_user_and_token(&db, "rule_user_xpath").await;
     let now = Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
@@ -739,7 +739,7 @@ source:
     };
     let f = feed_am.insert(&db).await.expect("insert feed");
 
-    // 3) 刷新并持久化
+    // 3) Refresh and persist entries.
     let inserted = refresh_and_persist(&db, &f)
         .await
         .expect("refresh xpath rule feed");
@@ -749,7 +749,7 @@ source:
         inserted
     );
 
-    // 4) 验证标题、URL 与正文 HTML。
+    // 4) Verify title, URL and content HTML.
     let entries = entry::Entity::find()
         .filter(entry::Column::FeedId.eq(f.id))
         .all(&db)

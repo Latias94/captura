@@ -112,7 +112,8 @@ pub async fn category_unread_counters_for_user(
 /// Filter describing which entries should be selected for read/unread ops
 /// or future list queries.
 ///
-/// 目前支持 feed/category/label 维度，并预留 view 作为基础视图概念。
+/// Currently supports feed/category/label dimensions, with `view` reserved
+/// as the base view concept.
 #[derive(Debug, Default, Clone)]
 pub struct EntryQueryFilter {
     pub feed_id: Option<i64>,
@@ -149,7 +150,7 @@ async fn mark_entries_read_with_filter(
     user_id: i64,
     filter: &EntryQueryFilter,
 ) -> Result<u64> {
-    // 只处理当前用户的条目（通过 feed.user_id 约束）
+    // Only process entries belonging to the current user (constrained via feed.user_id).
     let mut sel = entry::Entity::find()
         .join(JoinType::InnerJoin, entry::Relation::Feed.def())
         .filter(feed::Column::UserId.eq(user_id));
@@ -210,10 +211,11 @@ pub async fn mark_entries_read_for_user(
     mark_entries_read_with_filter(db, user_id, &filter).await
 }
 
-/// 按标签（label/tag）维度将条目标记为已读。
+/// Mark entries as read by label (label/tag dimension).
 ///
-/// 目前主要用于 Miniflux 兼容层的标签级“全部已读”，
-/// 后续可以在此之上构建更复杂的分组逻辑。
+/// Primarily used for the Miniflux compatibility layer's label-level
+/// “mark all as read”, and can be extended with more complex grouping
+/// logic in the future.
 pub async fn mark_entries_read_for_labels(
     db: &DatabaseConnection,
     user_id: i64,
