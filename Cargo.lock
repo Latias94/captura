@@ -621,6 +621,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "captura-cli"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "captura-common",
+ "captura-hub",
+ "captura-pipeline",
+ "captura-storage",
+ "chrono",
+ "clap",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "captura-common"
 version = "0.1.0"
 dependencies = [
@@ -688,6 +707,7 @@ dependencies = [
  "async-trait",
  "captura-common",
  "captura-extract",
+ "captura-fetcher",
  "captura-hub-macros",
  "captura-net",
  "chrono",

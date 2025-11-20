@@ -3,22 +3,20 @@ use axum::{
     Json,
 };
 use axum_extra::typed_header::TypedHeader;
-use chrono::FixedOffset;
 use headers::authorization::Bearer;
 use headers::Authorization;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QuerySelect,
-    RelationTrait, Set, TransactionTrait,
+    RelationTrait,
 };
 use serde::Deserialize;
 
 use crate::auth::AuthUser;
 use crate::entry_options::{apply_entry_flags, EntryUpdateFlags};
 use crate::error::{bad_request, internal, ApiResult};
-use crate::util::{validate_limit_offset, validate_sort};
+use crate::util::{map_entry_to_dto, validate_limit_offset, validate_sort};
 use crate::AppState;
 
-use captura_pipeline::extractor;
 use captura_service::query::{list_entries_for_user, TimelineQuery, TimelineStatus};
 use captura_storage::entity::{entry, entry_label, feed, label};
 use captura_types::{EntryContentDto, EntryDto, EntryView, Paging, Sorting};
@@ -82,20 +80,20 @@ pub(crate) async fn list_entries(
     });
     let limit = q.paging.limit.unwrap_or(100);
     let offset = q.paging.offset.unwrap_or(0);
-    let tquery = TimelineQuery {
-        view: q.view,
+    let tquery = TimelineQuery::new(
+        q.view,
         feed_ids,
         category_ids,
-        label_ids: Vec::new(),
+        Vec::new(),
         status,
-        search: q.q.clone(),
-        sort_by: q.sorting.sort_by.clone(),
-        sort_order: q.sorting.order.clone(),
+        q.q.clone(),
+        q.sorting.sort_by.clone(),
+        q.sorting.order.clone(),
         limit,
         offset,
-        before_id: q.before_id,
-        after_id: q.after_id,
-    };
+        q.before_id,
+        q.after_id,
+    );
     let list = list_entries_for_user(&st.db, user.user_id, &tquery)
         .await
         .map_err(internal)?;
@@ -124,18 +122,9 @@ pub(crate) async fn list_entries(
     }
     Ok(Json(
         list.into_iter()
-            .map(|e| EntryDto {
-                id: e.id,
-                feed_id: e.feed_id,
-                url: e.url,
-                title: e.title,
-                summary: e.summary,
-                content_html: e.content_html,
-                author: e.author,
-                published_at: e.published_at.map(|d| d.to_rfc3339()),
-                is_read: e.is_read,
-                is_starred: e.is_starred,
-                tags: tags_map.remove(&e.id),
+            .map(|e| {
+                let tags = tags_map.remove(&e.id);
+                map_entry_to_dto(e, tags)
             })
             .collect(),
     ))
@@ -265,23 +254,12 @@ pub(crate) async fn get_entry(
         .await
         .map_err(internal)?;
     let tag_names: Vec<String> = pairs.into_iter().map(|(_, n)| n).collect();
-    Ok(Json(EntryDto {
-        id: e.id,
-        feed_id: e.feed_id,
-        url: e.url,
-        title: e.title,
-        summary: e.summary,
-        content_html: e.content_html,
-        author: e.author,
-        published_at: e.published_at.map(|d| d.to_rfc3339()),
-        is_read: e.is_read,
-        is_starred: e.is_starred,
-        tags: if tag_names.is_empty() {
-            None
-        } else {
-            Some(tag_names)
-        },
-    }))
+    let tags = if tag_names.is_empty() {
+        None
+    } else {
+        Some(tag_names)
+    };
+    Ok(Json(map_entry_to_dto(e, tags)))
 }
 
 #[derive(Deserialize, Default)]
@@ -299,57 +277,11 @@ pub(crate) async fn entry_content(
     let Some(e) = load_owned_entry(&st.db, user.user_id, id).await? else {
         return Err(crate::error::not_found("entry"));
     };
-    let Some(f) = feed::Entity::find_by_id(e.feed_id)
-        .one(&st.db)
-        .await
-        .map_err(internal)?
-    else {
-        return Err(crate::error::not_found("feed"));
-    };
-    let page_url = match e.url.as_deref() {
-        Some(u) => u,
-        None => {
-            let content = e
-                .content_html
-                .unwrap_or_else(|| e.summary.unwrap_or_default());
-            return Ok(Json(EntryContentDto {
-                content_html: content,
-                title: e.title,
-            }));
-        }
-    };
-    let extracted = extractor::fetch_and_extract_entry(page_url, &f)
-        .await
-        .map_err(internal)?;
-    let mut out_html = extracted.content_html.clone();
-    let new_title = extracted.title;
-    if out_html.is_empty() {
-        let fallback = e
-            .content_html
-            .clone()
-            .unwrap_or_else(|| e.summary.clone().unwrap_or_default());
-        out_html = fallback;
-    }
-    if q.update_content.unwrap_or(false) {
-        if let Some(model) = entry::Entity::find_by_id(e.id)
-            .one(&st.db)
+    let dto =
+        captura_service::entries::get_entry_content(&st.db, &e, q.update_content.unwrap_or(false))
             .await
-            .map_err(internal)?
-        {
-            let mut am: entry::ActiveModel = model.into();
-            am.content_html = Set(Some(out_html.clone()));
-            if let Some(nt) = new_title.clone() {
-                am.title = Set(Some(nt));
-            }
-            am.updated_at =
-                Set(chrono::Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap()));
-            let _ = am.update(&st.db).await.map_err(internal)?;
-        }
-    }
-    Ok(Json(EntryContentDto {
-        content_html: out_html,
-        title: new_title.or(e.title),
-    }))
+            .map_err(internal)?;
+    Ok(Json(dto))
 }
 
 #[derive(Deserialize)]
@@ -376,42 +308,28 @@ pub(crate) async fn save_entry(
         return Err(crate::error::not_found("entry"));
     };
 
-    if body.value {
-        let now = chrono::Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
-        let saved_at = now.to_rfc3339();
-        let extras = serde_json::json!({"saved": true, "saved_at": saved_at});
-        let mut am: entry::ActiveModel = e.into();
-        am.extras_json = Set(Some(extras));
-        let _ = am.update(&st.db).await.map_err(internal)?;
+    let updated = captura_service::entries::set_entry_saved(&st.db, &e, body.value)
+        .await
+        .map_err(internal)?;
 
-        if let Some(model) = entry::Entity::find_by_id(id)
-            .one(&st.db)
-            .await
-            .map_err(internal)?
-        {
-            let _ = captura_service::webhook::emit_save_entry(
-                &st.db,
-                captura_common::UserId(user.user_id),
-                &model,
-            )
-            .await;
-            let payload = captura_common::IntegrationEvent::SaveEntry {
-                entry_id: model.id,
-                feed_id: Some(model.feed_id),
-            };
-            let _ = captura_scheduler::enqueue_integration_event(
-                &st.db,
-                captura_common::UserId(user.user_id),
-                Some(model.feed_id),
-                payload,
-            )
-            .await;
-        }
-    } else {
-        // For now we simply clear extras_json when value=false.
-        let mut am: entry::ActiveModel = e.into();
-        am.extras_json = Set(None);
-        let _ = am.update(&st.db).await.map_err(internal)?;
+    if body.value {
+        let _ = captura_service::webhook::emit_save_entry(
+            &st.db,
+            captura_common::UserId(user.user_id),
+            &updated,
+        )
+        .await;
+        let payload = captura_common::IntegrationEvent::SaveEntry {
+            entry_id: updated.id,
+            feed_id: Some(updated.feed_id),
+        };
+        let _ = captura_scheduler::enqueue_integration_event(
+            &st.db,
+            captura_common::UserId(user.user_id),
+            Some(updated.feed_id),
+            payload,
+        )
+        .await;
     }
 
     Ok("ok")
@@ -438,81 +356,14 @@ pub(crate) async fn add_tags(
     let Some(e) = load_owned_entry(&st.db, user.user_id, id).await? else {
         return Err(crate::error::not_found("entry"));
     };
-    let mut names: Vec<String> = body
-        .tags
-        .into_iter()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .collect();
-    names.sort();
-    names.dedup();
-    if names.is_empty() {
-        return Ok("ok");
-    }
-    // Run label creation and entry-label attachment in a single transaction
-    // so we do not end up with partially created labels or relations.
-    let txn = st.db.begin().await.map_err(internal)?;
-
-    // Existing labels for this user (name -> id).
-    let existing: Vec<(i64, String)> = label::Entity::find()
-        .filter(label::Column::UserId.eq(user.user_id))
-        .filter(label::Column::Name.is_in(names.clone()))
-        .select_only()
-        .column(label::Column::Id)
-        .column(label::Column::Name)
-        .into_tuple()
-        .all(&txn)
-        .await
-        .map_err(internal)?;
-    let mut name_to_id: std::collections::HashMap<String, i64> =
-        existing.into_iter().map(|(id, n)| (n, id)).collect();
-
-    // Create missing labels.
-    let now = chrono::Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
-    let missing: Vec<String> = names
-        .iter()
-        .filter(|n| !name_to_id.contains_key(*n))
-        .cloned()
-        .collect();
-    for n in missing {
-        let am = label::ActiveModel {
-            id: Default::default(),
-            user_id: Set(user.user_id),
-            name: Set(n.clone()),
-            color: Set(None),
-            created_at: Set(now),
-        };
-        let l = am.insert(&txn).await.map_err(internal)?;
-        name_to_id.insert(n, l.id);
-    }
-
-    // Attach labels to entry, avoiding duplicates.
-    let label_ids: Vec<i64> = names
-        .iter()
-        .filter_map(|n| name_to_id.get(n).copied())
-        .collect();
-    if !label_ids.is_empty() {
-        let existing_pairs: Vec<i64> = entry_label::Entity::find()
-            .filter(entry_label::Column::EntryId.eq(e.id))
-            .filter(entry_label::Column::LabelId.is_in(label_ids.clone()))
-            .select_only()
-            .column(entry_label::Column::LabelId)
-            .into_tuple()
-            .all(&txn)
-            .await
-            .map_err(internal)?;
-        let exist_set: std::collections::HashSet<i64> = existing_pairs.into_iter().collect();
-        for lid in label_ids.into_iter().filter(|lid| !exist_set.contains(lid)) {
-            let am = entry_label::ActiveModel {
-                entry_id: Set(e.id),
-                label_id: Set(lid),
-                ..Default::default()
-            };
-            let _ = am.insert(&txn).await.map_err(internal)?;
-        }
-    }
-
-    txn.commit().await.map_err(internal)?;
+    captura_service::entries::add_tags_to_entry(
+        &st.db,
+        captura_common::UserId(user.user_id),
+        &e,
+        body.tags,
+    )
+    .await
+    .map_err(internal)?;
     Ok("ok")
 }
 
@@ -527,40 +378,14 @@ pub(crate) async fn remove_tags(
     let Some(e) = load_owned_entry(&st.db, user.user_id, id).await? else {
         return Err(crate::error::not_found("entry"));
     };
-    let mut names: Vec<String> = body
-        .tags
-        .into_iter()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .collect();
-    names.sort();
-    names.dedup();
-    if names.is_empty() {
-        return Ok("ok");
-    }
-
-    // Remove tag relations in a transaction so we do not leave
-    // partially removed state when errors occur mid-flight.
-    let txn = st.db.begin().await.map_err(internal)?;
-
-    let label_ids: Vec<i64> = label::Entity::find()
-        .filter(label::Column::UserId.eq(user.user_id))
-        .filter(label::Column::Name.is_in(names))
-        .select_only()
-        .column(label::Column::Id)
-        .into_tuple()
-        .all(&txn)
-        .await
-        .map_err(internal)?;
-    if !label_ids.is_empty() {
-        let _ = entry_label::Entity::delete_many()
-            .filter(entry_label::Column::EntryId.eq(e.id))
-            .filter(entry_label::Column::LabelId.is_in(label_ids))
-            .exec(&txn)
-            .await
-            .map_err(internal)?;
-    }
-    txn.commit().await.map_err(internal)?;
+    captura_service::entries::remove_tags_from_entry(
+        &st.db,
+        captura_common::UserId(user.user_id),
+        &e,
+        body.tags,
+    )
+    .await
+    .map_err(internal)?;
     Ok("ok")
 }
 
@@ -569,24 +394,30 @@ async fn load_owned_entry(
     user_id: i64,
     entry_id: i64,
 ) -> ApiResult<Option<entry::Model>> {
-    if let Some(e) = entry::Entity::find_by_id(entry_id)
+    // First, try to load an entry that is owned by the given user via a join.
+    // This is the common path and avoids a second query when ownership matches.
+    if let Some(e) = entry::Entity::find()
+        .join(sea_orm::JoinType::InnerJoin, entry::Relation::Feed.def())
+        .filter(entry::Column::Id.eq(entry_id))
+        .filter(feed::Column::UserId.eq(user_id))
         .one(db)
         .await
         .map_err(internal)?
     {
-        let owned = feed::Entity::find_by_id(e.feed_id)
-            .filter(feed::Column::UserId.eq(user_id))
-            .one(db)
-            .await
-            .map_err(internal)?
-            .is_some();
-        if !owned {
-            return Err(crate::error::forbidden("not your entry"));
-        }
-        Ok(Some(e))
-    } else {
-        Ok(None)
+        return Ok(Some(e));
     }
+
+    // No owned entry found. Distinguish between "entry does not exist" and
+    // "entry exists but belongs to another user" to preserve previous semantics.
+    if entry::Entity::find_by_id(entry_id)
+        .one(db)
+        .await
+        .map_err(internal)?
+        .is_some()
+    {
+        return Err(crate::error::forbidden("not your entry"));
+    }
+    Ok(None)
 }
 
 #[derive(Deserialize)]

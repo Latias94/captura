@@ -1,0 +1,25 @@
+id: captura.example.lobsters.front
+version: 1
+description: Lobsters front page (list_detail demo)
+author: captura
+tags: [lobsters, community]
+default_view: articles
+examples:
+  - https://lobste.rs/
+
+source:
+  type: list_detail
+
+  list:
+    request:
+      url: "https://lobste.rs/"
+    item: "ol.stories li.story"
+    link: "span.link a.u-url@href"
+    title: "span.link a.u-url"
+
+  # For CLI demos we only care that the list path works; detailed content
+  # extraction can be refined later once the story pages are more stable or
+  # we decide to invest in full-content selectors here.
+  content:
+    mode: css
+    selector: "body"

@@ -21,15 +21,7 @@ pub const META_BILIBILI_BANGUMI_SEASON: RouteMeta = RouteMeta {
             options: &[],
         },
     ],
-    features: Features {
-        require_config: &[],
-        require_puppeteer: false,
-        anti_crawler: false,
-        support_bt: false,
-        support_podcast: false,
-        support_scihub: false,
-        nsfw: false,
-    },
+    features: Features::basic(),
     radar: &[Radar {
         source: &["www.bilibili.com"],
         target: "/bangumi",

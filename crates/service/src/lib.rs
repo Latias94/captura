@@ -13,6 +13,7 @@ use sea_orm::{
 };
 use tracing::debug;
 
+pub mod entries;
 pub mod favicon;
 pub mod integration;
 pub mod query;
@@ -22,7 +23,7 @@ pub mod webhook;
 /// Build a basic HTTP client used by scheduler/service integrations and webhooks.
 ///
 /// Behavior can be tuned via environment variables:
-/// - `CAPTURA_HTTP_USER_AGENT`: overrides default User-Agent (`captura/0.1`).
+/// - `CAPTURA_HTTP_USER_AGENT`: overrides default User-Agent (desktop-like UA).
 /// - `CAPTURA_HTTP_TIMEOUT_MS`: request timeout in milliseconds (no timeout if unset or invalid).
 /// - `CAPTURA_HTTP_PROXY`: optional proxy URL applied to all requests.
 pub fn http_client_basic() -> Result<Client> {

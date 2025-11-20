@@ -98,7 +98,7 @@ pub fn pick_bilibili_cookie() -> Option<String> {
 
 /// Lightweight HTTP helper for Bilibili JSON APIs.
 ///
-/// - Applies a common User-Agent (`captura/0.1`).
+/// - Applies the shared Captura User-Agent (desktop-like UA).
 /// - Adds `Referer` when provided.
 /// - Optionally attaches `BILIBILI_COOKIE` as Cookie header if present.
 /// - Checks HTTP status and Bilibili JSON `code` field.
@@ -107,8 +107,8 @@ pub async fn bilibili_get_json(url: &str, referer: Option<&str>) -> Result<serde
     // match the rest of the stack. Bilibili APIs are latency-sensitive but
     // we keep timeout flexible via env; callers can constrain at the request
     // level if needed.
-    let client = captura_net::client_basic(Some("captura/0.1".to_string()), None)
-        .map_err(|e| Error::Network(e.to_string()))?;
+    let client =
+        captura_net::client_basic(None, None).map_err(|e| Error::Network(e.to_string()))?;
 
     let mut req = client.get(url);
 

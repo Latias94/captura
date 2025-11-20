@@ -12,7 +12,7 @@ use sea_orm::{
 };
 use serde::{Deserialize, Serialize};
 
-use captura_hub::v1::{parse_rule_v1, RuleSpecV1, SourceType};
+use captura_hub::v1::{parse_rule_v1, validate_v1, RuleSpecV1, SourceType};
 use captura_storage::entity::{category, feed, rule};
 
 use crate::auth::AuthUser;
@@ -46,6 +46,17 @@ fn rule_namespace(id: &str) -> Option<String> {
     id.rsplit_once('.').map(|(ns, _)| ns.to_string())
 }
 
+fn parse_rule_spec_from_json(
+    spec_json: &serde_json::Value,
+) -> Result<RuleSpecV1, crate::error::ApiError> {
+    let spec: RuleSpecV1 = serde_json::from_value(spec_json.clone())
+        .map_err(|e| bad_request(format!("invalid rule spec_json: {e}")))?;
+    // Run the same v1 validator used by the YAML path so that JSON specs
+    // receive consistent linting and error messages.
+    validate_v1(&spec).map_err(|e| bad_request(format!("invalid rule spec_json: {e}")))?;
+    Ok(spec)
+}
+
 pub(crate) async fn create_rule(
     State(st): State<AppState>,
     TypedHeader(Authorization(bearer)): TypedHeader<Authorization<Bearer>>,
@@ -53,8 +64,7 @@ pub(crate) async fn create_rule(
 ) -> ApiResult<Json<IdResp>> {
     let _user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
     let spec: RuleSpecV1 = if let Some(spec_json) = body.spec_json.clone() {
-        serde_json::from_value(spec_json)
-            .map_err(|e| bad_request(format!("invalid rule spec_json: {e}")))?
+        parse_rule_spec_from_json(&spec_json)?
     } else if let Some(yaml) = body.yaml.as_ref() {
         parse_rule_v1(yaml).map_err(|e| bad_request(format!("invalid rule yaml: {e}")))?
     } else {
@@ -168,8 +178,7 @@ pub(crate) async fn update_rule(
         return Err(not_found("rule not found"));
     };
     let spec: RuleSpecV1 = if let Some(spec_json) = body.spec_json.clone() {
-        serde_json::from_value(spec_json)
-            .map_err(|e| bad_request(format!("invalid rule spec_json: {e}")))?
+        parse_rule_spec_from_json(&spec_json)?
     } else if let Some(yaml) = body.yaml.as_ref() {
         parse_rule_v1(yaml).map_err(|e| bad_request(format!("invalid rule yaml: {e}")))?
     } else {
@@ -504,6 +513,40 @@ pub(crate) struct TryRuleResp {
     pub content_selector_matches: Option<usize>,
 }
 
+#[derive(Deserialize)]
+pub(crate) struct LintRuleReq {
+    pub yaml: Option<String>,
+    pub spec_json: Option<serde_json::Value>,
+}
+
+#[derive(Serialize)]
+pub(crate) struct LintRuleResp {
+    pub ok: bool,
+}
+
+/// Lightweight validator for rule specs (DSL v1).
+///
+/// This endpoint runs the same v1 validator as `create_rule`/`update_rule`
+/// but does not touch the database or execute any HTTP requests. It is
+/// intended for WebUI/CLI tooling to provide immediate feedback when
+/// authoring rules.
+pub(crate) async fn lint_rule(
+    TypedHeader(Authorization(bearer)): TypedHeader<Authorization<Bearer>>,
+    State(st): State<AppState>,
+    Json(req): Json<LintRuleReq>,
+) -> ApiResult<Json<LintRuleResp>> {
+    let _user = AuthUser::from_bearer(&st.db, bearer.token()).await?;
+    if let Some(spec_json) = req.spec_json {
+        let _ = parse_rule_spec_from_json(&spec_json)?;
+    } else if let Some(yaml) = req.yaml {
+        // `parse_rule_v1` already runs `validate_v1` internally.
+        let _ = parse_rule_v1(&yaml).map_err(|e| bad_request(format!("invalid rule yaml: {e}")))?;
+    } else {
+        return Err(bad_request("either yaml or spec_json is required"));
+    }
+    Ok(Json(LintRuleResp { ok: true }))
+}
+
 #[axum::debug_handler]
 pub(crate) async fn try_rule(
     State(st): State<AppState>,
@@ -515,8 +558,7 @@ pub(crate) async fn try_rule(
         return Err(bad_request("url required"));
     }
     let mut spec = if let Some(spec_json) = req.spec_json {
-        serde_json::from_value::<RuleSpecV1>(spec_json)
-            .map_err(|e| bad_request(format!("invalid rule spec_json: {e}")))?
+        parse_rule_spec_from_json(&spec_json)?
     } else if let Some(y) = req.yaml {
         parse_rule_v1(&y).map_err(internal)?
     } else {

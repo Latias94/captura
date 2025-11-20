@@ -7,13 +7,12 @@ use axum::extract::{Path, Query, State};
 use axum::Json;
 use chrono::{FixedOffset, Utc};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, Condition, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder,
-    QuerySelect, RelationTrait, Set, TransactionTrait,
+    ActiveModelTrait, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QuerySelect,
+    RelationTrait, Set,
 };
 
 use axum::response::IntoResponse;
-use captura_pipeline::extractor;
-use captura_service::search;
+use captura_service::query::{build_timeline_select, TimelineQuery, TimelineStatus};
 use captura_storage::entity::{enclosure, entry, entry_label, feed, label};
 
 #[derive(serde::Deserialize, Default)]
@@ -47,154 +46,86 @@ pub(crate) async fn list(
     Query(q): Query<MfEntriesQuery>,
 ) -> MfResult<Json<MfEntryResultSet>> {
     let auth = mf_auth(&st, &headers).await.map_err(from_api_error)?;
-    // restrict to current user feeds
-    let mut feed_sel = feed::Entity::find().filter(feed::Column::UserId.eq(auth.user_id));
-    if let Some(cid) = q.category_id {
-        feed_sel = feed_sel.filter(feed::Column::CategoryId.eq(cid));
-    }
-    let feed_ids: Vec<i64> = feed_sel
-        .select_only()
-        .column(feed::Column::Id)
-        .into_tuple()
-        .all(&st.db)
-        .await
-        .map_err(internal)?;
-    let mut sel = entry::Entity::find().filter(entry::Column::FeedId.is_in(feed_ids));
+    // Map Miniflux query parameters onto the unified timeline model.
+    let mut feed_ids = Vec::new();
     if let Some(fid) = q.feed_id {
-        sel = sel.filter(entry::Column::FeedId.eq(fid));
+        feed_ids.push(fid);
     }
-    if let Some(ref s) = q.status {
-        match s.as_str() {
-            "unread" => sel = sel.filter(entry::Column::IsRead.eq(false)),
-            "read" => sel = sel.filter(entry::Column::IsRead.eq(true)),
-            "starred" => sel = sel.filter(entry::Column::IsStarred.eq(true)),
-            _ => {}
-        }
+    let mut category_ids = Vec::new();
+    if let Some(cid) = q.category_id {
+        category_ids.push(cid);
     }
-    if let Some(star) = q.starred {
-        sel = sel.filter(entry::Column::IsStarred.eq(star));
+    let mut status = match q.status.as_deref() {
+        Some("unread") => Some(TimelineStatus::Unread),
+        Some("read") => Some(TimelineStatus::Read),
+        Some("starred") => Some(TimelineStatus::Starred),
+        _ => None,
+    };
+    // starred=true should behave as a shortcut for "starred entries".
+    if q.starred == Some(true) {
+        status = Some(TimelineStatus::Starred);
     }
-    if let Some(ref k) = q.search {
-        let backend = st.db.get_database_backend();
-        let pq = search::parse_query(k);
-        if search::is_pg(backend) {
-            if let Some(ref g) = pq.general {
-                sel = sel.filter(search::fts_filter_expr_pg(g));
-            }
-            for v in &pq.title {
-                sel = sel.filter(search::fts_field_expr_pg("title", v));
-            }
-            for v in &pq.author {
-                sel = sel.filter(search::fts_field_expr_pg("author", v));
-            }
-            for v in &pq.url {
-                sel = sel.filter(search::fts_field_expr_pg("url", v));
-            }
-            if !pq.tags.is_empty() {
-                let mut tag_cond = Condition::any();
-                for t in &pq.tags {
-                    tag_cond = tag_cond.add(search::tag_exists_expr_pg(t));
-                }
-                sel = sel.filter(tag_cond);
-            }
-        } else {
-            if let Some(ref g) = pq.general {
-                let like = format!("%{}%", g);
-                let cond = Condition::any()
-                    .add(entry::Column::Title.like(like.as_str()))
-                    .add(entry::Column::Summary.like(like.as_str()))
-                    .add(entry::Column::ContentHtml.like(like.as_str()));
-                sel = sel.filter(cond);
-            }
-            for v in &pq.title {
-                sel = sel.filter(entry::Column::Title.like(format!("%{}%", v)));
-            }
-            for v in &pq.author {
-                sel = sel.filter(entry::Column::Author.like(format!("%{}%", v)));
-            }
-            for v in &pq.url {
-                sel = sel.filter(entry::Column::Url.like(format!("%{}%", v)));
-            }
-            if !pq.tags.is_empty() {
-                let mut tag_cond = Condition::any();
-                for t in &pq.tags {
-                    tag_cond = tag_cond.add(search::tag_exists_expr_like(t));
-                }
-                sel = sel.filter(tag_cond);
-            }
-        }
-    }
-    // time window filters
+    let before = q.before_id.or(q.before_entry_id);
+    let after = q.after_id.or(q.after_entry_id);
+    let sort_by = match q.order.as_deref() {
+        Some("id") => Some("id".to_string()),
+        _ => Some("published_at".to_string()),
+    };
+    let sort_order = q.direction.clone();
+    let limit = q.limit.unwrap_or(100).min(1000);
+    let offset = q.offset.unwrap_or(0);
+    let mut tquery = TimelineQuery::new(
+        Some(captura_types::EntryView::All),
+        feed_ids,
+        category_ids,
+        Vec::new(),
+        status,
+        q.search.clone(),
+        sort_by,
+        sort_order,
+        limit,
+        offset,
+        before,
+        after,
+    );
+    // Map time window filters into the unified timeline query (epoch seconds → DateTime).
     if let Some(ts) = q.published_before {
         if let Some(dt) = chrono::DateTime::from_timestamp(ts, 0) {
-            sel = sel.filter(
-                entry::Column::PublishedAt
-                    .lte(dt.with_timezone(&FixedOffset::east_opt(0).unwrap())),
-            );
+            tquery.published_before = Some(dt.with_timezone(&FixedOffset::east_opt(0).unwrap()));
         }
     }
     if let Some(ts) = q.published_after {
         if let Some(dt) = chrono::DateTime::from_timestamp(ts, 0) {
-            sel = sel.filter(
-                entry::Column::PublishedAt
-                    .gte(dt.with_timezone(&FixedOffset::east_opt(0).unwrap())),
-            );
+            tquery.published_after = Some(dt.with_timezone(&FixedOffset::east_opt(0).unwrap()));
         }
     }
     if let Some(ts) = q.changed_before {
         if let Some(dt) = chrono::DateTime::from_timestamp(ts, 0) {
-            sel = sel.filter(
-                entry::Column::UpdatedAt.lte(dt.with_timezone(&FixedOffset::east_opt(0).unwrap())),
-            );
+            tquery.changed_before = Some(dt.with_timezone(&FixedOffset::east_opt(0).unwrap()));
         }
     }
     if let Some(ts) = q.changed_after {
         if let Some(dt) = chrono::DateTime::from_timestamp(ts, 0) {
-            sel = sel.filter(
-                entry::Column::UpdatedAt.gte(dt.with_timezone(&FixedOffset::east_opt(0).unwrap())),
-            );
+            tquery.changed_after = Some(dt.with_timezone(&FixedOffset::east_opt(0).unwrap()));
         }
     }
-    // id before/after filters (compatible with both before_id/before_entry_id and after_id/after_entry_id)
-    let before = q.before_id.or(q.before_entry_id);
-    let after = q.after_id.or(q.after_entry_id);
-    if let Some(b) = before {
-        sel = sel.filter(entry::Column::Id.lt(b));
+    let backend = st.db.get_database_backend();
+    let mut sel = build_timeline_select(backend, auth.user_id, &tquery);
+    // Optional starred=false filter (timeline already covered starred=true via status).
+    if q.starred == Some(false) {
+        sel = sel.filter(entry::Column::IsStarred.eq(false));
     }
-    if let Some(a) = after {
-        sel = sel.filter(entry::Column::Id.gt(a));
-    }
-
-    match q.order.as_deref() {
-        Some("id") => {
-            sel = if matches!(q.direction.as_deref(), Some("asc")) {
-                sel.order_by_asc(entry::Column::Id)
-            } else {
-                sel.order_by_desc(entry::Column::Id)
-            };
-        }
-        _ => {
-            sel = if matches!(q.direction.as_deref(), Some("asc")) {
-                sel.order_by_asc(entry::Column::PublishedAt)
-            } else {
-                sel.order_by_desc(entry::Column::PublishedAt)
-            };
-            sel = sel.order_by_desc(entry::Column::CreatedAt);
-        }
-    }
-    let limit = q.limit.unwrap_or(100).min(1000);
     let count = sel.clone().count(&st.db).await.map_err(internal)? as i64;
-    let rows = sel
-        .find_also_related(feed::Entity)
+    let rows: Vec<entry::Model> = sel
         .limit(limit)
         .offset(q.offset.unwrap_or(0))
         .all(&st.db)
         .await
         .map_err(internal)?;
-    let entry_ids: Vec<i64> = rows.iter().map(|(e, _)| e.id).collect();
-    let mut enc_map: std::collections::HashMap<i64, Vec<MfEnclosureDto>> =
-        std::collections::HashMap::new();
-    let mut tag_map: std::collections::HashMap<i64, Vec<String>> = std::collections::HashMap::new();
+    let entry_ids: Vec<i64> = rows.iter().map(|e| e.id).collect();
+    use std::collections::HashMap;
+    let mut enc_map: HashMap<i64, Vec<MfEnclosureDto>> = std::collections::HashMap::new();
+    let mut tag_map: HashMap<i64, Vec<String>> = std::collections::HashMap::new();
     if !entry_ids.is_empty() {
         let encs = enclosure::Entity::find()
             .filter(enclosure::Column::EntryId.is_in(entry_ids.clone()))
@@ -235,11 +166,25 @@ pub(crate) async fn list(
         .and_then(|s| s.parse().ok())
         .unwrap_or(200)
         .max(50) as usize;
+    // Preload feeds for mapping to MfEntryDto.
+    let mut feed_map: HashMap<i64, feed::Model> = HashMap::new();
+    if !rows.is_empty() {
+        let feed_ids: Vec<i64> = rows.iter().map(|e| e.feed_id).collect();
+        let feeds = feed::Entity::find()
+            .filter(feed::Column::Id.is_in(feed_ids.clone()))
+            .all(&st.db)
+            .await
+            .map_err(internal)?;
+        for f in feeds {
+            feed_map.insert(f.id, f);
+        }
+    }
+
     let entries = rows
         .into_iter()
-        .map(|(e, fopt)| {
+        .map(|e| {
             let status = if e.is_read { "read" } else { "unread" }.to_string();
-            let feed_dto = fopt.map(|f| map_feed(f, None));
+            let feed_dto = feed_map.get(&e.feed_id).map(|f| map_feed(f.clone(), None));
             let encs = enc_map.get(&e.id).cloned();
             let tags = tag_map.get(&e.id).cloned().unwrap_or_default();
             let reading_time = if include_content {
@@ -650,45 +595,13 @@ pub(crate) async fn fetch_content(
     else {
         return Err(not_found("feed"));
     };
-    let page_url = match e.url.as_deref() {
-        Some(u) => u,
-        None => {
-            let content = e
-                .content_html
-                .unwrap_or_else(|| e.summary.unwrap_or_default());
-            return Ok(Json(MfEntryContentResp { content }));
-        }
-    };
-    // Use the shared internal extraction service to fetch & extract full content
-    let extracted = extractor::fetch_and_extract_entry(page_url, &f)
-        .await
-        .map_err(internal)?;
-    let mut out_html = extracted.content_html.clone();
-    let new_title = extracted.title;
-    if out_html.is_empty() {
-        // Stay compatible with the previous behavior: if extraction yields empty content, fall back to existing content/summary
-        out_html = e
-            .content_html
-            .clone()
-            .unwrap_or_else(|| e.summary.clone().unwrap_or_default());
-    }
-    // Optionally persist extracted content/title back to the database
-    if q.update_content.unwrap_or(false) {
-        if let Some(model) = entry::Entity::find_by_id(e.id)
-            .one(&st.db)
+    let dto =
+        captura_service::entries::get_entry_content(&st.db, &e, q.update_content.unwrap_or(false))
             .await
-            .map_err(internal)?
-        {
-            let mut am: entry::ActiveModel = model.into();
-            am.content_html = Set(Some(out_html.clone()));
-            if let Some(nt) = new_title {
-                am.title = Set(Some(nt));
-            }
-            am.updated_at = Set(Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap()));
-            let _ = am.update(&st.db).await.map_err(internal)?;
-        }
-    }
-    Ok(Json(MfEntryContentResp { content: out_html }))
+            .map_err(internal)?;
+    Ok(Json(MfEntryContentResp {
+        content: dto.content_html,
+    }))
 }
 
 // POST /v1/entries/:id/save
@@ -714,36 +627,26 @@ pub(crate) async fn save(
     if !owned {
         return Err(not_found("entry"));
     }
-    let now = Utc::now()
-        .with_timezone(&FixedOffset::east_opt(0).unwrap())
-        .to_rfc3339();
-    let extras = serde_json::json!({"saved": true, "saved_at": now});
-    let mut am: entry::ActiveModel = e.into();
-    am.extras_json = Set(Some(extras));
-    let _ = am.update(&st.db).await.map_err(internal)?;
-    if let Some(model) = entry::Entity::find_by_id(id)
-        .one(&st.db)
+    let updated = captura_service::entries::set_entry_saved(&st.db, &e, true)
         .await
-        .map_err(internal)?
-    {
-        let _ = captura_service::webhook::emit_save_entry(
-            &st.db,
-            captura_common::UserId(auth.user_id),
-            &model,
-        )
-        .await;
-        let payload = captura_common::IntegrationEvent::SaveEntry {
-            entry_id: model.id,
-            feed_id: Some(model.feed_id),
-        };
-        let _ = captura_scheduler::enqueue_integration_event(
-            &st.db,
-            captura_common::UserId(auth.user_id),
-            Some(model.feed_id),
-            payload,
-        )
-        .await;
-    }
+        .map_err(internal)?;
+    let _ = captura_service::webhook::emit_save_entry(
+        &st.db,
+        captura_common::UserId(auth.user_id),
+        &updated,
+    )
+    .await;
+    let payload = captura_common::IntegrationEvent::SaveEntry {
+        entry_id: updated.id,
+        feed_id: Some(updated.feed_id),
+    };
+    let _ = captura_scheduler::enqueue_integration_event(
+        &st.db,
+        captura_common::UserId(auth.user_id),
+        Some(updated.feed_id),
+        payload,
+    )
+    .await;
     Ok("ok")
 }
 
@@ -776,76 +679,14 @@ pub(crate) async fn add_tags(
     if !owned {
         return Err(not_found("entry"));
     }
-    let mut names: Vec<String> = body
-        .tags
-        .into_iter()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .collect();
-    names.sort();
-    names.dedup();
-    if names.is_empty() {
-        return Ok("ok");
-    }
-
-    // Use a transaction so that label creation and entry-label
-    // attachment either both succeed or both roll back.
-    let txn = st.db.begin().await.map_err(internal)?;
-
-    let existing: Vec<(i64, String)> = label::Entity::find()
-        .filter(label::Column::UserId.eq(auth.user_id))
-        .filter(label::Column::Name.is_in(names.clone()))
-        .select_only()
-        .column(label::Column::Id)
-        .column(label::Column::Name)
-        .into_tuple()
-        .all(&txn)
-        .await
-        .map_err(internal)?;
-    let mut name_to_id: std::collections::HashMap<String, i64> =
-        existing.into_iter().map(|(id, n)| (n, id)).collect();
-    let now = Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap());
-    let missing: Vec<String> = names
-        .iter()
-        .filter(|n| !name_to_id.contains_key(*n))
-        .cloned()
-        .collect();
-    for n in missing {
-        let am = label::ActiveModel {
-            user_id: Set(auth.user_id),
-            name: Set(n.clone()),
-            color: Set(None),
-            created_at: Set(now),
-            ..Default::default()
-        };
-        let l = am.insert(&txn).await.map_err(internal)?;
-        name_to_id.insert(n, l.id);
-    }
-    let label_ids: Vec<i64> = names
-        .iter()
-        .filter_map(|n| name_to_id.get(n).copied())
-        .collect();
-    if !label_ids.is_empty() {
-        let existing_pairs: Vec<i64> = entry_label::Entity::find()
-            .filter(entry_label::Column::EntryId.eq(id))
-            .filter(entry_label::Column::LabelId.is_in(label_ids.clone()))
-            .select_only()
-            .column(entry_label::Column::LabelId)
-            .into_tuple()
-            .all(&txn)
-            .await
-            .map_err(internal)?;
-        let exist_set: std::collections::HashSet<i64> = existing_pairs.into_iter().collect();
-        for lid in label_ids.into_iter().filter(|lid| !exist_set.contains(lid)) {
-            let am = entry_label::ActiveModel {
-                entry_id: Set(id),
-                label_id: Set(lid),
-                ..Default::default()
-            };
-            let _ = am.insert(&txn).await.map_err(internal)?;
-        }
-    }
-    txn.commit().await.map_err(internal)?;
+    captura_service::entries::add_tags_to_entry(
+        &st.db,
+        captura_common::UserId(auth.user_id),
+        &e,
+        body.tags,
+    )
+    .await
+    .map_err(internal)?;
     Ok("ok")
 }
 
@@ -873,38 +714,14 @@ pub(crate) async fn remove_tags(
     if !owned {
         return Err(not_found("entry"));
     }
-    let mut names: Vec<String> = body
-        .tags
-        .into_iter()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .collect();
-    names.sort();
-    names.dedup();
-    if names.is_empty() {
-        return Ok("ok");
-    }
-
-    let txn = st.db.begin().await.map_err(internal)?;
-
-    let label_ids: Vec<i64> = label::Entity::find()
-        .filter(label::Column::UserId.eq(auth.user_id))
-        .filter(label::Column::Name.is_in(names))
-        .select_only()
-        .column(label::Column::Id)
-        .into_tuple()
-        .all(&txn)
-        .await
-        .map_err(internal)?;
-    if !label_ids.is_empty() {
-        let _ = entry_label::Entity::delete_many()
-            .filter(entry_label::Column::EntryId.eq(id))
-            .filter(entry_label::Column::LabelId.is_in(label_ids))
-            .exec(&txn)
-            .await
-            .map_err(internal)?;
-    }
-    txn.commit().await.map_err(internal)?;
+    captura_service::entries::remove_tags_from_entry(
+        &st.db,
+        captura_common::UserId(auth.user_id),
+        &e,
+        body.tags,
+    )
+    .await
+    .map_err(internal)?;
     Ok("ok")
 }
 

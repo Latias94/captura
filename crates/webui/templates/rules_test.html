@@ -26,6 +26,7 @@
           class="input h-10em"
           placeholder="{{ dict["rules.test.yaml_placeholder"] }}"
         >{% if yaml.is_some() %}{{ yaml.as_ref().unwrap() }}{% endif %}</textarea>
+        <p id="ruleLintStatus" class="muted mt-1"></p>
       </div>
       <div class="actions">
         <button class="button" type="submit">{{ dict["btn.preview"] }}</button>

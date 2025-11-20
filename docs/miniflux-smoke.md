@@ -99,3 +99,33 @@ curl -sS "$BASE/v1/version" -H "X-Auth-Token: $TOKEN" | jq .
 
 - Miniflux 兼容层（/v1/*）：错误为 `{ "error_message": "..." }`
 - 原生 API（/api/v1/*）：错误为 `{ "code": "...", "message": "..." }`
+
+统一时间线与 Miniflux 映射（实现层说明）
+
+> 本小节面向服务端实现者，说明 Miniflux `/v1/entries` 与 Captura 内部统一时间线模型的对应关系。普通客户端只需按 Miniflux 官方文档使用 `/v1/*` 端点，无需关心下述细节。
+
+Captura 内部使用一个统一的 `TimelineQuery` 模型（见 `crates/service/src/query.rs`），所有时间线类查询（包括 `/api/v1/entries`、SmartView、以及 Miniflux `/v1/entries`）最终都会构造一个 `TimelineQuery` 并调用 `list_entries_for_user`。
+
+Miniflux 兼容层中，`/v1/entries` 参数与 `TimelineQuery` 的映射大致如下：
+
+- `status=unread|read|starred` → `TimelineStatus::Unread|Read|Starred`
+- `feed_id` → `TimelineQuery.feed_ids = [feed_id]`
+- `category_id` → `TimelineQuery.category_ids = [category_id]`
+- `search` → `TimelineQuery.search`
+- `before_id` / `before_entry_id` → `TimelineQuery.before_id`
+- `after_id` / `after_entry_id` → `TimelineQuery.after_id`
+- `order=id|published_at` → `TimelineQuery.sort_by = "id"|"published_at"`
+- `direction=asc|desc` → `TimelineQuery.sort_order`
+
+部分 Miniflux 特有参数目前仍作为“外挂过滤”附加在统一查询之上：
+
+- `published_before/after`：在 `build_timeline_select` 结果上额外按 `entry.published_at` 做时间窗口过滤；
+- `changed_before/after`：在同一查询上按 `entry.updated_at` 做时间窗口过滤；
+- `starred=true` 等价于 `status=starred`；`starred=false` 则在统一查询结果上追加 `is_starred = false` 过滤；
+- `content=true|false`：仅影响返回 JSON 是否包含 `content_html` 字段，不参与查询条件。
+
+这样设计的目的：
+
+- 内部只有一条时间线查询管线（`TimelineQuery`），便于演进和性能优化；
+- Miniflux 客户端仍然可以按照官方语义使用 `/v1/entries`，不需要理解 Captura 的视图/SmartView/Timeline 概念；
+- 当 `/api/v1/entries` 的行为（搜索、排序等）改进时，Miniflux 兼容层会自动受益，只需确保兼容测试继续通过即可。

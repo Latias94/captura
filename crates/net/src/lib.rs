@@ -14,7 +14,7 @@ pub mod html;
 /// Build a simple HTTP client with optional user agent and timeout.
 ///
 /// Behaviour:
-/// - User-Agent: explicit override > `CAPTURA_HTTP_USER_AGENT` env > default `captura/0.1`.
+/// - User-Agent: explicit override > `CAPTURA_HTTP_USER_AGENT` env > default desktop-like UA.
 /// - Timeout (ms): explicit override > `CAPTURA_HTTP_TIMEOUT_MS` env; 0 or invalid means no timeout.
 /// - Proxy: optional `CAPTURA_HTTP_PROXY` URL applied to all requests.
 pub fn client_basic(user_agent: Option<String>, timeout_ms: Option<u64>) -> Result<Client> {
@@ -40,7 +40,12 @@ pub fn client_builder(
                 .ok()
                 .filter(|s| !s.trim().is_empty())
         })
-        .unwrap_or_else(|| "captura/0.1".to_string());
+        .unwrap_or_else(|| {
+            // Default UA: desktop-like browser identifier with Captura tag.
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) \
+AppleWebKit/537.36 (KHTML, like Gecko) Captura/0.1"
+                .to_string()
+        });
     builder = builder.user_agent(ua);
 
     // Timeout: explicit override > env (milliseconds).

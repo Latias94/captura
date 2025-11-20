@@ -120,6 +120,19 @@ pub struct ListSourceSpec {
     pub title: Option<String>,
     pub summary: Option<String>,
     pub published_at: Option<TimestampSpec>,
+    /// Optional per-item extra fields extracted at list stage.
+    ///
+    /// Keys are inserted into `entry.extras` as strings. Values are CSS /
+    /// attr expressions evaluated relative to each list item node, e.g.:
+    ///
+    /// - `domain: "a.sitestr"` (text selector)
+    /// - `story_id: "@id"` (attribute on the list item itself)
+    /// - `score: ".score"` (text selector on a sibling node, when item spans)
+    ///
+    /// Engines should treat invalid selectors as best-effort and skip fields
+    /// that fail to resolve, leaving them absent from `extras`.
+    #[serde(default)]
+    pub extras: std::collections::HashMap<String, String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

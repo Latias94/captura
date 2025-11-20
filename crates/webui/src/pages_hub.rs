@@ -3,6 +3,7 @@ use axum::{
     extract::Query,
     http::HeaderMap,
     response::{Html, IntoResponse, Redirect},
+    Json,
 };
 use serde::Deserialize;
 
@@ -362,6 +363,18 @@ pub struct RulesTestForm {
     yaml: String,
 }
 
+#[derive(Deserialize, serde::Serialize)]
+pub struct UiLintRuleReq {
+    pub yaml: Option<String>,
+    pub spec_json: Option<serde_json::Value>,
+}
+
+#[derive(serde::Serialize)]
+pub struct UiLintRuleResp {
+    pub ok: bool,
+    pub message: Option<String>,
+}
+
 pub async fn ui_rules_test(
     headers: HeaderMap,
     Form(form): Form<RulesTestForm>,
@@ -434,5 +447,74 @@ pub async fn ui_rules_test(
             "template error",
         )
             .into_response(),
+    }
+}
+
+/// Proxy endpoint used by the WebUI to lint rule specs (DSL v1) in real time.
+///
+/// This handler forwards the request to `/api/v1/rules/lint` using the
+/// bearer token from the cookie and normalizes the response into a simple
+/// `{ ok, message }` shape for frontend consumption.
+pub async fn ui_rules_lint(
+    headers: HeaderMap,
+    Json(req): Json<UiLintRuleReq>,
+) -> impl IntoResponse {
+    let Some(token) = read_token_cookie(&headers) else {
+        return Json(UiLintRuleResp {
+            ok: false,
+            message: Some("missing token".to_string()),
+        })
+        .into_response();
+    };
+    let Some(cli) = http_client(4) else {
+        return Json(UiLintRuleResp {
+            ok: false,
+            message: Some("http client error".to_string()),
+        })
+        .into_response();
+    };
+
+    let endpoint = format!("{}/api/v1/rules/lint", api_base());
+    let resp = cli
+        .post(&endpoint)
+        .header(
+            axum::http::header::AUTHORIZATION,
+            format!("Bearer {}", token),
+        )
+        .json(&req)
+        .send()
+        .await;
+
+    match resp {
+        Ok(r) => {
+            if r.status().is_success() {
+                Json(UiLintRuleResp {
+                    ok: true,
+                    message: None,
+                })
+                .into_response()
+            } else {
+                // Try to extract an error message from the API error body.
+                let msg = r
+                    .json::<serde_json::Value>()
+                    .await
+                    .ok()
+                    .and_then(|v| {
+                        v.get("message")
+                            .and_then(|m| m.as_str().map(|s| s.to_string()))
+                    })
+                    .unwrap_or_else(|| "lint failed".to_string());
+                Json(UiLintRuleResp {
+                    ok: false,
+                    message: Some(msg),
+                })
+                .into_response()
+            }
+        }
+        Err(_) => Json(UiLintRuleResp {
+            ok: false,
+            message: Some("lint request failed".to_string()),
+        })
+        .into_response(),
     }
 }

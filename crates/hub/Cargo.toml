@@ -22,3 +22,4 @@ scraper.workspace = true
 once_cell.workspace = true
 inventory.workspace = true
 captura-hub-macros = { path = "../hub-macros" }
+captura-fetcher = { path = "../fetcher" }

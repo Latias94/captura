@@ -21,15 +21,7 @@ pub const META_BILIBILI_BANGUMI_MEDIA: RouteMeta = RouteMeta {
             options: &[],
         },
     ],
-    features: Features {
-        require_config: &[],
-        require_puppeteer: false,
-        anti_crawler: true,
-        support_bt: false,
-        support_podcast: false,
-        support_scihub: false,
-        nsfw: false,
-    },
+    features: Features::with_anti_crawler(),
     radar: &[Radar {
         source: &["www.bilibili.com"],
         target: "/bangumi/media/:mediaid",

@@ -195,18 +195,35 @@ pub fn apply_description_template_v1(spec: &RuleSpecV1, entries: &mut [Normalize
     };
 
     for e in entries.iter_mut() {
-        let mut out = tpl.to_string();
         let title = e.title.as_deref().unwrap_or("");
         let summary = e.summary.as_deref().unwrap_or("");
         let url = e.url.as_deref().unwrap_or("");
         let author = e.author.as_deref().unwrap_or("");
         let content = e.content_html.as_deref().unwrap_or("");
 
+        let mut out = tpl.to_string();
         out = out.replace("{title}", title);
         out = out.replace("{summary}", summary);
         out = out.replace("{url}", url);
         out = out.replace("{author}", author);
         out = out.replace("{content_html}", content);
+
+        // Support `{extras.key}` placeholders for list/detail extras (stringified JSON values).
+        if tpl.contains("{extras.") {
+            if let JsonValue::Object(map) = &e.extras {
+                for (k, v) in map.iter() {
+                    let placeholder = format!("{{extras.{}}}", k);
+                    if !out.contains(&placeholder) {
+                        continue;
+                    }
+                    let val_owned = match v {
+                        JsonValue::String(s) => s.clone(),
+                        _ => v.to_string(),
+                    };
+                    out = out.replace(&placeholder, &val_owned);
+                }
+            }
+        }
 
         e.content_html = Some(out);
     }

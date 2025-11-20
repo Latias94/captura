@@ -11,7 +11,7 @@ use serde::Deserialize;
 
 use crate::auth::AuthUser;
 use crate::error::{bad_request, internal, not_found, ApiResult};
-use crate::util::{validate_limit_offset, validate_sort};
+use crate::util::{map_entry_to_dto, validate_limit_offset, validate_sort};
 use crate::AppState;
 use captura_service::query::{list_entries_for_user, TimelineQuery, TimelineStatus};
 use captura_storage::entity::smart_view;
@@ -276,38 +276,26 @@ pub(crate) async fn list_smart_view_entries(
     });
     let limit = q.limit.unwrap_or(100);
     let offset = q.offset.unwrap_or(0);
-    let tquery = TimelineQuery {
-        view: Some(view),
+    let tquery = TimelineQuery::new(
+        Some(view),
         feed_ids,
         category_ids,
         label_ids,
         status,
-        search: filters.search.clone(),
-        sort_by: Some(sort_by.to_string()),
-        sort_order: Some(sort_order.to_string()),
+        filters.search.clone(),
+        Some(sort_by.to_string()),
+        Some(sort_order.to_string()),
         limit,
         offset,
-        before_id: None,
-        after_id: None,
-    };
+        None,
+        None,
+    );
     let list = list_entries_for_user(&st.db, user.user_id, &tquery)
         .await
         .map_err(internal)?;
     Ok(Json(
         list.into_iter()
-            .map(|e| EntryDto {
-                id: e.id,
-                feed_id: e.feed_id,
-                url: e.url,
-                title: e.title,
-                summary: e.summary,
-                content_html: e.content_html,
-                author: e.author,
-                published_at: e.published_at.map(|d| d.to_rfc3339()),
-                is_read: e.is_read,
-                is_starred: e.is_starred,
-                tags: None,
-            })
+            .map(|e| map_entry_to_dto(e, None))
             .collect(),
     ))
 }

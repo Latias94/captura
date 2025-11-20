@@ -1,0 +1,47 @@
+id: captura.example.hn.front
+version: 1
+description: Hacker News front page (list_detail)
+author: captura
+tags: [hackernews, community]
+default_view: articles
+examples:
+  - https://news.ycombinator.com/
+
+match:
+  url:
+    host: "news.ycombinator.com"
+    path_regex: "^/(news)?/?$"
+
+params:
+  defaults:
+    section: ""
+  docs:
+    section: "Hacker News section suffix (e.g. '', 'news', 'newest', 'ask', 'show'). CLI rule-try usually overrides url directly."
+
+fetch:
+  user_agent: captura/0.1
+  timeout_ms: 15000
+
+source:
+  type: list_detail
+
+  list:
+    request:
+      # section kept for completeness; CLI rule-try typically overrides URL.
+      url: "https://news.ycombinator.com/{section}"
+    item: "tr.athing"
+    link: "span.titleline a@href"
+    title: "span.titleline a"
+    extras:
+      # Story id on the row element, used to build comments link if needed.
+      story_id: "@id"
+
+  # For Hacker News we primarily care about the list itself and do not fetch
+  # full content in this rule; leaving selector empty avoids a second HTTP
+  # request per story.
+  content:
+    mode: css
+
+transform:
+  description_template: |
+    <p><a href="{url}">{title}</a></p>

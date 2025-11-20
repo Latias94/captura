@@ -3,7 +3,8 @@ use sea_orm::DatabaseConnection;
 use std::collections::HashMap;
 use std::sync::Mutex;
 
-use captura_storage::entity::category;
+use captura_storage::entity::{category, entry};
+use captura_types::EntryDto;
 use sea_orm::EntityTrait;
 
 use crate::error::{bad_request, forbidden, internal, ApiResult};
@@ -36,6 +37,23 @@ pub(crate) fn validate_sort(
         }
     }
     Ok(())
+}
+
+/// Map an `entry::Model` plus optional tag names into an `EntryDto`.
+pub(crate) fn map_entry_to_dto(e: entry::Model, tags: Option<Vec<String>>) -> EntryDto {
+    EntryDto {
+        id: e.id,
+        feed_id: e.feed_id,
+        url: e.url,
+        title: e.title,
+        summary: e.summary,
+        content_html: e.content_html,
+        author: e.author,
+        published_at: e.published_at.map(|d| d.to_rfc3339()),
+        is_read: e.is_read,
+        is_starred: e.is_starred,
+        tags,
+    }
 }
 
 #[allow(dead_code)]

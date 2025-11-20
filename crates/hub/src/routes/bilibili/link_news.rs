@@ -15,15 +15,7 @@ pub const META_BILIBILI_LINK_NEWS: RouteMeta = RouteMeta {
         default: Some("live"),
         options: &[("live", "Live"), ("vc", "Short video"), ("wh", "Album")],
     }],
-    features: Features {
-        require_config: &[],
-        require_puppeteer: false,
-        anti_crawler: false,
-        support_bt: false,
-        support_podcast: false,
-        support_scihub: false,
-        nsfw: false,
-    },
+    features: Features::basic(),
     radar: &[Radar {
         source: &["link.bilibili.com"],
         target: "/p/eden/news",

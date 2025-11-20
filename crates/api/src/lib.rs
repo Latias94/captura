@@ -191,6 +191,7 @@ pub fn build_router(app_state: AppState) -> Router {
             "/rules",
             get(crate::rules::list_rules).post(crate::rules::create_rule),
         )
+        .route("/rules/lint", post(crate::rules::lint_rule))
         .route(
             "/rules/{id}",
             get(crate::rules::get_rule)

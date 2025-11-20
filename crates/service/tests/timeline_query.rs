@@ -159,6 +159,10 @@ async fn timeline_query_filters_by_feed_view_and_status() -> Result<()> {
         offset: 0,
         before_id: None,
         after_id: None,
+        published_before: None,
+        published_after: None,
+        changed_before: None,
+        changed_after: None,
     };
     let res = list_entries_for_user(&db, u.id, &q_articles_unread).await?;
     assert_eq!(res.len(), 1);
@@ -295,6 +299,10 @@ async fn timeline_query_search_and_id_cursors() -> Result<()> {
         offset: 0,
         before_id: None,
         after_id: None,
+        published_before: None,
+        published_after: None,
+        changed_before: None,
+        changed_after: None,
     };
     let res = list_entries_for_user(&db, u.id, &q_search).await?;
     let titles_found: Vec<String> = res
@@ -482,6 +490,10 @@ async fn timeline_query_search_by_tags_like_fallback() -> Result<()> {
         offset: 0,
         before_id: None,
         after_id: None,
+        published_before: None,
+        published_after: None,
+        changed_before: None,
+        changed_after: None,
     };
     let res = list_entries_for_user(&db, u.id, &q_rust).await?;
     let ids: Vec<i64> = res.iter().map(|e| e.id).collect();
@@ -698,6 +710,10 @@ async fn timeline_query_search_tags_and_label_ids_combination() -> Result<()> {
         offset: 0,
         before_id: None,
         after_id: None,
+        published_before: None,
+        published_after: None,
+        changed_before: None,
+        changed_after: None,
     };
     let res = list_entries_for_user(&db, u.id, &q).await?;
     let ids: Vec<i64> = res.iter().map(|e| e.id).collect();

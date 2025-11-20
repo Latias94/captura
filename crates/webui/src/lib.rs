@@ -66,6 +66,7 @@ where
         .route("/hub", get(pages_hub::ui_hub_routes))
         .route("/hub/stats", get(pages_hub::ui_hub_stats))
         .route("/hub/test", get(pages_hub::ui_hub_test))
+        .route("/ui/rules/lint", post(pages_hub::ui_rules_lint))
         .route(
             "/rules/test",
             post(pages_hub::ui_rules_test).get(|headers: HeaderMap| async move {

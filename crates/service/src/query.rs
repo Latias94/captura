@@ -7,9 +7,10 @@
 use captura_common::Result;
 use captura_storage::entity::{entry, entry_label, feed, label};
 use captura_types::EntryView;
+use chrono::{DateTime, FixedOffset};
 use sea_orm::{
     ColumnTrait, Condition, DatabaseConnection, EntityTrait, JoinType, Order, QueryFilter,
-    QueryOrder, QuerySelect, RelationTrait,
+    QueryOrder, QuerySelect, RelationTrait, Select,
 };
 use std::collections::HashMap;
 
@@ -275,6 +276,154 @@ pub struct TimelineQuery {
     pub offset: u64,
     pub before_id: Option<i64>,
     pub after_id: Option<i64>,
+    pub published_before: Option<DateTime<FixedOffset>>,
+    pub published_after: Option<DateTime<FixedOffset>>,
+    pub changed_before: Option<DateTime<FixedOffset>>,
+    pub changed_after: Option<DateTime<FixedOffset>>,
+}
+
+impl TimelineQuery {
+    /// Construct a new `TimelineQuery` with normalized pagination.
+    ///
+    /// The `limit` parameter is clamped to a minimum of 1 to avoid empty
+    /// pages caused by accidental zero values; upper bounds (e.g. max 500)
+    /// are expected to be enforced by HTTP-layer validators.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        view: Option<EntryView>,
+        feed_ids: Vec<i64>,
+        category_ids: Vec<i64>,
+        label_ids: Vec<i64>,
+        status: Option<TimelineStatus>,
+        search: Option<String>,
+        sort_by: Option<String>,
+        sort_order: Option<String>,
+        limit: u64,
+        offset: u64,
+        before_id: Option<i64>,
+        after_id: Option<i64>,
+    ) -> Self {
+        Self {
+            view,
+            feed_ids,
+            category_ids,
+            label_ids,
+            status,
+            search,
+            sort_by,
+            sort_order,
+            limit: limit.max(1),
+            offset,
+            before_id,
+            after_id,
+            published_before: None,
+            published_after: None,
+            changed_before: None,
+            changed_after: None,
+        }
+    }
+}
+
+fn apply_search(
+    mut sel: Select<entry::Entity>,
+    backend: sea_orm::DatabaseBackend,
+    q: &TimelineQuery,
+) -> Select<entry::Entity> {
+    let Some(ref search_str) = q.search else {
+        return sel;
+    };
+    let pq = crate::search::parse_query(search_str);
+    if crate::search::is_pg(backend) {
+        if let Some(ref g) = pq.general {
+            sel = sel.filter(crate::search::fts_filter_expr_pg(g));
+            // When searching and no explicit sort_by is provided, default to
+            // relevance-based ordering (can still be overridden via sort_by).
+            let want_rank = q
+                .sort_by
+                .as_deref()
+                .map(|s| s == "relevance")
+                .unwrap_or(true);
+            if want_rank {
+                let ord = match q.sort_order.as_deref() {
+                    Some("asc") => Order::Asc,
+                    _ => Order::Desc,
+                };
+                sel = sel
+                    .order_by(crate::search::fts_rank_expr_pg(g), ord)
+                    .order_by_desc(entry::Column::PublishedAt)
+                    .order_by_desc(entry::Column::CreatedAt);
+            }
+        }
+        for v in &pq.title {
+            sel = sel.filter(crate::search::fts_field_expr_pg("title", v));
+        }
+        for v in &pq.author {
+            sel = sel.filter(crate::search::fts_field_expr_pg("author", v));
+        }
+        for v in &pq.url {
+            sel = sel.filter(crate::search::fts_field_expr_pg("url", v));
+        }
+        if !pq.tags.is_empty() {
+            let mut tag_cond = Condition::any();
+            for t in &pq.tags {
+                tag_cond = tag_cond.add(crate::search::tag_exists_expr_pg(t));
+            }
+            sel = sel.filter(tag_cond);
+        }
+    } else {
+        // Non-Postgres fallback: LIKE matching over title/summary/content_html.
+        if let Some(ref g) = pq.general {
+            let like = format!("%{}%", g);
+            let cond = Condition::any()
+                .add(entry::Column::Title.like(like.as_str()))
+                .add(entry::Column::Summary.like(like.as_str()))
+                .add(entry::Column::ContentHtml.like(like.as_str()));
+            sel = sel.filter(cond);
+        }
+        for v in &pq.title {
+            sel = sel.filter(entry::Column::Title.like(format!("%{}%", v)));
+        }
+        for v in &pq.author {
+            sel = sel.filter(entry::Column::Author.like(format!("%{}%", v)));
+        }
+        for v in &pq.url {
+            sel = sel.filter(entry::Column::Url.like(format!("%{}%", v)));
+        }
+        if !pq.tags.is_empty() {
+            let mut tag_cond = Condition::any();
+            for t in &pq.tags {
+                tag_cond = tag_cond.add(crate::search::tag_exists_expr_like(t));
+            }
+            sel = sel.filter(tag_cond);
+        }
+    }
+    sel
+}
+
+fn apply_sort(mut sel: Select<entry::Entity>, q: &TimelineQuery) -> Select<entry::Entity> {
+    match q.sort_by.as_deref() {
+        Some("created_at") => {
+            sel = match q.sort_order.as_deref() {
+                Some("asc") => sel.order_by_asc(entry::Column::CreatedAt),
+                _ => sel.order_by_desc(entry::Column::CreatedAt),
+            };
+        }
+        Some("id") => {
+            sel = match q.sort_order.as_deref() {
+                Some("asc") => sel.order_by_asc(entry::Column::Id),
+                _ => sel.order_by_desc(entry::Column::Id),
+            };
+        }
+        // Default: published_at (desc) with created_at as tie-breaker.
+        _ => {
+            sel = match q.sort_order.as_deref() {
+                Some("asc") => sel.order_by_asc(entry::Column::PublishedAt),
+                _ => sel.order_by_desc(entry::Column::PublishedAt),
+            };
+            sel = sel.order_by_desc(entry::Column::CreatedAt);
+        }
+    }
+    sel
 }
 
 /// List entries for a user according to a unified timeline query.
@@ -290,7 +439,32 @@ pub async fn list_entries_for_user(
     q: &TimelineQuery,
 ) -> Result<Vec<entry::Model>> {
     let backend = db.get_database_backend();
+    let mut sel = build_timeline_select(backend, user_id, q);
 
+    let limit = q.limit.max(1);
+    sel = sel.limit(limit);
+    if q.offset > 0 {
+        sel = sel.offset(q.offset);
+    }
+
+    let list = sel
+        .all(db)
+        .await
+        .map_err(|e| captura_common::Error::Storage(e.to_string()))?;
+    Ok(list)
+}
+
+/// Build a reusable `Select` for unified timeline queries.
+///
+/// This function applies user scoping, feed/category/view/label filters,
+/// status, id cursors, search and sort, but does not apply limit/offset.
+/// Callers can reuse this to implement both native and Miniflux-compatible
+/// listing endpoints while sharing the same core semantics.
+pub fn build_timeline_select(
+    backend: sea_orm::DatabaseBackend,
+    user_id: i64,
+    q: &TimelineQuery,
+) -> Select<entry::Entity> {
     let mut sel = entry::Entity::find()
         .join(JoinType::InnerJoin, entry::Relation::Feed.def())
         .filter(feed::Column::UserId.eq(user_id));
@@ -324,115 +498,26 @@ pub async fn list_entries_for_user(
             }
         }
     }
-
     if let Some(b) = q.before_id {
         sel = sel.filter(entry::Column::Id.lt(b));
     }
     if let Some(a) = q.after_id {
         sel = sel.filter(entry::Column::Id.gt(a));
     }
-
-    if let Some(ref search_str) = q.search {
-        let pq = crate::search::parse_query(search_str);
-        if crate::search::is_pg(backend) {
-            if let Some(ref g) = pq.general {
-                sel = sel.filter(crate::search::fts_filter_expr_pg(g));
-                // Align with Miniflux/Folo-style UX: when searching and no
-                // explicit sort_by is provided, default to relevance; only
-                // use sort_by when explicitly requested.
-                let want_rank = q
-                    .sort_by
-                    .as_deref()
-                    .map(|s| s == "relevance")
-                    .unwrap_or(true);
-                if want_rank {
-                    let ord = match q.sort_order.as_deref() {
-                        Some("asc") => Order::Asc,
-                        _ => Order::Desc,
-                    };
-                    sel = sel
-                        .order_by(crate::search::fts_rank_expr_pg(g), ord)
-                        .order_by_desc(entry::Column::PublishedAt)
-                        .order_by_desc(entry::Column::CreatedAt);
-                }
-            }
-            for v in &pq.title {
-                sel = sel.filter(crate::search::fts_field_expr_pg("title", v));
-            }
-            for v in &pq.author {
-                sel = sel.filter(crate::search::fts_field_expr_pg("author", v));
-            }
-            for v in &pq.url {
-                sel = sel.filter(crate::search::fts_field_expr_pg("url", v));
-            }
-            if !pq.tags.is_empty() {
-                let mut tag_cond = Condition::any();
-                for t in &pq.tags {
-                    tag_cond = tag_cond.add(crate::search::tag_exists_expr_pg(t));
-                }
-                sel = sel.filter(tag_cond);
-            }
-        } else {
-            // Non-Postgres fallback: LIKE matching
-            if let Some(ref g) = pq.general {
-                let like = format!("%{}%", g);
-                let cond = Condition::any()
-                    .add(entry::Column::Title.like(like.as_str()))
-                    .add(entry::Column::Summary.like(like.as_str()))
-                    .add(entry::Column::ContentHtml.like(like.as_str()));
-                sel = sel.filter(cond);
-            }
-            for v in &pq.title {
-                sel = sel.filter(entry::Column::Title.like(format!("%{}%", v)));
-            }
-            for v in &pq.author {
-                sel = sel.filter(entry::Column::Author.like(format!("%{}%", v)));
-            }
-            for v in &pq.url {
-                sel = sel.filter(entry::Column::Url.like(format!("%{}%", v)));
-            }
-            if !pq.tags.is_empty() {
-                let mut tag_cond = Condition::any();
-                for t in &pq.tags {
-                    tag_cond = tag_cond.add(crate::search::tag_exists_expr_like(t));
-                }
-                sel = sel.filter(tag_cond);
-            }
-        }
+    // Optional time-window filters.
+    if let Some(dt) = q.published_before {
+        sel = sel.filter(entry::Column::PublishedAt.lte(dt));
     }
-
-    match q.sort_by.as_deref() {
-        Some("created_at") => {
-            sel = match q.sort_order.as_deref() {
-                Some("asc") => sel.order_by_asc(entry::Column::CreatedAt),
-                _ => sel.order_by_desc(entry::Column::CreatedAt),
-            };
-        }
-        Some("id") => {
-            sel = match q.sort_order.as_deref() {
-                Some("asc") => sel.order_by_asc(entry::Column::Id),
-                _ => sel.order_by_desc(entry::Column::Id),
-            };
-        }
-        // Default: published_at (desc) with created_at as tie-breaker.
-        _ => {
-            sel = match q.sort_order.as_deref() {
-                Some("asc") => sel.order_by_asc(entry::Column::PublishedAt),
-                _ => sel.order_by_desc(entry::Column::PublishedAt),
-            };
-            sel = sel.order_by_desc(entry::Column::CreatedAt);
-        }
+    if let Some(dt) = q.published_after {
+        sel = sel.filter(entry::Column::PublishedAt.gte(dt));
     }
-
-    let limit = q.limit.max(1);
-    sel = sel.limit(limit);
-    if q.offset > 0 {
-        sel = sel.offset(q.offset);
+    if let Some(dt) = q.changed_before {
+        sel = sel.filter(entry::Column::UpdatedAt.lte(dt));
     }
-
-    let list = sel
-        .all(db)
-        .await
-        .map_err(|e| captura_common::Error::Storage(e.to_string()))?;
-    Ok(list)
+    if let Some(dt) = q.changed_after {
+        sel = sel.filter(entry::Column::UpdatedAt.gte(dt));
+    }
+    sel = apply_search(sel, backend, q);
+    sel = apply_sort(sel, q);
+    sel
 }

@@ -1,0 +1,20 @@
+[package]
+name = "captura-cli"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow.workspace = true
+chrono.workspace = true
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+captura-common = { path = "../common" }
+captura-hub = { path = "../hub" }
+captura-pipeline = { path = "../pipeline" }
+captura-storage = { path = "../storage" }
+

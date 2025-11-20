@@ -20,6 +20,61 @@ pub struct Features {
     pub nsfw: bool,
 }
 
+impl Default for Features {
+    fn default() -> Self {
+        Features {
+            require_config: &[],
+            require_puppeteer: false,
+            anti_crawler: false,
+            support_bt: false,
+            support_podcast: false,
+            support_scihub: false,
+            nsfw: false,
+        }
+    }
+}
+
+impl Features {
+    /// Basic route features: no special requirements, all flags disabled.
+    pub const fn basic() -> Self {
+        Features {
+            require_config: &[],
+            require_puppeteer: false,
+            anti_crawler: false,
+            support_bt: false,
+            support_podcast: false,
+            support_scihub: false,
+            nsfw: false,
+        }
+    }
+
+    /// Basic features, but with a static list of required config keys.
+    pub const fn with_config(require_config: &'static [FeatureConfig]) -> Self {
+        Features {
+            require_config,
+            require_puppeteer: false,
+            anti_crawler: false,
+            support_bt: false,
+            support_podcast: false,
+            support_scihub: false,
+            nsfw: false,
+        }
+    }
+
+    /// Basic features plus `anti_crawler = true`.
+    pub const fn with_anti_crawler() -> Self {
+        Features {
+            require_config: &[],
+            require_puppeteer: false,
+            anti_crawler: true,
+            support_bt: false,
+            support_podcast: false,
+            support_scihub: false,
+            nsfw: false,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct Radar {
     pub source: &'static [&'static str],
