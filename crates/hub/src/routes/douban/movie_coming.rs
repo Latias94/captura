@@ -39,9 +39,7 @@ pub async fn handler(_ctx: &mut HubCtx<'_>) -> captura_common::Result<HubData> {
 
     let status = resp.status();
     if !status.is_success() {
-        return Err(Error::Network(format!(
-            "{api_url} -> http status {status}"
-        )));
+        return Err(Error::Network(format!("{api_url} -> http status {status}")));
     }
 
     let api_resp: DoubanMovieComingResponse = resp
@@ -192,4 +190,3 @@ fn parse_date_ymd(s: &str) -> Option<DateTime<FixedOffset>> {
     let offset = FixedOffset::east_opt(0)?;
     Some(offset.from_utc_datetime(&naive_dt))
 }
-

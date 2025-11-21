@@ -1,4 +1,6 @@
-use crate::routes::types::{Features, HubCtx, HubData, HubItem, ParamMeta, Radar, Route, RouteMeta};
+use crate::routes::types::{
+    Features, HubCtx, HubData, HubItem, ParamMeta, Radar, Route, RouteMeta,
+};
 use captura_common::Error;
 use captura_hub_macros::register_hub_route;
 use chrono::{DateTime, FixedOffset, TimeZone};
@@ -82,19 +84,14 @@ pub async fn handler(ctx: &mut HubCtx<'_>) -> captura_common::Result<HubData> {
         .map_err(|e| Error::Network(format!("{api_url} -> {e}")))?;
     let status = list_resp.status();
     if !status.is_success() {
-        return Err(Error::Network(format!(
-            "{api_url} -> http status {status}"
-        )));
+        return Err(Error::Network(format!("{api_url} -> http status {status}")));
     }
     let list: BookmarksResp = list_resp
         .json()
         .await
         .map_err(|e| Error::Parse(format!("sspai bookmarks json parse: {}", e)))?;
 
-    let user_url = format!(
-        "https://sspai.com/api/v1/user/slug/info/get?slug={}",
-        slug
-    );
+    let user_url = format!("https://sspai.com/api/v1/user/slug/info/get?slug={}", slug);
     let user_resp = client
         .get(&user_url)
         .header("Referer", &base_link)
@@ -152,4 +149,3 @@ pub const ROUTE_SSPAI_BOOKMARKS: Route = Route {
     meta: &META_SSPAI_BOOKMARKS,
     handler: handler_fn,
 };
-

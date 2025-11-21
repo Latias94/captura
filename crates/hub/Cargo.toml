@@ -23,3 +23,8 @@ once_cell.workspace = true
 inventory.workspace = true
 captura-hub-macros = { path = "../hub-macros" }
 captura-fetcher = { path = "../fetcher" }
+captura-crawler = { path = "../crawler" }
+html-escape = "0.2.13"
+urlencoding.workspace = true
+encoding_rs = "0.8"
+flate2 = "1.0"

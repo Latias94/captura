@@ -1,4 +1,6 @@
-use crate::routes::types::{Features, HubCtx, HubData, HubItem, ParamMeta, Radar, Route, RouteMeta};
+use crate::routes::types::{
+    Features, HubCtx, HubData, HubItem, ParamMeta, Radar, Route, RouteMeta,
+};
 use captura_common::Error;
 use captura_hub_macros::register_hub_route;
 use chrono::{DateTime, FixedOffset, TimeZone};
@@ -69,10 +71,7 @@ async fn resolve_author_id(id_or_slug: &str) -> captura_common::Result<i64> {
             .map_err(|e| Error::Config(format!("invalid author id: {}", e)));
     }
     let slug = id_or_slug;
-    let url = format!(
-        "https://sspai.com/api/v1/user/slug/info/get?slug={}",
-        slug
-    );
+    let url = format!("https://sspai.com/api/v1/user/slug/info/get?slug={}", slug);
     let client = captura_net::client_basic(None, None)
         .map_err(|e| Error::Network(format!("sspai client error: {}", e)))?;
     let resp = client
@@ -83,9 +82,7 @@ async fn resolve_author_id(id_or_slug: &str) -> captura_common::Result<i64> {
         .map_err(|e| Error::Network(format!("{url} -> {e}")))?;
     let status = resp.status();
     if !status.is_success() {
-        return Err(Error::Network(format!(
-            "{url} -> http status {status}"
-        )));
+        return Err(Error::Network(format!("{url} -> http status {status}")));
     }
     let info: AuthorInfoResp = resp
         .json()
@@ -116,9 +113,7 @@ pub async fn handler(ctx: &mut HubCtx<'_>) -> captura_common::Result<HubData> {
         .map_err(|e| Error::Network(format!("{api_url} -> {e}")))?;
     let status = resp.status();
     if !status.is_success() {
-        return Err(Error::Network(format!(
-            "{api_url} -> http status {status}"
-        )));
+        return Err(Error::Network(format!("{api_url} -> http status {status}")));
     }
     let api: AuthorArticlesResp = resp
         .json()
@@ -199,4 +194,3 @@ pub const ROUTE_SSPAI_AUTHOR: Route = Route {
     meta: &META_SSPAI_AUTHOR,
     handler: handler_fn,
 };
-

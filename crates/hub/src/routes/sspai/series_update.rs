@@ -89,9 +89,7 @@ pub async fn handler(ctx: &mut HubCtx<'_>) -> captura_common::Result<HubData> {
     let client = captura_net::client_basic(None, None)
         .map_err(|e| Error::Network(format!("sspai client error: {}", e)))?;
 
-    let info_url = format!(
-        "https://sspai.com/api/v1/series/info/get?id={id}&view=second"
-    );
+    let info_url = format!("https://sspai.com/api/v1/series/info/get?id={id}&view=second");
     let info_resp = client
         .get(&info_url)
         .send()
@@ -188,4 +186,3 @@ pub const ROUTE_SSPAI_SERIES_UPDATE: Route = Route {
     meta: &META_SSPAI_SERIES_UPDATE,
     handler: handler_fn,
 };
-

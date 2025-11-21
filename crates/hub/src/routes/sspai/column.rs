@@ -45,8 +45,7 @@ pub const META_SSPAI_COLUMN: RouteMeta = RouteMeta {
     name: "SSPAI Column",
     maintainers: &["captura"],
     url: "https://sspai.com/",
-    description:
-        "Articles under a Sspai special column, adapted from RSSHub sspai/column route.",
+    description: "Articles under a Sspai special column, adapted from RSSHub sspai/column route.",
     default_view: Some("articles"),
 };
 
@@ -91,9 +90,7 @@ pub async fn handler(ctx: &mut HubCtx<'_>) -> captura_common::Result<HubData> {
         .map_err(|e| Error::Network(format!("{api} -> {e}")))?;
     let status = list_resp.status();
     if !status.is_success() {
-        return Err(Error::Network(format!(
-            "{api} -> http status {status}"
-        )));
+        return Err(Error::Network(format!("{api} -> http status {status}")));
     }
     let list: ColumnArticlesResp = list_resp
         .json()
@@ -158,4 +155,3 @@ pub const ROUTE_SSPAI_COLUMN: Route = Route {
     meta: &META_SSPAI_COLUMN,
     handler: handler_fn,
 };
-

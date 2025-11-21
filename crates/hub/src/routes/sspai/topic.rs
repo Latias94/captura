@@ -69,9 +69,7 @@ pub async fn handler(ctx: &mut HubCtx<'_>) -> captura_common::Result<HubData> {
         .map_err(|e| Error::Network(format!("{api_url} -> {e}")))?;
     let status = list_resp.status();
     if !status.is_success() {
-        return Err(Error::Network(format!(
-            "{api_url} -> http status {status}"
-        )));
+        return Err(Error::Network(format!("{api_url} -> http status {status}")));
     }
     let list: TopicArticlesResp = list_resp
         .json()
@@ -147,4 +145,3 @@ pub const ROUTE_SSPAI_TOPIC: Route = Route {
     meta: &META_SSPAI_TOPIC,
     handler: handler_fn,
 };
-

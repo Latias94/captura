@@ -39,8 +39,7 @@ pub const META_SSPAI_TAG: RouteMeta = RouteMeta {
     name: "SSPAI Tag",
     maintainers: &["captura"],
     url: "https://sspai.com/",
-    description:
-        "Tagged articles from Sspai (少数派), adapted from RSSHub sspai/tag route.",
+    description: "Tagged articles from Sspai (少数派), adapted from RSSHub sspai/tag route.",
     default_view: Some("articles"),
 };
 
@@ -66,9 +65,7 @@ pub async fn handler(ctx: &mut HubCtx<'_>) -> captura_common::Result<HubData> {
         .map_err(|e| Error::Network(format!("{api_url} -> {e}")))?;
     let status = resp.status();
     if !status.is_success() {
-        return Err(Error::Network(format!(
-            "{api_url} -> http status {status}"
-        )));
+        return Err(Error::Network(format!("{api_url} -> http status {status}")));
     }
     let api: TagApiResp = resp
         .json()
@@ -134,4 +131,3 @@ pub const ROUTE_SSPAI_TAG: Route = Route {
     meta: &META_SSPAI_TAG,
     handler: handler_fn,
 };
-

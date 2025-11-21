@@ -706,11 +706,15 @@ dependencies = [
  "anyhow",
  "async-trait",
  "captura-common",
+ "captura-crawler",
  "captura-extract",
  "captura-fetcher",
  "captura-hub-macros",
  "captura-net",
  "chrono",
+ "encoding_rs",
+ "flate2",
+ "html-escape",
  "inventory",
  "once_cell",
  "regex",
@@ -722,6 +726,7 @@ dependencies = [
  "thiserror 2.0.17",
  "tracing",
  "url",
+ "urlencoding",
 ]
 
 [[package]]

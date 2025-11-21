@@ -73,4 +73,3 @@ pub const ROUTE_DOUBAN_EXPLORE: Route = Route {
     meta: &META_DOUBAN_EXPLORE,
     handler: handler_fn,
 };
-

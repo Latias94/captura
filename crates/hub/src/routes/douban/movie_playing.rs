@@ -1,4 +1,6 @@
-use crate::routes::types::{Features, HubCtx, HubData, HubItem, ParamMeta, Radar, Route, RouteMeta};
+use crate::routes::types::{
+    Features, HubCtx, HubData, HubItem, ParamMeta, Radar, Route, RouteMeta,
+};
 use crate::routes::util;
 use captura_hub_macros::register_hub_route;
 
@@ -120,4 +122,3 @@ pub const ROUTE_DOUBAN_MOVIE_PLAYING: Route = Route {
     meta: &META_DOUBAN_MOVIE_PLAYING,
     handler: handler_fn,
 };
-

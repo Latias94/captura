@@ -128,9 +128,7 @@ pub async fn handler(ctx: &mut HubCtx<'_>) -> captura_common::Result<HubData> {
 
     let status = resp.status();
     if !status.is_success() {
-        return Err(Error::Network(format!(
-            "{api_url} -> http status {status}"
-        )));
+        return Err(Error::Network(format!("{api_url} -> http status {status}")));
     }
 
     let body_text = resp
@@ -144,7 +142,10 @@ pub async fn handler(ctx: &mut HubCtx<'_>) -> captura_common::Result<HubData> {
         } else {
             &body_text
         };
-        Error::Parse(format!("juejin trending json decode: {e}; snippet={}", snippet))
+        Error::Parse(format!(
+            "juejin trending json decode: {e}; snippet={}",
+            snippet
+        ))
     })?;
 
     if api_resp.err_no != 0 {
@@ -158,7 +159,10 @@ pub async fn handler(ctx: &mut HubCtx<'_>) -> captura_common::Result<HubData> {
     let mut items = Vec::new();
     for entry in api_resp.data {
         let (item_type, item_info) = match entry {
-            TrendingItem::Wrapped { item_type, item_info } => (item_type, item_info),
+            TrendingItem::Wrapped {
+                item_type,
+                item_info,
+            } => (item_type, item_info),
             TrendingItem::Direct(item_info) => (2, item_info),
         };
 

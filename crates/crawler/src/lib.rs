@@ -1,10 +1,27 @@
-//! Spider-based crawler adapter.
-//! This crate exposes a constrained surface tailored for rule executor.
+//! Generic crawler adapter for advanced HTML fetching.
+//!
+//! The public API in this crate is intentionally kept small and engine-agnostic:
+//! callers talk in terms of `CrawlOptions` and HTML strings, without depending
+//! on any concrete crawler implementation. Today we use `spider` under the hood
+//! to benefit from its anti-bot and (optionally) headless browser support, but
+//! that choice is an internal detail and can be swapped out in the future
+//! without touching Hub routes or rule executors.
 
 use captura_common::{Error, Result};
 use spider::website::Website;
 use tracing::instrument;
 
+/// Generic crawl options used by higher-level components (Hub routes, rule
+/// engine) to steer advanced fetching behaviour.
+///
+/// The semantics are deliberately engine-neutral:
+/// - `user_agent`: override UA for this crawl only;
+/// - `respect_robots`: whether to respect robots.txt;
+/// - `smart`: enable stronger anti-bot / JS handling when supported by the
+///   underlying engine (for spider this maps to `crawl_smart`);
+/// - `delay_ms`: politeness delay between requests;
+/// - `limit`: maximum number of pages the crawl should explore;
+/// - `proxy_url`: optional proxy endpoint.
 #[derive(Clone, Debug, Default)]
 pub struct CrawlOptions {
     pub user_agent: Option<String>,

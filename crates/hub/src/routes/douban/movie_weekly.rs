@@ -1,4 +1,6 @@
-use crate::routes::types::{Features, HubCtx, HubData, HubItem, ParamMeta, Radar, Route, RouteMeta};
+use crate::routes::types::{
+    Features, HubCtx, HubData, HubItem, ParamMeta, Radar, Route, RouteMeta,
+};
 use captura_common::Error;
 use captura_hub_macros::register_hub_route;
 use serde::Deserialize;
@@ -104,10 +106,7 @@ pub async fn handler(ctx: &mut HubCtx<'_>) -> captura_common::Result<HubData> {
     Ok(HubData {
         title: info.title.clone(),
         description: info.description.clone(),
-        link: Some(format!(
-            "https://m.douban.com/subject_collection/{}",
-            kind
-        )),
+        link: Some(format!("https://m.douban.com/subject_collection/{}", kind)),
         image: info.cover_url.clone(),
         language: None,
         items: out_items,
@@ -236,4 +235,3 @@ struct DoubanRating {
     #[serde(default)]
     value: f64,
 }
-

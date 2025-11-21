@@ -4,18 +4,18 @@ use serde::Deserialize;
 use url::form_urlencoded;
 
 // 路由拆分到独立文件，避免 mod.rs 过于臃肿。
-pub mod tag;
-pub mod column;
-pub mod topic;
-pub mod index;
-pub mod matrix;
+pub mod activity;
 pub mod author;
 pub mod bookmarks;
-pub mod topics;
+pub mod column;
+pub mod index;
+pub mod matrix;
 pub mod series;
 pub mod series_update;
-pub mod activity;
 pub mod shortcuts;
+pub mod tag;
+pub mod topic;
+pub mod topics;
 
 /// 通用时间戳转换：将秒级 Unix 时间转换为带时区的 DateTime。
 pub fn parse_unix_to_fixed(ts: i64) -> Option<DateTime<FixedOffset>> {

@@ -49,8 +49,7 @@ pub const META_SSPAI_INDEX: RouteMeta = RouteMeta {
 };
 
 pub async fn handler(_ctx: &mut HubCtx<'_>) -> captura_common::Result<HubData> {
-    let api_url =
-        "https://sspai.com/api/v1/article/index/page/get?limit=10&offset=0&created_at=0";
+    let api_url = "https://sspai.com/api/v1/article/index/page/get?limit=10&offset=0&created_at=0";
     let client = captura_net::client_basic(None, None)
         .map_err(|e| Error::Network(format!("sspai client error: {}", e)))?;
     let resp = client
@@ -60,9 +59,7 @@ pub async fn handler(_ctx: &mut HubCtx<'_>) -> captura_common::Result<HubData> {
         .map_err(|e| Error::Network(format!("{api_url} -> {e}")))?;
     let status = resp.status();
     if !status.is_success() {
-        return Err(Error::Network(format!(
-            "{api_url} -> http status {status}"
-        )));
+        return Err(Error::Network(format!("{api_url} -> http status {status}")));
     }
     let api: IndexApiResp = resp
         .json()
@@ -134,4 +131,3 @@ pub const ROUTE_SSPAI_INDEX: Route = Route {
     meta: &META_SSPAI_INDEX,
     handler: handler_fn,
 };
-

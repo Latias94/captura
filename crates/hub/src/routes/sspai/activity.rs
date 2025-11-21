@@ -50,10 +50,7 @@ pub async fn handler(ctx: &mut HubCtx<'_>) -> captura_common::Result<HubData> {
         .map_err(|e| Error::Network(format!("sspai client error: {}", e)))?;
 
     // 用户信息（主要用于昵称）
-    let user_url = format!(
-        "https://sspai.com/api/v1/user/slug/info/get?slug={}",
-        slug
-    );
+    let user_url = format!("https://sspai.com/api/v1/user/slug/info/get?slug={}", slug);
     let user_resp = client
         .get(&user_url)
         .header("Referer", &base_link)
@@ -85,9 +82,7 @@ pub async fn handler(ctx: &mut HubCtx<'_>) -> captura_common::Result<HubData> {
         .map_err(|e| Error::Network(format!("{api_url} -> {e}")))?;
     let status = act_resp.status();
     if !status.is_success() {
-        return Err(Error::Network(format!(
-            "{api_url} -> http status {status}"
-        )));
+        return Err(Error::Network(format!("{api_url} -> http status {status}")));
     }
     let act_json: Value = act_resp
         .json()
@@ -118,10 +113,7 @@ pub async fn handler(ctx: &mut HubCtx<'_>) -> captura_common::Result<HubData> {
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
-        let created_at = item
-            .get("created_at")
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
+        let created_at = item.get("created_at").and_then(|v| v.as_i64()).unwrap_or(0);
 
         let data = item.get("data").cloned().unwrap_or(Value::Null);
 
@@ -144,10 +136,7 @@ pub async fn handler(ctx: &mut HubCtx<'_>) -> captura_common::Result<HubData> {
         }
 
         if title_core.is_empty() {
-            if let Some(article_title) = data
-                .get("article_title")
-                .and_then(|v| v.as_str())
-            {
+            if let Some(article_title) = data.get("article_title").and_then(|v| v.as_str()) {
                 title_core = article_title.trim().to_string();
             }
         }
@@ -264,4 +253,3 @@ pub const ROUTE_SSPAI_ACTIVITY: Route = Route {
     meta: &META_SSPAI_ACTIVITY,
     handler: handler_fn,
 };
-

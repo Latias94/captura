@@ -1,4 +1,6 @@
-use crate::routes::types::{Features, HubCtx, HubData, HubItem, ParamMeta, Radar, Route, RouteMeta};
+use crate::routes::types::{
+    Features, HubCtx, HubData, HubItem, ParamMeta, Radar, Route, RouteMeta,
+};
 use captura_common::Error;
 use captura_hub_macros::register_hub_route;
 use serde::Deserialize;
@@ -83,9 +85,7 @@ async fn fetch_rank_items(kind: &str, referer: &str) -> Result<Vec<HubItem>, Err
 
     let status = resp.status();
     if !status.is_success() {
-        return Err(Error::Network(format!(
-            "{api_url} -> http status {status}"
-        )));
+        return Err(Error::Network(format!("{api_url} -> http status {status}")));
     }
 
     let api_resp: DoubanBookRankResponse = resp
@@ -177,4 +177,3 @@ struct DoubanRating {
     #[serde(default)]
     value: f64,
 }
-

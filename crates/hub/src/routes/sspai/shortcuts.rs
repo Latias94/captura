@@ -109,8 +109,7 @@ pub async fn handler(_ctx: &mut HubCtx<'_>) -> captura_common::Result<HubData> {
                     "https://sspai.com/api/v1/article/info/get?id={}&view=second&support_webp=true",
                     id
                 );
-                if let Ok(detail) =
-                    crate::routes::sspai::fetch_detail(&detail_url, page_url).await
+                if let Ok(detail) = crate::routes::sspai::fetch_detail(&detail_url, page_url).await
                 {
                     if let Some(banner) = detail.promote_image {
                         description.push_str(&format!(

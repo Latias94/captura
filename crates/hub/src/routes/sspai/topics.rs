@@ -44,7 +44,8 @@ pub const META_SSPAI_TOPICS: RouteMeta = RouteMeta {
     name: "SSPAI Topics",
     maintainers: &["captura"],
     url: "https://sspai.com/topics",
-    description: "少数派专题广场更新推送（专题本身而非专题内文章），对标 RSSHub /sspai/topics 路由。",
+    description:
+        "少数派专题广场更新推送（专题本身而非专题内文章），对标 RSSHub /sspai/topics 路由。",
     default_view: Some("articles"),
 };
 
@@ -59,9 +60,7 @@ pub async fn handler(_ctx: &mut HubCtx<'_>) -> captura_common::Result<HubData> {
         .map_err(|e| Error::Network(format!("{api_url} -> {e}")))?;
     let status = resp.status();
     if !status.is_success() {
-        return Err(Error::Network(format!(
-            "{api_url} -> http status {status}"
-        )));
+        return Err(Error::Network(format!("{api_url} -> http status {status}")));
     }
 
     let api: TopicsResp = resp
@@ -115,4 +114,3 @@ pub const ROUTE_SSPAI_TOPICS: Route = Route {
     meta: &META_SSPAI_TOPICS,
     handler: handler_fn,
 };
-

@@ -34,16 +34,14 @@ pub async fn handler(_ctx: &mut HubCtx<'_>) -> captura_common::Result<HubData> {
         .map_err(|e| Error::Network(format!("{api_url} -> {e}")))?;
     let status = resp.status();
     if !status.is_success() {
-        return Err(Error::Network(format!(
-            "{api_url} -> http status {status}"
-        )));
+        return Err(Error::Network(format!("{api_url} -> http status {status}")));
     }
     let text = resp
         .text()
         .await
         .map_err(|e| Error::Parse(format!("sspai series tag text: {e}")))?;
-    let root: Value =
-        serde_json::from_str(&text).map_err(|e| Error::Parse(format!("sspai series tag json parse: {e}")))?;
+    let root: Value = serde_json::from_str(&text)
+        .map_err(|e| Error::Parse(format!("sspai series tag json parse: {e}")))?;
 
     let data = root
         .get("data")
@@ -77,17 +75,11 @@ pub async fn handler(_ctx: &mut HubCtx<'_>) -> captura_common::Result<HubData> {
                     continue;
                 }
 
-                let price = child
-                    .get("price")
-                    .and_then(|v| v.as_i64())
-                    .unwrap_or(0);
+                let price = child.get("price").and_then(|v| v.as_i64()).unwrap_or(0);
                 let price_yuan = price as f64 / 100.0;
                 let title = format!("￥{price_yuan:.2} - {title_raw}");
 
-                let banner = child
-                    .get("banner")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("");
+                let banner = child.get("banner").and_then(|v| v.as_str()).unwrap_or("");
                 let banner_url = if banner.starts_with("http") {
                     banner.to_string()
                 } else {

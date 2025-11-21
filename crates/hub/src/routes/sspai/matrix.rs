@@ -57,9 +57,7 @@ pub async fn handler(_ctx: &mut HubCtx<'_>) -> captura_common::Result<HubData> {
         .map_err(|e| Error::Network(format!("{api_url} -> {e}")))?;
     let status = resp.status();
     if !status.is_success() {
-        return Err(Error::Network(format!(
-            "{api_url} -> http status {status}"
-        )));
+        return Err(Error::Network(format!("{api_url} -> http status {status}")));
     }
     let api: MatrixApiResp = resp
         .json()
@@ -73,10 +71,9 @@ pub async fn handler(_ctx: &mut HubCtx<'_>) -> captura_common::Result<HubData> {
             art.id
         );
         let page_url = format!("https://sspai.com/post/{}", art.id);
-        let detail =
-            crate::routes::sspai::fetch_detail(&detail_url, "https://sspai.com/matrix")
-                .await
-                .ok();
+        let detail = crate::routes::sspai::fetch_detail(&detail_url, "https://sspai.com/matrix")
+            .await
+            .ok();
 
         let mut description = String::new();
         if let Some(d) = &detail {
@@ -124,4 +121,3 @@ pub const ROUTE_SSPAI_MATRIX: Route = Route {
     meta: &META_SSPAI_MATRIX,
     handler: handler_fn,
 };
-

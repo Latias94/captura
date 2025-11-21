@@ -1,4 +1,6 @@
-use crate::routes::types::{Features, HubCtx, HubData, HubItem, ParamMeta, Radar, Route, RouteMeta};
+use crate::routes::types::{
+    Features, HubCtx, HubData, HubItem, ParamMeta, Radar, Route, RouteMeta,
+};
 use captura_common::Error;
 use captura_hub_macros::register_hub_route;
 use serde::Deserialize;
@@ -70,9 +72,7 @@ pub async fn handler(ctx: &mut HubCtx<'_>) -> captura_common::Result<HubData> {
 
     let status = resp.status();
     if !status.is_success() {
-        return Err(Error::Network(format!(
-            "{api_url} -> http status {status}"
-        )));
+        return Err(Error::Network(format!("{api_url} -> http status {status}")));
     }
 
     let api_resp: DoubanNewBookResponse = resp
@@ -202,4 +202,3 @@ struct DoubanRating {
     #[serde(default)]
     value: f64,
 }
-
