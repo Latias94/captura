@@ -88,6 +88,11 @@ pub fn element_html(el: &ElementRef<'_>) -> String {
     el.html()
 }
 
+/// Extract plain text from an element (self text), trimmed.
+pub fn element_text(el: &ElementRef<'_>) -> String {
+    el.text().collect::<Vec<_>>().join("").trim().to_string()
+}
+
 /// Compute an absolute URL from a base URL and href.
 pub fn absolutize(base: &str, href: &str) -> String {
     if Url::parse(href).is_ok() {
