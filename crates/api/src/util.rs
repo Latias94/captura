@@ -26,12 +26,12 @@ pub(crate) fn validate_sort(
     allowed: &[&str],
     order: &Option<String>,
 ) -> ApiResult<()> {
-    if let Some(ref s) = sort_by {
+    if let Some(s) = sort_by {
         if !allowed.iter().any(|a| a == s) {
             return Err(bad_request("invalid sort_by"));
         }
     }
-    if let Some(ref o) = order {
+    if let Some(o) = order {
         if o != "asc" && o != "desc" {
             return Err(bad_request("invalid order"));
         }
