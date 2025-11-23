@@ -197,7 +197,7 @@ pub async fn process_items(
 
         let mut categories = Vec::new();
         for r in [&rel.category, &rel.tag, &rel.topic] {
-            if let Some(RelData { data: Some(ref d) }) = r {
+            if let Some(RelData { data: Some(d) }) = r {
                 if let Some(found) = included_map.get(&(d.r#type.clone(), d.id.clone())) {
                     if let Some(name) = found.attributes.title.clone() {
                         if !name.is_empty() {
