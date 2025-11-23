@@ -1,12 +1,12 @@
-use axum::extract::State;
 use axum::Json;
+use axum::extract::State;
 use axum_extra::typed_header::TypedHeader;
-use headers::authorization::Bearer;
 use headers::Authorization;
+use headers::authorization::Bearer;
 
+use crate::AppState;
 use crate::auth::AuthUser;
 use crate::error::ApiResult;
-use crate::AppState;
 use captura_storage::entity::{entry, feed, smart_view};
 use captura_types::{EntryView, TimelineDto, ViewDto, ViewSummaryDto};
 use sea_orm::{ColumnTrait, EntityTrait, JoinType, QueryFilter, QuerySelect, RelationTrait};

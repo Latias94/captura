@@ -190,8 +190,7 @@ pub const META_JUMP_DISCOUNT: RouteMeta = RouteMeta {
         },
         ParamMeta {
             name: "filter",
-            description:
-                "过滤参数: all-全部, jx-精选, sd-史低, dl-独立, vip-会员（不同平台支持不同取值）",
+            description: "过滤参数: all-全部, jx-精选, sd-史低, dl-独立, vip-会员（不同平台支持不同取值）",
             default: Some("all"),
             options: &[
                 ("all", "全部"),

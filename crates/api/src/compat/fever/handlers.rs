@@ -168,11 +168,12 @@ pub(crate) async fn endpoint(st: &AppState, q: &FeverQuery) -> Response {
             .all(&st.db)
             .await
             .unwrap_or_default();
-        resp["unread_item_ids"] = json!(ids
-            .iter()
-            .map(|i| i.to_string())
-            .collect::<Vec<_>>()
-            .join(","));
+        resp["unread_item_ids"] = json!(
+            ids.iter()
+                .map(|i| i.to_string())
+                .collect::<Vec<_>>()
+                .join(",")
+        );
     }
     if q.saved_item_ids.unwrap_or(0) == 1 {
         let ids: Vec<i64> = entry::Entity::find()
@@ -185,11 +186,12 @@ pub(crate) async fn endpoint(st: &AppState, q: &FeverQuery) -> Response {
             .all(&st.db)
             .await
             .unwrap_or_default();
-        resp["saved_item_ids"] = json!(ids
-            .iter()
-            .map(|i| i.to_string())
-            .collect::<Vec<_>>()
-            .join(","));
+        resp["saved_item_ids"] = json!(
+            ids.iter()
+                .map(|i| i.to_string())
+                .collect::<Vec<_>>()
+                .join(",")
+        );
     }
 
     if q.favicons.unwrap_or(0) == 1 {

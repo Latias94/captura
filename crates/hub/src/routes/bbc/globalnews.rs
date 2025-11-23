@@ -44,8 +44,7 @@ pub const META_BBC_GLOBALNEWS: RouteMeta = RouteMeta {
     name: "BBC Global News Podcast",
     maintainers: &["captura"],
     url: "https://www.bbc.co.uk/programmes/p02nq0gn",
-    description:
-        "BBC Global News Podcast，基于官方播客 RSS（https://podcasts.files.bbci.co.uk/p02nq0gn.rss），自动内嵌音频播放器。",
+    description: "BBC Global News Podcast，基于官方播客 RSS（https://podcasts.files.bbci.co.uk/p02nq0gn.rss），自动内嵌音频播放器。",
     default_view: Some("podcast"),
 };
 

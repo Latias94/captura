@@ -1,19 +1,19 @@
 use axum::{
-    extract::{Path, Query, State},
     Json,
+    extract::{Path, Query, State},
 };
 use axum_extra::typed_header::TypedHeader;
 use chrono::{FixedOffset, Utc};
-use headers::authorization::Bearer;
 use headers::Authorization;
+use headers::authorization::Bearer;
 use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, QueryOrder, Set};
 use serde::Deserialize;
 
-use crate::auth::AuthUser;
-use crate::error::{bad_request, internal, not_found, ApiResult};
-use crate::util::{map_entry_to_dto, validate_limit_offset, validate_sort};
 use crate::AppState;
-use captura_service::query::{list_entries_for_user, TimelineQuery, TimelineStatus};
+use crate::auth::AuthUser;
+use crate::error::{ApiResult, bad_request, internal, not_found};
+use crate::util::{map_entry_to_dto, validate_limit_offset, validate_sort};
+use captura_service::query::{TimelineQuery, TimelineStatus, list_entries_for_user};
 use captura_storage::entity::smart_view;
 use captura_types::{EntryDto, EntryView, SmartViewDto, SmartViewFiltersDto, Sorting};
 

@@ -5,8 +5,7 @@ use serde::Deserialize;
 use std::collections::HashMap;
 
 const PLUGINS_URL: &str = "https://raw.githubusercontent.com/obsidianmd/obsidian-releases/refs/heads/master/community-plugins.json";
-const STATS_URL: &str =
-    "https://raw.githubusercontent.com/obsidianmd/obsidian-releases/HEAD/community-plugin-stats.json";
+const STATS_URL: &str = "https://raw.githubusercontent.com/obsidianmd/obsidian-releases/HEAD/community-plugin-stats.json";
 
 #[derive(Debug, Deserialize)]
 struct Plugin {
@@ -39,8 +38,7 @@ pub const META_OBSIDIAN_PLUGINS: RouteMeta = RouteMeta {
     name: "Obsidian Plugins",
     maintainers: &["captura"],
     url: "https://obsidian.md/plugins",
-    description:
-        "Community plugins from the official Obsidian plugin registry, with download stats from GitHub.",
+    description: "Community plugins from the official Obsidian plugin registry, with download stats from GitHub.",
     default_view: Some("articles"),
 };
 

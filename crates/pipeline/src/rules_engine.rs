@@ -1,13 +1,14 @@
 use captura_common::{Error, NormalizedEntry, Result};
 use captura_crawler::{self as crawler, CrawlOptions};
 use captura_extract::{
+    RuleExecCtx, RuleExecHttpCtx,
     apply_description_template_v1 as extract_apply_description_template_v1,
     apply_rule_filters_v1 as extract_apply_rule_filters_v1, execute_json_v1_stateless,
     extract_html as extract_extract_html, json_get_path as extract_json_get_path,
-    xpath_to_css_like, RuleExecCtx, RuleExecHttpCtx,
+    xpath_to_css_like,
 };
 use captura_hub::v1::{
-    merge_rule_params_v1, ContentMergeMode, ContentMode, RuleSpecV1, SourceType,
+    ContentMergeMode, ContentMode, RuleSpecV1, SourceType, merge_rule_params_v1,
 };
 use captura_storage::entity::feed;
 use reqwest::Client;
@@ -17,8 +18,8 @@ use std::time::Duration;
 use tracing::{debug, instrument};
 
 use crate::{
-    apply_entry_filters_with_cfg, extractor, render_with_params, sanitize_html,
-    ContentTransformConfig,
+    ContentTransformConfig, apply_entry_filters_with_cfg, extractor, render_with_params,
+    sanitize_html,
 };
 
 /// Local fetch configuration used by helper functions to avoid depending on

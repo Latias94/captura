@@ -42,8 +42,7 @@ pub const META_FTCHINESE: RouteMeta = RouteMeta {
     name: "FT 中文网",
     maintainers: &["captura"],
     url: "https://www.ftchinese.com/",
-    description:
-        "FT 中文网频道，基于官方 RSS 做全文增强，对标 RSSHub /ftchinese/:language/:channel 路由。",
+    description: "FT 中文网频道，基于官方 RSS 做全文增强，对标 RSSHub /ftchinese/:language/:channel 路由。",
     default_view: Some("articles"),
 };
 

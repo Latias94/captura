@@ -15,8 +15,7 @@ pub const META_FREECOMPUTERBOOKS_INDEX: RouteMeta = RouteMeta {
     example: "/freecomputerbooks/compscAlgorithmBooks",
     params: &[ParamMeta {
         name: "category",
-        description:
-            "Category id, corresponding to the HTML file name (without .html suffix) in a book list URL path.",
+        description: "Category id, corresponding to the HTML file name (without .html suffix) in a book list URL path.",
         default: None,
         options: &[],
     }],
@@ -40,8 +39,7 @@ pub const META_FREECOMPUTERBOOKS_INDEX: RouteMeta = RouteMeta {
     name: "Free Computer Books - Book List",
     maintainers: &["captura"],
     url: "https://freecomputerbooks.com",
-    description:
-        "Book list pages from FreeComputerBooks, aligned with RSSHub /freecomputerbooks/:category? route.",
+    description: "Book list pages from FreeComputerBooks, aligned with RSSHub /freecomputerbooks/:category? route.",
     default_view: Some("articles"),
 };
 

@@ -15,8 +15,7 @@ pub const META_XBOOKCN_BLOG: RouteMeta = RouteMeta {
     example: "/xbookcn/精选作品",
     params: &[ParamMeta {
         name: "label",
-        description:
-            "Label name from xbookcn blog, see https://blog.xbookcn.net/p/all.html, default 精选作品.",
+        description: "Label name from xbookcn blog, see https://blog.xbookcn.net/p/all.html, default 精选作品.",
         default: Some("精选作品"),
         options: &[],
     }],
@@ -36,8 +35,7 @@ pub const META_XBOOKCN_BLOG: RouteMeta = RouteMeta {
     name: "中文成人文學網短篇",
     maintainers: &["captura"],
     url: "https://blog.xbookcn.net",
-    description:
-        "xbookcn blog short stories feed by label. NSFW content, aligned with RSSHub /xbookcn/:label route.",
+    description: "xbookcn blog short stories feed by label. NSFW content, aligned with RSSHub /xbookcn/:label route.",
     default_view: Some("articles"),
 };
 

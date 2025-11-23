@@ -1,5 +1,5 @@
 use axum::{body::Body, http::Request};
-use captura_api::{test_router_service, AppState};
+use captura_api::{AppState, test_router_service};
 use tower::ServiceExt;
 
 /// HTTP-level test for `/api/v1/opml/validate`:

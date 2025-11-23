@@ -1,7 +1,7 @@
 use super::error::MfResult;
+use crate::AppState;
 use crate::auth::mf_auth;
 use crate::error::{internal, not_found};
-use crate::AppState;
 use axum::extract::{Path, State};
 use axum::response::IntoResponse;
 

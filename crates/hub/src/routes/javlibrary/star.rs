@@ -35,7 +35,10 @@ pub const META_JAVLIBRARY_STAR: RouteMeta = RouteMeta {
             name: "mode",
             description: "展示模式：1=按日期带评论，2=按日期所有作品（与 RSSHub 一致）。",
             default: Some("1"),
-            options: &[("1", "videos with comments (by date)"), ("2", "everything (by date)")],
+            options: &[
+                ("1", "videos with comments (by date)"),
+                ("2", "everything (by date)"),
+            ],
         },
     ],
     features: Features {
@@ -54,8 +57,7 @@ pub const META_JAVLIBRARY_STAR: RouteMeta = RouteMeta {
     name: "JavLibrary 按演员列出作品",
     maintainers: &["captura"],
     url: "https://www.javlibrary.com",
-    description:
-        "JavLibrary 某位演员的作品列表（简化版，仅元数据），对齐 RSSHub /javlibrary/star/:id/:language?/:mode?。",
+    description: "JavLibrary 某位演员的作品列表（简化版，仅元数据），对齐 RSSHub /javlibrary/star/:id/:language?/:mode?。",
     default_view: Some("videos"),
 };
 

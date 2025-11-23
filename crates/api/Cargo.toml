@@ -1,7 +1,7 @@
 [package]
 name = "captura-api"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 
 [lib]
 name = "captura_api"
@@ -10,6 +10,7 @@ path = "src/lib.rs"
 [dependencies]
 anyhow.workspace = true
 axum.workspace = true
+axum-extra.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
@@ -31,8 +32,7 @@ captura-net = { path = "../net" }
 sha2.workspace = true
 argon2.workspace = true
 rand_core.workspace = true
-axum-extra = { version = "0.12", features = ["typed-header"] }
-headers = "0.4"
+headers.workspace = true
 quick-xml.workspace = true
 url.workspace = true
 md-5.workspace = true
@@ -41,15 +41,15 @@ reqwest.workspace = true
 scraper.workspace = true
 once_cell.workspace = true
 regex.workspace = true
-urlencoding = "2"
-hex = "0.4"
+urlencoding.workspace = true
+hex.workspace = true
 tower-http.workspace = true
 hmac.workspace = true
-openidconnect = { version = "3", default-features = true, features = ["reqwest"] }
+openidconnect.workspace = true
 captura-webui = { path = "../webui" }
 
 [dev-dependencies]
-http-body-util = "0.1"
-futures = "0.3"
-tower = { version = "0.5", features = ["util"] }
+http-body-util.workspace = true
+futures.workspace = true
+tower.workspace = true
 captura-testkit = { path = "../testkit" }

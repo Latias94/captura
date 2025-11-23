@@ -1,10 +1,10 @@
-use super::error::{from_api_error, internal, not_found, MfResult};
-use super::types::{map_feed, MfEnclosureDto, MfEntryDto, MfEntryResultSet};
-use crate::auth::mf_auth;
-use crate::entry_options::{apply_entry_flags, EntryUpdateFlags};
+use super::error::{MfResult, from_api_error, internal, not_found};
+use super::types::{MfEnclosureDto, MfEntryDto, MfEntryResultSet, map_feed};
 use crate::AppState;
-use axum::extract::{Path, Query, State};
+use crate::auth::mf_auth;
+use crate::entry_options::{EntryUpdateFlags, apply_entry_flags};
 use axum::Json;
+use axum::extract::{Path, Query, State};
 use chrono::{FixedOffset, Utc};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QuerySelect,
@@ -12,7 +12,7 @@ use sea_orm::{
 };
 
 use axum::response::IntoResponse;
-use captura_service::query::{build_timeline_select, TimelineQuery, TimelineStatus};
+use captura_service::query::{TimelineQuery, TimelineStatus, build_timeline_select};
 use captura_storage::entity::{enclosure, entry, entry_label, feed, label};
 
 #[derive(serde::Deserialize, Default)]

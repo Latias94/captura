@@ -31,8 +31,7 @@ pub const META_MISSKON_TAG: RouteMeta = RouteMeta {
     name: "MissKON Tag",
     maintainers: &["captura"],
     url: "https://misskon.com",
-    description:
-        "MissKON posts for a given tag via the WordPress JSON API, aligned with RSSHub /misskon/tag/:tag route.",
+    description: "MissKON posts for a given tag via the WordPress JSON API, aligned with RSSHub /misskon/tag/:tag route.",
     default_view: Some("pictures"),
 };
 

@@ -1,7 +1,7 @@
 use crate::routes::types::{Features, HubCtx, HubData, ParamMeta, Radar, Route, RouteMeta};
 use captura_hub_macros::register_hub_route;
 
-use super::util::{enrich_items, fetch_by_topic, BASE_URL};
+use super::util::{BASE_URL, enrich_items, fetch_by_topic};
 
 pub const META_FOURGAMERS_TOPIC: RouteMeta = RouteMeta {
     hub_id: "4gamers/topic",

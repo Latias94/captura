@@ -41,8 +41,7 @@ pub const META_CHANGELOG_GOTIME: RouteMeta = RouteMeta {
     name: "Go Time (Changelog)",
     maintainers: &["captura"],
     url: "https://changelog.com/gotime",
-    description:
-        "Go 社区播客 Go Time（Changelog），基于官方 RSS https://changelog.com/gotime/feed，自动内嵌音频。",
+    description: "Go 社区播客 Go Time（Changelog），基于官方 RSS https://changelog.com/gotime/feed，自动内嵌音频。",
     default_view: Some("podcast"),
 };
 

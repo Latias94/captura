@@ -2,7 +2,7 @@
 
 use anyhow::anyhow;
 use captura_common::{FeedId, IntegrationEvent, Result};
-use captura_pipeline::{refresh_feed_with_meta, refresh_rule_v1, RefreshMeta};
+use captura_pipeline::{RefreshMeta, refresh_feed_with_meta, refresh_rule_v1};
 use captura_storage::entity::{entry, feed, rule};
 use chrono::{FixedOffset, Utc};
 use reqwest::Client;

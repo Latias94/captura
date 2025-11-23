@@ -48,8 +48,7 @@ pub const META_JAVLIBRARY_MOSTWANTED: RouteMeta = RouteMeta {
     name: "JavLibrary 想看最多",
     maintainers: &["captura"],
     url: "https://www.javlibrary.com",
-    description:
-        "JavLibrary 想看人数最多榜（最近一月/全时期），基于 vl_mostwanted.php?list&mode= 页面，仅提供元数据。",
+    description: "JavLibrary 想看人数最多榜（最近一月/全时期），基于 vl_mostwanted.php?list&mode= 页面，仅提供元数据。",
     default_view: Some("videos"),
 };
 

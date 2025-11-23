@@ -32,8 +32,7 @@ pub const META_PRH_BOOK_LISTS: RouteMeta = RouteMeta {
     name: "Penguin Random House Book Lists",
     maintainers: &["captura"],
     url: "https://www.penguinrandomhouse.com/the-read-down",
-    description:
-        "Book list articles from Penguin Random House The Read Down, aligned with RSSHub /penguin-random-house/the-read-down route.",
+    description: "Book list articles from Penguin Random House The Read Down, aligned with RSSHub /penguin-random-house/the-read-down route.",
     default_view: Some("articles"),
 };
 

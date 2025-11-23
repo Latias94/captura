@@ -17,8 +17,7 @@ pub const META_DEEPLEARNING_THE_BATCH: RouteMeta = RouteMeta {
     example: "/deeplearning/the_batch",
     params: &[ParamMeta {
         name: "tag",
-        description:
-            "Optional tag slug, e.g. research, business, data-points, letters, ai-careers.",
+        description: "Optional tag slug, e.g. research, business, data-points, letters, ai-careers.",
         default: None,
         options: &[],
     }],
@@ -36,8 +35,7 @@ pub const META_DEEPLEARNING_THE_BATCH: RouteMeta = RouteMeta {
     name: "DeepLearning.AI - The Batch",
     maintainers: &["captura"],
     url: "https://www.deeplearning.ai/the-batch/",
-    description:
-        "Weekly AI news and insights from DeepLearning.AI The Batch newsletter, using Next.js __NEXT_DATA__ JSON.",
+    description: "Weekly AI news and insights from DeepLearning.AI The Batch newsletter, using Next.js __NEXT_DATA__ JSON.",
     default_view: Some("articles"),
 };
 

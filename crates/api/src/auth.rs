@@ -7,8 +7,8 @@ use argon2::{PasswordHasher, PasswordVerifier};
 use base64::Engine;
 use captura_storage::entity::{token, user};
 
-use crate::error::{internal, unauthorized, ApiResult};
 use crate::AppState;
+use crate::error::{ApiResult, internal, unauthorized};
 use argon2::password_hash::SaltString;
 use rand_core::{OsRng, RngCore};
 

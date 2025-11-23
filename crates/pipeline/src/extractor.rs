@@ -4,7 +4,7 @@
 
 use captura_common::Result;
 use captura_extract::{
-    extract_from_html as core_extract_from_html, EntryExtractConfig, ExtractResult,
+    EntryExtractConfig, ExtractResult, extract_from_html as core_extract_from_html,
 };
 use captura_storage::entity::feed;
 

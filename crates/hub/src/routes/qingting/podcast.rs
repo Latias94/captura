@@ -123,8 +123,7 @@ pub const META_QINGTING_PODCAST: RouteMeta = RouteMeta {
     params: &[
         ParamMeta {
             name: "id",
-            description:
-                "专辑 ID，可在蜻蜓 FM 专辑页 URL 中找到，例如 https://www.qingting.fm/channels/293411。",
+            description: "专辑 ID，可在蜻蜓 FM 专辑页 URL 中找到，例如 https://www.qingting.fm/channels/293411。",
             default: None,
             options: &[],
         },
@@ -155,8 +154,7 @@ pub const META_QINGTING_PODCAST: RouteMeta = RouteMeta {
     name: "蜻蜓 FM 播客",
     maintainers: &["captura"],
     url: "https://www.qingting.fm",
-    description:
-        "蜻蜓 FM 专辑播客，对标 RSSHub /qingting/podcast/:id，使用公开 JSON API 与页面内节目详情。",
+    description: "蜻蜓 FM 专辑播客，对标 RSSHub /qingting/podcast/:id，使用公开 JSON API 与页面内节目详情。",
     default_view: Some("podcast"),
 };
 

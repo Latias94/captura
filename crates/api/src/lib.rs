@@ -29,9 +29,9 @@ pub use state::{AppConfig, AppState};
 
 use axum::body::Body as AxumBody;
 use axum::{
+    Router,
     extract::State,
     routing::{get, post, put},
-    Router,
 };
 use sea_orm::{ConnectionTrait, DatabaseConnection};
 use tower_http::set_header::SetResponseHeaderLayer;

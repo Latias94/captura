@@ -4,7 +4,7 @@
 use captura_common::{Error, Result};
 use feed_rs::model::Feed as ParsedFeed;
 use feed_rs::parser;
-use reqwest::header::{HeaderMap, ACCEPT, IF_MODIFIED_SINCE, IF_NONE_MATCH, USER_AGENT};
+use reqwest::header::{ACCEPT, HeaderMap, IF_MODIFIED_SINCE, IF_NONE_MATCH, USER_AGENT};
 use reqwest::{Client, StatusCode};
 use std::time::Duration;
 use tracing::instrument;

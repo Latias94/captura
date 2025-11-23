@@ -35,8 +35,7 @@ pub const META_SSPAI_ACTIVITY: RouteMeta = RouteMeta {
     name: "SSPAI Activity",
     maintainers: &["captura"],
     url: "https://sspai.com/",
-    description:
-        "少数派作者动态更新，对标 RSSHub /sspai/activity/:slug 路由（已适配新版 activity 接口）。",
+    description: "少数派作者动态更新，对标 RSSHub /sspai/activity/:slug 路由（已适配新版 activity 接口）。",
     default_view: Some("articles"),
 };
 

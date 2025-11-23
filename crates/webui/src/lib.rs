@@ -5,12 +5,12 @@
 
 use askama::Template;
 use axum::{
+    Router,
     body::Bytes,
     extract::Path,
     http::{HeaderMap, StatusCode},
     response::{Html, IntoResponse, Redirect},
     routing::{get, post},
-    Router,
 };
 use serde::Deserialize;
 

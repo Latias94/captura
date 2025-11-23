@@ -1,5 +1,5 @@
 use captura_common::Result;
-use captura_service::query::{list_entries_for_user, TimelineQuery, TimelineStatus};
+use captura_service::query::{TimelineQuery, TimelineStatus, list_entries_for_user};
 use captura_storage::entity::{entry, entry_label, feed, label, user};
 use captura_types::EntryView;
 use chrono::{FixedOffset, Utc};

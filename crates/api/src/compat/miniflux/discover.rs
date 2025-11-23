@@ -1,8 +1,8 @@
-use super::error::{bad_request, from_api_error, internal, not_found, MfResult};
-use crate::auth::mf_auth;
+use super::error::{MfResult, bad_request, from_api_error, internal, not_found};
 use crate::AppState;
-use axum::extract::{Query, State};
+use crate::auth::mf_auth;
 use axum::Json;
+use axum::extract::{Query, State};
 use scraper::{Html, Selector};
 use std::collections::HashSet;
 use url::Url;

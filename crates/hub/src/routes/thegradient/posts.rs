@@ -81,8 +81,7 @@ pub const META_THEGRADIENT_POSTS: RouteMeta = RouteMeta {
     name: "The Gradient Posts",
     maintainers: &["captura"],
     url: "https://thegradient.pub/",
-    description:
-        "The Gradient blog posts with full article content, aligned with RSSHub /thegradient/posts route.",
+    description: "The Gradient blog posts with full article content, aligned with RSSHub /thegradient/posts route.",
     default_view: Some("articles"),
 };
 

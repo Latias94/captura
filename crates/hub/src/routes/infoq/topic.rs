@@ -19,8 +19,7 @@ pub const META_INFOQ_TOPIC: RouteMeta = RouteMeta {
     example: "/infoq/topic/1",
     params: &[ParamMeta {
         name: "id",
-        description:
-            "话题 id，可在 InfoQ 全部话题页面 URL 中找到，例如 https://www.infoq.cn/topic/1。",
+        description: "话题 id，可在 InfoQ 全部话题页面 URL 中找到，例如 https://www.infoq.cn/topic/1。",
         default: Some("1"),
         options: &[],
     }],

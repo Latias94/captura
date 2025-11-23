@@ -38,8 +38,7 @@ pub const META_BOOKFERE_CATEGORY: RouteMeta = RouteMeta {
     name: "书伴分类",
     maintainers: &["captura"],
     url: "https://bookfere.com",
-    description:
-        "Bookfere (书伴) category articles feed, aligned with RSSHub /bookfere/:category route.",
+    description: "Bookfere (书伴) category articles feed, aligned with RSSHub /bookfere/:category route.",
     default_view: Some("articles"),
 };
 

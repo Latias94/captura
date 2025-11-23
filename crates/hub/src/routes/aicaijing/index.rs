@@ -71,8 +71,7 @@ pub const META_AICAIJING_INDEX: RouteMeta = RouteMeta {
     params: &[
         ParamMeta {
             name: "category",
-            description:
-                "栏目类型：latest（最新）、recommend（推荐）、cover（封面）、information（按分类 id）。",
+            description: "栏目类型：latest（最新）、recommend（推荐）、cover（封面）、information（按分类 id）。",
             default: Some("latest"),
             options: &[
                 ("latest", "最新文章"),
@@ -83,8 +82,7 @@ pub const META_AICAIJING_INDEX: RouteMeta = RouteMeta {
         },
         ParamMeta {
             name: "id",
-            description:
-                "当 category=information 时的分类 id，例如 14 表示“热点-最新”，5 表示“热点-科技”等。",
+            description: "当 category=information 时的分类 id，例如 14 表示“热点-最新”，5 表示“热点-科技”等。",
             default: Some("14"),
             options: &[],
         },
@@ -97,8 +95,7 @@ pub const META_AICAIJING_INDEX: RouteMeta = RouteMeta {
     name: "AI 财经社 - 新闻与深度",
     maintainers: &["captura"],
     url: "https://www.aicaijing.com.cn",
-    description:
-        "AI 财经社热点与深度文章列表，对齐 RSSHub /aicaijing/:category?/:id? 路由。",
+    description: "AI 财经社热点与深度文章列表，对齐 RSSHub /aicaijing/:category?/:id? 路由。",
     default_view: Some("articles"),
 };
 

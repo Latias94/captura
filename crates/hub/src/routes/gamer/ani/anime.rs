@@ -57,8 +57,7 @@ pub const META_GAMER_ANI_ANIME: RouteMeta = RouteMeta {
     name: "動畫瘋 - 動畫",
     maintainers: &["captura"],
     url: "https://ani.gamer.com.tw",
-    description:
-        "Bahamut Ani-Gamer series episodes, aligned with RSSHub /gamer/ani/anime/:sn route.",
+    description: "Bahamut Ani-Gamer series episodes, aligned with RSSHub /gamer/ani/anime/:sn route.",
     default_view: Some("videos"),
 };
 

@@ -1,7 +1,7 @@
 use super::error::MfResult;
 use crate::AppState;
-use axum::extract::State;
 use axum::Json;
+use axum::extract::State;
 
 #[derive(serde::Serialize)]
 pub(crate) struct MfVersionResp {

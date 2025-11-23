@@ -54,8 +54,7 @@ pub const META_META_AI_BLOG: RouteMeta = RouteMeta {
     name: "Meta AI Blog",
     maintainers: &["captura"],
     url: "https://ai.meta.com/blog/",
-    description:
-        "Meta AI Blog recent posts via public GraphQL API, aligned with RSSHub /meta/ai/blog route.",
+    description: "Meta AI Blog recent posts via public GraphQL API, aligned with RSSHub /meta/ai/blog route.",
     default_view: Some("articles"),
 };
 

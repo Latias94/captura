@@ -11,8 +11,7 @@ pub const META_CNBLOGS_AGGSITE: RouteMeta = RouteMeta {
     example: "/cnblogs/aggsite/topdiggs",
     params: &[ParamMeta {
         name: "kind",
-        description:
-            "AggSite stream type: topdiggs (10-day recommended), topviews (10-day views), or headline.",
+        description: "AggSite stream type: topdiggs (10-day recommended), topviews (10-day views), or headline.",
         default: Some("topdiggs"),
         options: &[
             ("topdiggs", "10-day recommended"),
@@ -38,8 +37,7 @@ pub const META_CNBLOGS_AGGSITE: RouteMeta = RouteMeta {
     name: "博客园 AggSite 排行榜",
     maintainers: &["captura"],
     url: "https://www.cnblogs.com/aggsite/topdiggs",
-    description:
-        "cnblogs.com AggSite rankings (10-day recommended, 10-day most viewed, and homepage headline), aligned with RSSHub /cnblogs/aggsite routes.",
+    description: "cnblogs.com AggSite rankings (10-day recommended, 10-day most viewed, and homepage headline), aligned with RSSHub /cnblogs/aggsite routes.",
     default_view: Some("articles"),
 };
 

@@ -168,9 +168,10 @@ pub async fn handler(ctx: &mut HubCtx<'_>) -> captura_common::Result<HubData> {
             link_id
         );
 
-        let data_url = hey_util::calculate(
-            &format!("https://api.xiaoheihe.cn/bbs/app/api/share/data/?os_type=web&app=heybox&client_type=mobile&version=999.0.3&x_client_type=web&x_os_type=Mac&x_app=heybox&heybox_id=-1&offset=0&limit=3&link_id={}&use_concept_type=", link_id),
-        )?;
+        let data_url = hey_util::calculate(&format!(
+            "https://api.xiaoheihe.cn/bbs/app/api/share/data/?os_type=web&app=heybox&client_type=mobile&version=999.0.3&x_client_type=web&x_os_type=Mac&x_app=heybox&heybox_id=-1&offset=0&limit=3&link_id={}&use_concept_type=",
+            link_id
+        ))?;
         let data_resp = client
             .get(&data_url)
             .send()

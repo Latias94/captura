@@ -75,8 +75,7 @@ pub const META_LEETCODE_DAILY_CN: RouteMeta = RouteMeta {
     name: "LeetCode 每日一题（中文）",
     maintainers: &["captura"],
     url: "https://leetcode.cn/",
-    description:
-        "LeetCode.cn 每日一题（中文），对标 RSSHub /leetcode/dailyquestion-cn 路由的精简实现。",
+    description: "LeetCode.cn 每日一题（中文），对标 RSSHub /leetcode/dailyquestion-cn 路由的精简实现。",
     default_view: Some("articles"),
 };
 

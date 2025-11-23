@@ -38,8 +38,7 @@ pub const META_YANDE_POST_POPULAR: RouteMeta = RouteMeta {
     name: "yande.re Popular Recent Posts",
     maintainers: &["captura"],
     url: "https://yande.re",
-    description:
-        "yande.re popular recent posts via JSON API, aligned with RSSHub /yande/post/popular_recent route.",
+    description: "yande.re popular recent posts via JSON API, aligned with RSSHub /yande/post/popular_recent route.",
     default_view: Some("pictures"),
 };
 

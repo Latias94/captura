@@ -23,8 +23,7 @@ pub const META_READHUB_INDEX: RouteMeta = RouteMeta {
     name: "Readhub 热门话题",
     maintainers: &["captura"],
     url: "https://readhub.cn",
-    description:
-        "Readhub 热门话题列表，基于公开 JSON 接口的简化实现，对齐 RSSHub /readhub 路由的默认分类。",
+    description: "Readhub 热门话题列表，基于公开 JSON 接口的简化实现，对齐 RSSHub /readhub 路由的默认分类。",
     default_view: Some("articles"),
 };
 

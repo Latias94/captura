@@ -32,8 +32,7 @@ pub const META_PRH_ARTICLES: RouteMeta = RouteMeta {
     name: "Penguin Random House Articles",
     maintainers: &["captura"],
     url: "https://www.penguinrandomhouse.com/articles",
-    description:
-        "In-depth interviews and essays from Penguin Random House, aligned with RSSHub /penguin-random-house/articles route.",
+    description: "In-depth interviews and essays from Penguin Random House, aligned with RSSHub /penguin-random-house/articles route.",
     default_view: Some("articles"),
 };
 

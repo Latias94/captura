@@ -23,8 +23,7 @@ pub const META_ALPINELINUX_PKGS: RouteMeta = RouteMeta {
         },
         ParamMeta {
             name: "routeParams",
-            description:
-                "Raw query string for filters, e.g. branch=edge&repo=main&arch=x86_64&maintainer=Jakub%20Jirutka",
+            description: "Raw query string for filters, e.g. branch=edge&repo=main&arch=x86_64&maintainer=Jakub%20Jirutka",
             default: Some(""),
             options: &[],
         },

@@ -1,4 +1,4 @@
-use crate::routes::bangumi_tv::{local_name, API_ROOT, WEB_ROOT};
+use crate::routes::bangumi_tv::{API_ROOT, WEB_ROOT, local_name};
 use crate::routes::types::{
     Features, HubCtx, HubData, HubItem, ParamMeta, Radar, Route, RouteMeta,
 };
@@ -21,8 +21,7 @@ pub const META_BANGUMI_SUBJECT_TOPICS: RouteMeta = RouteMeta {
         },
         ParamMeta {
             name: "show_original_name",
-            description:
-                "Whether to show original title (true/false, 1/0), default false (show localized name if available).",
+            description: "Whether to show original title (true/false, 1/0), default false (show localized name if available).",
             default: Some("false"),
             options: &[
                 ("false", "Use localized title when possible"),
@@ -38,8 +37,7 @@ pub const META_BANGUMI_SUBJECT_TOPICS: RouteMeta = RouteMeta {
     name: "Bangumi 条目讨论帖",
     maintainers: &["captura"],
     url: "https://bangumi.tv",
-    description:
-        "Bangumi.tv subject discussion topics via official API, aligned with RSSHub /bangumi.tv/subject/:id/topics route.",
+    description: "Bangumi.tv subject discussion topics via official API, aligned with RSSHub /bangumi.tv/subject/:id/topics route.",
     default_view: Some("articles"),
 };
 

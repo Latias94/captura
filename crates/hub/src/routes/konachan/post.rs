@@ -38,8 +38,7 @@ pub const META_KONACHAN_POST_POPULAR: RouteMeta = RouteMeta {
     name: "Konachan Popular Recent Posts",
     maintainers: &["captura"],
     url: "https://konachan.com",
-    description:
-        "Konachan popular recent posts via JSON API, aligned with RSSHub /konachan/post/popular_recent route.",
+    description: "Konachan popular recent posts via JSON API, aligned with RSSHub /konachan/post/popular_recent route.",
     default_view: Some("pictures"),
 };
 

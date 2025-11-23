@@ -125,8 +125,7 @@ pub const META_CGTN_PODCAST: RouteMeta = RouteMeta {
     name: "CGTN 播客",
     maintainers: &["captura"],
     url: "https://www.cgtn.com/radio/",
-    description:
-        "中国环球电视网（CGTN）电台播客节目回放列表，包含音频播放链接，适合订阅英语/双语节目。",
+    description: "中国环球电视网（CGTN）电台播客节目回放列表，包含音频播放链接，适合订阅英语/双语节目。",
     default_view: Some("podcast"),
 };
 

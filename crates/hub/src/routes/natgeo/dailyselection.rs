@@ -48,8 +48,7 @@ pub const META_NATGEO_DAILYSELECTION: RouteMeta = RouteMeta {
     name: "National Geographic Daily Selection",
     maintainers: &["captura"],
     url: "http://dili.bdatu.com",
-    description:
-        "NatGeo-style daily selection photos via dili.bdatu.com JSON API, aligned with RSSHub /natgeo/dailyselection route.",
+    description: "NatGeo-style daily selection photos via dili.bdatu.com JSON API, aligned with RSSHub /natgeo/dailyselection route.",
     default_view: Some("pictures"),
 };
 

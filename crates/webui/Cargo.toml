@@ -1,7 +1,7 @@
 [package]
 name = "captura-webui"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 
 [lib]
 name = "captura_webui"
@@ -9,9 +9,9 @@ path = "src/lib.rs"
 
 [dependencies]
 axum.workspace = true
-askama = { version = "0.13", features = ["serde_json"] }
-mime = "0.3"
-rust-embed = "8"
+askama.workspace = true
+mime.workspace = true
+rust-embed.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 tokio.workspace = true

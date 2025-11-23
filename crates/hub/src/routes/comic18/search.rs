@@ -62,8 +62,7 @@ pub const META_COMIC18_SEARCH: RouteMeta = RouteMeta {
     name: "禁漫天堂 - 搜索",
     maintainers: &["captura"],
     url: "https://jmcomic.me",
-    description:
-        "JMComic / 禁漫天堂 search results, aligned with RSSHub /18comic/search/:option?/:category?/:keyword?/:time?/:order? route.",
+    description: "JMComic / 禁漫天堂 search results, aligned with RSSHub /18comic/search/:option?/:category?/:keyword?/:time?/:order? route.",
     default_view: Some("albums"),
 };
 

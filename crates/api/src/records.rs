@@ -1,15 +1,15 @@
 use axum::extract::Query;
 use axum_extra::typed_header::TypedHeader;
-use headers::authorization::Bearer;
 use headers::Authorization;
+use headers::authorization::Bearer;
 use sea_orm::{
     ColumnTrait, EntityTrait, JoinType, QueryFilter, QueryOrder, QuerySelect, RelationTrait,
 };
 use serde::Serialize;
 
-use crate::auth::AuthUser;
-use crate::error::{internal, ApiResult};
 use crate::AppState;
+use crate::auth::AuthUser;
+use crate::error::{ApiResult, internal};
 use captura_storage::entity::{feed, job, rule};
 
 /// Aggregated per-rule execution statistics based on the job table.

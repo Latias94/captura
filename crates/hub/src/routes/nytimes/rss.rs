@@ -22,8 +22,7 @@ pub const META_NYTIMES_RSS: RouteMeta = RouteMeta {
     example: "/nytimes/rss/HomePage",
     params: &[ParamMeta {
         name: "cat",
-        description:
-            "NYTimes RSS category name, matching the last segment in https://www.nytimes.com/rss",
+        description: "NYTimes RSS category name, matching the last segment in https://www.nytimes.com/rss",
         default: Some("HomePage"),
         options: &[],
     }],

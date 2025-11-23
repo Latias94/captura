@@ -2,8 +2,8 @@ use crate::routes::types::{Features, HubCtx, HubData, HubItem, Radar, Route, Rou
 use captura_hub_macros::register_hub_route;
 use scraper::{Html, Selector};
 
-use super::util::enrich_items;
 use super::util::BASE_URL;
+use super::util::enrich_items;
 
 pub const META_YYSTV_DOCS: RouteMeta = RouteMeta {
     hub_id: "yystv/docs",

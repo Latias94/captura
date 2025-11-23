@@ -17,8 +17,7 @@ pub const META_SSPAI_SERIES: RouteMeta = RouteMeta {
     name: "SSPAI Latest Paid Series",
     maintainers: &["captura"],
     url: "https://sspai.com/series",
-    description:
-        "少数派最新上架付费专栏，仅作更新提醒，不含付费正文，对标 RSSHub /sspai/series 路由。",
+    description: "少数派最新上架付费专栏，仅作更新提醒，不含付费正文，对标 RSSHub /sspai/series 路由。",
     default_view: Some("articles"),
 };
 

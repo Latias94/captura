@@ -121,8 +121,7 @@ pub const META_OTOBANANA_TIMELINE: RouteMeta = RouteMeta {
     name: "OTOBANANA Timeline タイムライン",
     maintainers: &["captura"],
     url: "https://otobanana.com",
-    description:
-        "OTOBANANA user timeline (casts + messages), aligned with RSSHub /otobanana/user/:id route.",
+    description: "OTOBANANA user timeline (casts + messages), aligned with RSSHub /otobanana/user/:id route.",
     default_view: Some("podcast"),
 };
 

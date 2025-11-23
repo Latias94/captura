@@ -2,7 +2,7 @@ use crate::routes::types::{Features, HubCtx, HubData, ParamMeta, Radar, Route, R
 use captura_common::Error;
 use captura_hub_macros::register_hub_route;
 
-use super::{fetch_cnbeta, CnbetaKind, ROOT_URL};
+use super::{CnbetaKind, ROOT_URL, fetch_cnbeta};
 
 pub const META_CNBETA_CATEGORY: RouteMeta = RouteMeta {
     hub_id: "cnbeta/category",
@@ -11,8 +11,7 @@ pub const META_CNBETA_CATEGORY: RouteMeta = RouteMeta {
     example: "/cnbeta/category/movie",
     params: &[ParamMeta {
         name: "id",
-        description:
-            "Category id from the URL, such as movie / music / game / comic / funny / science / soft.",
+        description: "Category id from the URL, such as movie / music / game / comic / funny / science / soft.",
         default: None,
         options: &[
             ("movie", "影视"),
@@ -32,8 +31,7 @@ pub const META_CNBETA_CATEGORY: RouteMeta = RouteMeta {
     name: "cnBeta 分类",
     maintainers: &["captura"],
     url: "https://www.cnbeta.com.tw",
-    description:
-        "cnBeta.COM category streams, aligned with RSSHub /cnbeta/category/:id route.",
+    description: "cnBeta.COM category streams, aligned with RSSHub /cnbeta/category/:id route.",
     default_view: Some("articles"),
 };
 

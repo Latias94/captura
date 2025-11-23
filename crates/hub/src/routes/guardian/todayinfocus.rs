@@ -41,8 +41,7 @@ pub const META_GUARDIAN_TODAYINFOCUS: RouteMeta = RouteMeta {
     name: "The Guardian – Today in Focus",
     maintainers: &["captura"],
     url: "https://www.theguardian.com/news/series/todayinfocus",
-    description:
-        "The Guardian 今日深度新闻播客 Today in Focus，基于官方 podcast XML 源构建，自动内嵌音频。",
+    description: "The Guardian 今日深度新闻播客 Today in Focus，基于官方 podcast XML 源构建，自动内嵌音频。",
     default_view: Some("podcast"),
 };
 

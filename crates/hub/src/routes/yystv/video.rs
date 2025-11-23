@@ -4,8 +4,8 @@ use crate::routes::types::{
 use captura_hub_macros::register_hub_route;
 use scraper::{Html, Selector};
 
-use super::util::enrich_items;
 use super::util::BASE_URL;
+use super::util::enrich_items;
 
 pub const META_YYSTV_VIDEO: RouteMeta = RouteMeta {
     hub_id: "yystv/video",
@@ -14,8 +14,7 @@ pub const META_YYSTV_VIDEO: RouteMeta = RouteMeta {
     example: "/yystv/video",
     params: &[ParamMeta {
         name: "category",
-        description:
-            "Video category, e.g. sthmore, bosssay, arcade, salt, doc, olddays, encyclopedia, translate, theater. Defaults to all videos.",
+        description: "Video category, e.g. sthmore, bosssay, arcade, salt, doc, olddays, encyclopedia, translate, theater. Defaults to all videos.",
         default: None,
         options: &[
             ("sthmore", "更多精彩"),

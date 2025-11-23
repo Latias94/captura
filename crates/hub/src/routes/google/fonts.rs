@@ -16,8 +16,7 @@ pub const META_GOOGLE_FONTS: RouteMeta = RouteMeta {
     example: "/google/fonts/date",
     params: &[ParamMeta {
         name: "sort",
-        description:
-            "Sorting type, one of date / trending / popularity / alpha / style, default date。",
+        description: "Sorting type, one of date / trending / popularity / alpha / style, default date。",
         default: Some("date"),
         options: &[
             ("date", "Newest"),

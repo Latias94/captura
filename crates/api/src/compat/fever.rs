@@ -1,8 +1,8 @@
 use axum::{
+    Router,
     extract::{Query, State},
     response::Response,
     routing::get,
-    Router,
 };
 
 use crate::AppState;

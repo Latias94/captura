@@ -83,8 +83,7 @@ pub const META_YOMUJP_LEVEL: RouteMeta = RouteMeta {
     name: "日本語多読道場等级",
     maintainers: &["captura"],
     url: "https://yomujp.com",
-    description:
-        "Japanese extensive reading site Yomujp by level, aligned with RSSHub /yomujp/:level route.",
+    description: "Japanese extensive reading site Yomujp by level, aligned with RSSHub /yomujp/:level route.",
     default_view: Some("articles"),
 };
 

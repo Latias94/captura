@@ -1,7 +1,7 @@
 [package]
 name = "captura-cli"
-version = "0.1.0"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
 
 [dependencies]
 anyhow.workspace = true
@@ -17,4 +17,3 @@ captura-common = { path = "../common" }
 captura-hub = { path = "../hub" }
 captura-pipeline = { path = "../pipeline" }
 captura-storage = { path = "../storage" }
-

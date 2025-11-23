@@ -89,11 +89,7 @@ pub async fn handler(_ctx: &mut HubCtx<'_>) -> captura_common::Result<HubData> {
             link,
             author: entry.authors.get(0).and_then(|a| {
                 let name = a.name.clone();
-                if name.is_empty() {
-                    None
-                } else {
-                    Some(name)
-                }
+                if name.is_empty() { None } else { Some(name) }
             }),
             pub_date: pub_date
                 .and_then(|dt| chrono::FixedOffset::east_opt(0).map(|off| dt.with_timezone(&off))),

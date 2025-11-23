@@ -1,7 +1,7 @@
 [package]
 name = "captura-testkit"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 
 [dependencies]
 captura-storage = { path = "../storage" }
@@ -15,4 +15,3 @@ base64.workspace = true
 [lib]
 name = "captura_testkit"
 path = "src/lib.rs"
-

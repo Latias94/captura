@@ -2,7 +2,7 @@ use sea_orm::Set;
 
 use captura_storage::entity::feed;
 
-use crate::error::{bad_request, ApiResult};
+use crate::error::{ApiResult, bad_request};
 
 /// Encapsulate updatable fetch/rule options for a feed so that different API layers can reuse the same logic.
 pub(crate) struct FeedUpdateOptions {

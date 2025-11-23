@@ -16,8 +16,7 @@ pub const META_AIJISHU_CHANNEL: RouteMeta = RouteMeta {
     example: "/aijishu/channel/ai",
     params: &[ParamMeta {
         name: "name",
-        description:
-            "Channel name, taken from Aijishu URLs, e.g. ai / server / soc / iot.",
+        description: "Channel name, taken from Aijishu URLs, e.g. ai / server / soc / iot.",
         default: Some("ai"),
         options: &[],
     }],
@@ -29,8 +28,7 @@ pub const META_AIJISHU_CHANNEL: RouteMeta = RouteMeta {
     name: "极术社区频道",
     maintainers: &["captura"],
     url: "https://aijishu.com",
-    description:
-        "Aijishu channel articles list (first page only), for example AI 应用频道，对齐 RSSHub /aijishu/channel/:name 的简化实现。",
+    description: "Aijishu channel articles list (first page only), for example AI 应用频道，对齐 RSSHub /aijishu/channel/:name 的简化实现。",
     default_view: Some("articles"),
 };
 

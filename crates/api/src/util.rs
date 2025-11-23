@@ -7,7 +7,7 @@ use captura_storage::entity::{category, entry};
 use captura_types::EntryDto;
 use sea_orm::EntityTrait;
 
-use crate::error::{bad_request, forbidden, internal, ApiResult};
+use crate::error::{ApiResult, bad_request, forbidden, internal};
 
 // Common paging and sorting validation helpers
 #[allow(dead_code)]

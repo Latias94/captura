@@ -29,11 +29,7 @@ pub fn extract_html(parent: &ElementRef, sel: &str) -> Option<String> {
         for el in parent.select(&s) {
             out.push_str(&el.html());
         }
-        if out.is_empty() {
-            None
-        } else {
-            Some(out)
-        }
+        if out.is_empty() { None } else { Some(out) }
     } else {
         None
     }

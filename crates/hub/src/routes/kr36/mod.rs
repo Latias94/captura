@@ -27,13 +27,15 @@ pub const META_36KR: RouteMeta = RouteMeta {
                 ("life", "Life"),
                 ("estate", "Real estate"),
                 ("workplace", "Workplace"),
-                ("search", "Search (used with subCategory 'articles' or 'newsflashes')"),
+                (
+                    "search",
+                    "Search (used with subCategory 'articles' or 'newsflashes')",
+                ),
             ],
         },
         ParamMeta {
             name: "subCategory",
-            description:
-                "Optional sub-category, e.g. 'articles' when category=search, kept for compatibility",
+            description: "Optional sub-category, e.g. 'articles' when category=search, kept for compatibility",
             default: None,
             options: &[],
         },
@@ -52,8 +54,7 @@ pub const META_36KR: RouteMeta = RouteMeta {
     name: "36kr News / Flashes",
     maintainers: &["captura"],
     url: "https://www.36kr.com/",
-    description:
-        "36kr news, flashes and search results (simplified adaptation of RSSHub 36kr route).",
+    description: "36kr news, flashes and search results (simplified adaptation of RSSHub 36kr route).",
     default_view: Some("articles"),
 };
 

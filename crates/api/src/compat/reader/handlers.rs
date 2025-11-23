@@ -4,8 +4,8 @@ use sea_orm::{
     QuerySelect, RelationTrait,
 };
 
-use crate::error::{internal, ApiResult};
 use crate::AppState;
+use crate::error::{ApiResult, internal};
 use captura_storage::entity::{category, entry, feed};
 
 use super::types::*;

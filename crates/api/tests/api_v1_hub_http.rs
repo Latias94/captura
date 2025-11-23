@@ -1,5 +1,5 @@
 use axum::{body::Body, http::Request};
-use captura_api::{build_router, AppState};
+use captura_api::{AppState, build_router};
 use tower::ServiceExt;
 
 /// `/api/v1/feeds/validate-hub` for known and unknown routes.

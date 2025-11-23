@@ -35,8 +35,7 @@ pub const META_GAMER_HOT: RouteMeta = RouteMeta {
     name: "巴哈姆特 - 本板推薦",
     maintainers: &["captura"],
     url: "https://forum.gamer.com.tw",
-    description:
-        "Bahamut forum board recommended topics, aligned with RSSHub /gamer/hot/:bsn route.",
+    description: "Bahamut forum board recommended topics, aligned with RSSHub /gamer/hot/:bsn route.",
     default_view: Some("articles"),
 };
 

@@ -24,8 +24,7 @@ pub const META_THEVERGE_RSS: RouteMeta = RouteMeta {
     example: "/theverge",
     params: &[ParamMeta {
         name: "hub",
-        description:
-            "The Verge hub slug, e.g. 'apple', 'android', 'gaming'; empty for All Posts",
+        description: "The Verge hub slug, e.g. 'apple', 'android', 'gaming'; empty for All Posts",
         default: None,
         options: &[],
     }],
@@ -37,8 +36,7 @@ pub const META_THEVERGE_RSS: RouteMeta = RouteMeta {
     name: "The Verge RSS",
     maintainers: &["captura"],
     url: "https://www.theverge.com/",
-    description:
-        "The Verge category feeds backed by official RSS endpoints, with optional Next.js full-text parsing.",
+    description: "The Verge category feeds backed by official RSS endpoints, with optional Next.js full-text parsing.",
     default_view: Some("articles"),
 };
 

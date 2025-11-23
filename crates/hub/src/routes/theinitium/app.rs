@@ -101,8 +101,7 @@ pub const META_THEINITIUM_APP: RouteMeta = RouteMeta {
     name: "端传媒 App",
     maintainers: &["captura"],
     url: "https://app.theinitium.com",
-    description:
-        "The Initium App timelines (latest, daily brief, etc.), simplified version of RSSHub /theinitium/app.",
+    description: "The Initium App timelines (latest, daily brief, etc.), simplified version of RSSHub /theinitium/app.",
     default_view: Some("articles"),
 };
 

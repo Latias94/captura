@@ -1,5 +1,5 @@
 use axum::{body::Body, http::Request};
-use captura_api::{build_router, AppState};
+use captura_api::{AppState, build_router};
 use captura_storage::entity::{entry, feed};
 use captura_types::EntryView;
 use chrono::{FixedOffset, Utc};
@@ -172,9 +172,11 @@ async fn api_v1_entries_search_and_id_cursors_http() {
         .await
         .unwrap();
     let arr_before: Vec<serde_json::Value> = serde_json::from_slice(&bytes).unwrap();
-    assert!(arr_before
-        .iter()
-        .all(|e| e["id"].as_i64().unwrap_or(i64::MAX) < all_ids[2]));
+    assert!(
+        arr_before
+            .iter()
+            .all(|e| e["id"].as_i64().unwrap_or(i64::MAX) < all_ids[2])
+    );
 
     // 4) after_id cursor should exclude entries with id <= after_id.
     let req_after = Request::get(format!(
@@ -194,7 +196,9 @@ async fn api_v1_entries_search_and_id_cursors_http() {
         .await
         .unwrap();
     let arr_after: Vec<serde_json::Value> = serde_json::from_slice(&bytes).unwrap();
-    assert!(arr_after
-        .iter()
-        .all(|e| e["id"].as_i64().unwrap_or(i64::MIN) > all_ids[0]));
+    assert!(
+        arr_after
+            .iter()
+            .all(|e| e["id"].as_i64().unwrap_or(i64::MIN) > all_ids[0])
+    );
 }

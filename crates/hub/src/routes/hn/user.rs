@@ -13,8 +13,7 @@ pub const META_HACKERNEWS: RouteMeta = RouteMeta {
     params: &[
         ParamMeta {
             name: "section",
-            description:
-                "Content section: index, newest, show, ask, over, threads, submitted (default: index)",
+            description: "Content section: index, newest, show, ask, over, threads, submitted (default: index)",
             default: Some("index"),
             options: &[
                 ("index", "Front page (news)"),
@@ -38,25 +37,20 @@ pub const META_HACKERNEWS: RouteMeta = RouteMeta {
         },
         ParamMeta {
             name: "user",
-            description:
-                "User id for threads/submitted sections; for section=over, interpreted as points threshold",
+            description: "User id for threads/submitted sections; for section=over, interpreted as points threshold",
             default: None,
             options: &[],
         },
     ],
     features: Features::basic(),
     radar: &[Radar {
-        source: &[
-            "news.ycombinator.com/:section",
-            "news.ycombinator.com",
-        ],
+        source: &["news.ycombinator.com/:section", "news.ycombinator.com"],
         target: "/:section",
     }],
     name: "Hacker News (sections/users)",
     maintainers: &["captura"],
     url: "https://news.ycombinator.com/",
-    description:
-        "Hacker News section and user feeds (simplified version of RSSHub hackernews route).",
+    description: "Hacker News section and user feeds (simplified version of RSSHub hackernews route).",
     default_view: Some("articles"),
 };
 

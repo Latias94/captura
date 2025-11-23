@@ -14,8 +14,7 @@ pub const META_DOUBAN_MOVIE_WEEKLY: RouteMeta = RouteMeta {
     example: "/douban/movie/weekly",
     params: &[ParamMeta {
         name: "kind",
-        description:
-            "榜单类型，可在榜单页 URL 中找到，默认 movie_weekly_best（电影口碑榜），例如 tv_chinese_best_weekly。",
+        description: "榜单类型，可在榜单页 URL 中找到，默认 movie_weekly_best（电影口碑榜），例如 tv_chinese_best_weekly。",
         default: Some("movie_weekly_best"),
         options: &[
             ("movie_weekly_best", "一周口碑电影榜"),

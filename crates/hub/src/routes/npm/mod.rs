@@ -42,8 +42,7 @@ pub const META_NPM_PACKAGE: RouteMeta = RouteMeta {
     name: "NPM Package",
     maintainers: &["captura"],
     url: "https://www.npmjs.com/",
-    description:
-        "NPM package snapshot with downloads (day/week/month) and recent version timeline.",
+    description: "NPM package snapshot with downloads (day/week/month) and recent version timeline.",
     default_view: Some("articles"),
 };
 

@@ -12,26 +12,21 @@ pub const META_BANGUMI_USER_BLOG: RouteMeta = RouteMeta {
     path: "/bangumi.tv/user/blog/:id",
     categories: &["anime"],
     example: "/bangumi.tv/user/blog/sai",
-    params: &[
-        ParamMeta {
-            name: "id",
-            description: "Bangumi user id (username), from user page URL.",
-            default: None,
-            options: &[],
-        },
-    ],
+    params: &[ParamMeta {
+        name: "id",
+        description: "Bangumi user id (username), from user page URL.",
+        default: None,
+        options: &[],
+    }],
     features: Features::basic(),
-    radar: &[
-        Radar {
-            source: &["bgm.tv/user/:id", "bangumi.tv/user/:id"],
-            target: "/user/blog/:id",
-        },
-    ],
+    radar: &[Radar {
+        source: &["bgm.tv/user/:id", "bangumi.tv/user/:id"],
+        target: "/user/blog/:id",
+    }],
     name: "Bangumi 用户日志",
     maintainers: &["captura"],
     url: "https://bangumi.tv",
-    description:
-        "Bangumi.tv user blog entries scraped from HTML, aligned with RSSHub /bangumi.tv/user/blog/:id route.",
+    description: "Bangumi.tv user blog entries scraped from HTML, aligned with RSSHub /bangumi.tv/user/blog/:id route.",
     default_view: Some("articles"),
 };
 

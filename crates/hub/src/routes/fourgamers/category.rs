@@ -3,7 +3,7 @@ use crate::routes::types::{
 };
 use captura_hub_macros::register_hub_route;
 
-use super::util::{enrich_items, fetch_by_category, fetch_latest, BASE_URL};
+use super::util::{BASE_URL, enrich_items, fetch_by_category, fetch_latest};
 
 pub const META_FOURGAMERS_CATEGORY: RouteMeta = RouteMeta {
     hub_id: "4gamers/category",

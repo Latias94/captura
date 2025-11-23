@@ -21,8 +21,7 @@ pub const META_NEWYORKER_RSS: RouteMeta = RouteMeta {
     example: "/newyorker/rss/news",
     params: &[ParamMeta {
         name: "section",
-        description:
-            "New Yorker section name used in feed URLs, e.g. news, culture, books-and-fiction.",
+        description: "New Yorker section name used in feed URLs, e.g. news, culture, books-and-fiction.",
         default: Some("news"),
         options: &[],
     }],
@@ -34,8 +33,7 @@ pub const META_NEWYORKER_RSS: RouteMeta = RouteMeta {
     name: "The New Yorker RSS",
     maintainers: &["captura"],
     url: "https://www.newyorker.com",
-    description:
-        "Official RSS feeds from The New Yorker, parameterized by section (news, culture, etc.).",
+    description: "Official RSS feeds from The New Yorker, parameterized by section (news, culture, etc.).",
     default_view: Some("articles"),
 };
 

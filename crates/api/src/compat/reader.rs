@@ -1,18 +1,18 @@
 use axum::{
+    Form, Json, Router,
     extract::{Query, State},
     routing::{get, post},
-    Form, Json, Router,
 };
 use axum_extra::typed_header::TypedHeader;
-use headers::authorization::Bearer;
 use headers::Authorization;
+use headers::authorization::Bearer;
 pub(crate) mod handlers;
 pub(crate) mod types;
 use self::types::*;
 
+use crate::AppState;
 use crate::auth::AuthUser;
 use crate::error::ApiResult;
-use crate::AppState;
 
 // ---------- Endpoints ----------
 pub(crate) async fn subscription_list(

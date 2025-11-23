@@ -87,8 +87,7 @@ pub const META_SOUNDON_PODCAST: RouteMeta = RouteMeta {
     name: "SoundOn 播客",
     maintainers: &["captura"],
     url: "https://player.soundon.fm",
-    description:
-        "SoundOn 官方播客节目，基于公开 JSON API，包含音频播放链接（通过 HTML5 audio 内嵌）。",
+    description: "SoundOn 官方播客节目，基于公开 JSON API，包含音频播放链接（通过 HTML5 audio 内嵌）。",
     default_view: Some("podcast"),
 };
 

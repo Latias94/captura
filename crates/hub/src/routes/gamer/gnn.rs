@@ -14,8 +14,7 @@ pub const META_GAMER_GNN: RouteMeta = RouteMeta {
     example: "/gamer/gnn/1",
     params: &[ParamMeta {
         name: "category",
-        description:
-            "Category id, e.g. 1=PC, 3=TV/handheld, 4=mobile, 5=anime/manga, 9=feature, 11=events, 13=eSports, ns, ps5, ps4, xbone, xbsx, pc, olg, ios, android, web, comic, anime.",
+        description: "Category id, e.g. 1=PC, 3=TV/handheld, 4=mobile, 5=anime/manga, 9=feature, 11=events, 13=eSports, ns, ps5, ps4, xbone, xbsx, pc, olg, ios, android, web, comic, anime.",
         default: None,
         options: &[
             ("1", "PC"),
@@ -55,8 +54,7 @@ pub const META_GAMER_GNN: RouteMeta = RouteMeta {
     name: "巴哈姆特 GNN 新聞",
     maintainers: &["captura"],
     url: "https://gnn.gamer.com.tw",
-    description:
-        "Bahamut GNN news list, roughly aligned with RSSHub /gamer/gnn/:category route (without content caching).",
+    description: "Bahamut GNN news list, roughly aligned with RSSHub /gamer/gnn/:category route (without content caching).",
     default_view: Some("articles"),
 };
 

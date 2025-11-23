@@ -41,8 +41,7 @@ pub const META_SYNTAX_PODCAST: RouteMeta = RouteMeta {
     name: "Syntax - Tasty Web Development Treats",
     maintainers: &["captura"],
     url: "https://syntax.fm",
-    description:
-        "前端与全栈开发播客 Syntax，由 Wes Bos 和 Scott Tolinski 主持，基于官方 RSS https://feed.syntax.fm/rss。",
+    description: "前端与全栈开发播客 Syntax，由 Wes Bos 和 Scott Tolinski 主持，基于官方 RSS https://feed.syntax.fm/rss。",
     default_view: Some("podcast"),
 };
 

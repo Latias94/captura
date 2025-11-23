@@ -41,8 +41,7 @@ pub const META_TALKPYTHON_EPISODES: RouteMeta = RouteMeta {
     name: "Talk Python To Me",
     maintainers: &["captura"],
     url: "https://talkpython.fm/episodes",
-    description:
-        "Python 社区播客 Talk Python To Me，基于官方 RSS https://talkpython.fm/episodes/rss，自动内嵌音频。",
+    description: "Python 社区播客 Talk Python To Me，基于官方 RSS https://talkpython.fm/episodes/rss，自动内嵌音频。",
     default_view: Some("podcast"),
 };
 

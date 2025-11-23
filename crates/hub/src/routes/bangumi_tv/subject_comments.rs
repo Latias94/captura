@@ -21,8 +21,7 @@ pub const META_BANGUMI_SUBJECT_COMMENTS: RouteMeta = RouteMeta {
         },
         ParamMeta {
             name: "min_length",
-            description:
-                "Minimum comment length to include (number of characters), default 0 (no filter).",
+            description: "Minimum comment length to include (number of characters), default 0 (no filter).",
             default: Some("0"),
             options: &[],
         },
@@ -35,8 +34,7 @@ pub const META_BANGUMI_SUBJECT_COMMENTS: RouteMeta = RouteMeta {
     name: "Bangumi 条目吐槽",
     maintainers: &["captura"],
     url: "https://bangumi.tv",
-    description:
-        "Bangumi.tv subject comments (吐槽箱) scraped from HTML, aligned with RSSHub /bangumi.tv/subject/:id/comments route.",
+    description: "Bangumi.tv subject comments (吐槽箱) scraped from HTML, aligned with RSSHub /bangumi.tv/subject/:id/comments route.",
     default_view: Some("articles"),
 };
 

@@ -1,12 +1,12 @@
-use axum::{extract::Path, extract::State, Json};
+use axum::{Json, extract::Path, extract::State};
 use axum_extra::typed_header::TypedHeader;
-use headers::authorization::Bearer;
 use headers::Authorization;
+use headers::authorization::Bearer;
 use serde::{Deserialize, Serialize};
 
-use crate::auth::AuthUser;
-use crate::error::{bad_request, internal, not_found, ApiResult};
 use crate::AppState;
+use crate::auth::AuthUser;
+use crate::error::{ApiResult, bad_request, internal, not_found};
 
 #[derive(Deserialize)]
 pub(crate) struct ValidateReq {

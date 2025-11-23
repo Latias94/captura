@@ -31,8 +31,7 @@ pub const META_MAGNUMPHOTOS_MAGAZINE: RouteMeta = RouteMeta {
     name: "Magnum Photos Magazine",
     maintainers: &["captura"],
     url: "https://www.magnumphotos.com",
-    description:
-        "Magnum Photos magazine feed based on the official site RSS, aligned with RSSHub /magnumphotos/magazine route.",
+    description: "Magnum Photos magazine feed based on the official site RSS, aligned with RSSHub /magnumphotos/magazine route.",
     default_view: Some("pictures"),
 };
 

@@ -1,7 +1,7 @@
 use crate::routes::types::{Features, HubCtx, HubData, Radar, Route, RouteMeta};
 use captura_hub_macros::register_hub_route;
 
-use super::{fetch_cnbeta, CnbetaKind, ROOT_URL};
+use super::{CnbetaKind, ROOT_URL, fetch_cnbeta};
 
 pub const META_CNBETA_INDEX: RouteMeta = RouteMeta {
     hub_id: "cnbeta",
@@ -17,8 +17,7 @@ pub const META_CNBETA_INDEX: RouteMeta = RouteMeta {
     name: "cnBeta 头条资讯",
     maintainers: &["captura"],
     url: "https://www.cnbeta.com.tw",
-    description:
-        "cnBeta.COM homepage stream (headlines and latest articles), aligned with RSSHub /cnbeta route.",
+    description: "cnBeta.COM homepage stream (headlines and latest articles), aligned with RSSHub /cnbeta route.",
     default_view: Some("articles"),
 };
 

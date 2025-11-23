@@ -25,32 +25,26 @@ pub const META_GITHUB_TRENDING: RouteMeta = RouteMeta {
         },
         crate::routes::types::ParamMeta {
             name: "language",
-            description:
-                "repository language slug in /trending/{language}; use 'any' or empty for all languages",
+            description: "repository language slug in /trending/{language}; use 'any' or empty for all languages",
             default: Some("any"),
             options: &[],
         },
         crate::routes::types::ParamMeta {
             name: "spoken_language",
-            description:
-                "spoken_language_code in trending URL; empty for all spoken languages",
+            description: "spoken_language_code in trending URL; empty for all spoken languages",
             default: None,
             options: &[],
         },
     ],
-    features: Features::with_config(&[
-        FeatureConfig {
-            name: "GITHUB_ACCESS_TOKEN",
-            description: "GitHub access token used by the route (optional in Captura, required in some environments)",
-            optional: true,
-        },
-    ]),
-    radar: &[
-        Radar {
-            source: &["github.com/trending"],
-            target: "/trending/:since",
-        },
-    ],
+    features: Features::with_config(&[FeatureConfig {
+        name: "GITHUB_ACCESS_TOKEN",
+        description: "GitHub access token used by the route (optional in Captura, required in some environments)",
+        optional: true,
+    }]),
+    radar: &[Radar {
+        source: &["github.com/trending"],
+        target: "/trending/:since",
+    }],
     name: "Trending",
     maintainers: &["captura"],
     url: "https://github.com/trending",
@@ -332,11 +326,7 @@ fn extract_page_title(html: &str) -> Option<String> {
     let sel = Selector::parse("title").ok()?;
     let el = doc.select(&sel).next()?;
     let text = el.text().collect::<String>().trim().to_string();
-    if text.is_empty() {
-        None
-    } else {
-        Some(text)
-    }
+    if text.is_empty() { None } else { Some(text) }
 }
 
 fn normalize_whitespace(input: &str) -> String {

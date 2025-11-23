@@ -24,8 +24,7 @@ pub const META_ITHOME: RouteMeta = RouteMeta {
     example: "/ithome/it",
     params: &[ParamMeta {
         name: "caty",
-        description:
-            "IT之家分类，例如 it / soft / win10 / win11 / iphone / ipad / android / digi / next",
+        description: "IT之家分类，例如 it / soft / win10 / win11 / iphone / ipad / android / digi / next",
         default: Some("it"),
         options: &[
             ("it", "IT 资讯"),

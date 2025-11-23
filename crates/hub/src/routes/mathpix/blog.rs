@@ -23,8 +23,7 @@ pub const META_MATHPIX_BLOG: RouteMeta = RouteMeta {
     name: "Mathpix Blog",
     maintainers: &["captura"],
     url: "https://mathpix.com/blog",
-    description:
-        "Official Mathpix blog, a lightweight implementation aligned with RSSHub /mathpix/blog.",
+    description: "Official Mathpix blog, a lightweight implementation aligned with RSSHub /mathpix/blog.",
     default_view: Some("articles"),
 };
 

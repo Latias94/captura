@@ -40,8 +40,7 @@ pub const META_DEEPMIND_BLOG: RouteMeta = RouteMeta {
     name: "DeepMind Blog",
     maintainers: &["captura"],
     url: "https://www.deepmind.com/blog",
-    description:
-        "Official DeepMind blog, based on the RSS feed with full article content extracted from the page.",
+    description: "Official DeepMind blog, based on the RSS feed with full article content extracted from the page.",
     default_view: Some("articles"),
 };
 

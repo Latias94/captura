@@ -28,8 +28,7 @@ pub const META_JJWXC_BOOK: RouteMeta = RouteMeta {
     name: "晋江文学城 - 作品章节",
     maintainers: &["captura"],
     url: "https://www.jjwxc.net",
-    description:
-        "JJWXC novel chapter list, roughly aligned with RSSHub /jjwxc/book/:id route (simplified description rendering).",
+    description: "JJWXC novel chapter list, roughly aligned with RSSHub /jjwxc/book/:id route (simplified description rendering).",
     default_view: Some("notifications"),
 };
 

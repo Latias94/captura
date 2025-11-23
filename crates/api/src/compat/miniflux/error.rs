@@ -1,6 +1,6 @@
+use axum::Json;
 use axum::http::StatusCode;
 use axum::response::{ErrorResponse, Result as AxumResult};
-use axum::Json;
 use serde::Serialize;
 
 use crate::error::ApiError;

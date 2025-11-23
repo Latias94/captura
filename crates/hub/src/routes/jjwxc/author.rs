@@ -28,8 +28,7 @@ pub const META_JJWXC_AUTHOR: RouteMeta = RouteMeta {
     name: "晋江文学城 - 作者最新作品",
     maintainers: &["captura"],
     url: "https://www.jjwxc.net",
-    description:
-        "JJWXC author latest work summary, roughly aligned with RSSHub /jjwxc/author/:id route.",
+    description: "JJWXC author latest work summary, roughly aligned with RSSHub /jjwxc/author/:id route.",
     default_view: Some("articles"),
 };
 

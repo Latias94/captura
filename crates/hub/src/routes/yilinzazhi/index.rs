@@ -20,8 +20,7 @@ pub const META_YILIN_INDEX: RouteMeta = RouteMeta {
     name: "意林文章列表",
     maintainers: &["captura"],
     url: "https://www.yilinzazhi.com",
-    description:
-        "Yilin magazine site front-page article lists, aligned with RSSHub /yilinzazhi route.",
+    description: "Yilin magazine site front-page article lists, aligned with RSSHub /yilinzazhi route.",
     default_view: Some("articles"),
 };
 

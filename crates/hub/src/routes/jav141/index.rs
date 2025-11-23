@@ -17,8 +17,7 @@ pub const META_141JAV_GENERAL: RouteMeta = RouteMeta {
     params: &[
         ParamMeta {
             name: "type",
-            description:
-                "Type: new, popular, random, actress, tag, or date (see RSSHub /141jav docs).",
+            description: "Type: new, popular, random, actress, tag, or date (see RSSHub /141jav docs).",
             default: Some("new"),
             options: &[
                 ("new", "Latest releases"),
@@ -31,29 +30,25 @@ pub const META_141JAV_GENERAL: RouteMeta = RouteMeta {
         },
         ParamMeta {
             name: "keyword",
-            description:
-                "Keyword: empty for new/popular/random, date range (7/30/60), actress name, or tag name.",
+            description: "Keyword: empty for new/popular/random, date range (7/30/60), actress name, or tag name.",
             default: None,
             options: &[],
         },
         ParamMeta {
             name: "year",
-            description:
-                "Year part for `date` type, e.g. 2020 (path: /141jav/date/2020/07/30).",
+            description: "Year part for `date` type, e.g. 2020 (path: /141jav/date/2020/07/30).",
             default: None,
             options: &[],
         },
         ParamMeta {
             name: "month",
-            description:
-                "Month part for `date` type, zero-padded, e.g. 07 (path: /141jav/date/2020/07/30).",
+            description: "Month part for `date` type, zero-padded, e.g. 07 (path: /141jav/date/2020/07/30).",
             default: None,
             options: &[],
         },
         ParamMeta {
             name: "day",
-            description:
-                "Day part for `date` type, zero-padded, e.g. 30 (path: /141jav/date/2020/07/30).",
+            description: "Day part for `date` type, zero-padded, e.g. 30 (path: /141jav/date/2020/07/30).",
             default: None,
             options: &[],
         },
@@ -76,8 +71,7 @@ pub const META_141JAV_GENERAL: RouteMeta = RouteMeta {
     name: "141JAV",
     maintainers: &["captura"],
     url: "https://www.141jav.com",
-    description:
-        "141JAV general listing route (latest, popular, random, actress, tag, date), \
+    description: "141JAV general listing route (latest, popular, random, actress, tag, date), \
          aligned with RSSHub /141jav but implemented via Captura smart crawler.",
     default_view: Some("videos"),
 };

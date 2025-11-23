@@ -17,8 +17,7 @@ pub const META_NODEJS_BLOG: RouteMeta = RouteMeta {
     example: "/nodejs/blog",
     params: &[ParamMeta {
         name: "language",
-        description:
-            "语言代码，默认 en，可选 ar, ca, de, es, fa, fr, gl, it, ja, ko, pt-br, ro, ru, tr, uk, zh-cn, zh-tw 等。",
+        description: "语言代码，默认 en，可选 ar, ca, de, es, fa, fr, gl, it, ja, ko, pt-br, ro, ru, tr, uk, zh-cn, zh-tw 等。",
         default: Some("en"),
         options: &[],
     }],

@@ -1,7 +1,7 @@
 use crate::routes::bilibili::rules as bilibili;
 use crate::routes::types::{Features, HubCtx, HubData, HubItem, Radar, Route, RouteMeta};
 use crate::v1::merge_rule_params_v1;
-use captura_extract::{execute_json_v1_stateless, RuleExecCtx, RuleExecHttpCtx};
+use captura_extract::{RuleExecCtx, RuleExecHttpCtx, execute_json_v1_stateless};
 use captura_hub_macros::register_hub_route;
 
 pub const META_BILIBILI_HOT_SEARCH: RouteMeta = RouteMeta {

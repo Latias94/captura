@@ -22,8 +22,7 @@ pub const META_THEPAPER_FEATURED: RouteMeta = RouteMeta {
     name: "澎湃新闻首页头条",
     maintainers: &["captura"],
     url: "https://m.thepaper.cn",
-    description:
-        "澎湃新闻移动端首页头条列表，基于 __NEXT_DATA__ JSON 的简化实现，对齐 RSSHub /thepaper/featured 路由。",
+    description: "澎湃新闻移动端首页头条列表，基于 __NEXT_DATA__ JSON 的简化实现，对齐 RSSHub /thepaper/featured 路由。",
     default_view: Some("articles"),
 };
 

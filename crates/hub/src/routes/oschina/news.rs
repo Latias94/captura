@@ -28,8 +28,7 @@ pub const META_OSCHINA_NEWS: RouteMeta = RouteMeta {
     example: "/oschina/news",
     params: &[ParamMeta {
         name: "category",
-        description:
-            "RSS 分类，默认 news，可选：news（资讯）、project（项目）、question（问答）、translate（翻译）。",
+        description: "RSS 分类，默认 news，可选：news（资讯）、project（项目）、question（问答）、translate（翻译）。",
         default: Some("news"),
         options: &[
             ("news", "最新开源资讯"),
@@ -46,8 +45,7 @@ pub const META_OSCHINA_NEWS: RouteMeta = RouteMeta {
     name: "开源中国资讯 / 项目等 RSS",
     maintainers: &["captura"],
     url: "https://www.oschina.net/",
-    description:
-        "基于开源中国官方 RSS（news/project/question/translate/blog 等）的聚合路由，相比 RSSHub 版本不依赖 Cookie 与 AJAX 接口。",
+    description: "基于开源中国官方 RSS（news/project/question/translate/blog 等）的聚合路由，相比 RSSHub 版本不依赖 Cookie 与 AJAX 接口。",
     default_view: Some("articles"),
 };
 

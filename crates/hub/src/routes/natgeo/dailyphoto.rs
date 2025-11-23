@@ -18,14 +18,16 @@ pub const META_NATGEO_DAILYPHOTO: RouteMeta = RouteMeta {
     params: &[],
     features: Features::basic(),
     radar: &[Radar {
-        source: &["nationalgeographic.com/photo-of-the-day/*", "nationalgeographic.com"],
+        source: &[
+            "nationalgeographic.com/photo-of-the-day/*",
+            "nationalgeographic.com",
+        ],
         target: "/dailyphoto",
     }],
     name: "National Geographic Daily Photo",
     maintainers: &["captura"],
     url: "https://www.nationalgeographic.com/photo-of-the-day",
-    description:
-        "NatGeo Photo of the Day, parsed from the official mediaspotlight JSON (`window['__natgeo__']`).",
+    description: "NatGeo Photo of the Day, parsed from the official mediaspotlight JSON (`window['__natgeo__']`).",
     default_view: Some("pictures"),
 };
 

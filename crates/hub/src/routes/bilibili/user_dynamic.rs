@@ -1,4 +1,4 @@
-use crate::routes::bilibili::rules::dynamic::{fetch_user_dynamic, DynamicOptions};
+use crate::routes::bilibili::rules::dynamic::{DynamicOptions, fetch_user_dynamic};
 use crate::routes::types::{Features, HubCtx, HubData, HubItem, Radar, Route, RouteMeta};
 use captura_hub_macros::register_hub_route;
 use tracing::debug;

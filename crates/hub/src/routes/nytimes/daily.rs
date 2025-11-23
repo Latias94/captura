@@ -41,8 +41,7 @@ pub const META_NYTIMES_DAILY: RouteMeta = RouteMeta {
     name: "NYTimes - The Daily",
     maintainers: &["captura"],
     url: "https://www.nytimes.com/the-daily",
-    description:
-        "The Daily 官方播客源，基于 Simplecast 提供的 RSS（https://feeds.simplecast.com/54nAGcIl），自动内嵌音频播放器。",
+    description: "The Daily 官方播客源，基于 Simplecast 提供的 RSS（https://feeds.simplecast.com/54nAGcIl），自动内嵌音频播放器。",
     default_view: Some("podcast"),
 };
 

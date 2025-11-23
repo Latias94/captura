@@ -19,8 +19,7 @@ pub const META_SECRSS_AUTHOR: RouteMeta = RouteMeta {
     example: "/secrss/author/网络安全威胁和漏洞信息共享平台",
     params: &[ParamMeta {
         name: "author",
-        description:
-            "Author name, as displayed on Secrss (e.g. 网络安全威胁和漏洞信息共享平台).",
+        description: "Author name, as displayed on Secrss (e.g. 网络安全威胁和漏洞信息共享平台).",
         default: None,
         options: &[],
     }],
@@ -32,8 +31,7 @@ pub const META_SECRSS_AUTHOR: RouteMeta = RouteMeta {
     name: "安全内参 - 作者文章",
     maintainers: &["captura"],
     url: "https://www.secrss.com",
-    description:
-        "Secrss articles by a specific author, using the official JSON API and article pages, aligned with RSSHub /secrss/author/:author.",
+    description: "Secrss articles by a specific author, using the official JSON API and article pages, aligned with RSSHub /secrss/author/:author.",
     default_view: Some("articles"),
 };
 

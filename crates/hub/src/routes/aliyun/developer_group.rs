@@ -28,8 +28,7 @@ pub const META_ALIYUN_DEVELOPER_GROUP: RouteMeta = RouteMeta {
     name: "阿里云开发者社区 - 主题",
     maintainers: &["captura"],
     url: "https://developer.aliyun.com/group",
-    description:
-        "阿里云开发者社区各技术主题下的文章列表，对标 RSSHub /aliyun/developer/group/:type 路由。",
+    description: "阿里云开发者社区各技术主题下的文章列表，对标 RSSHub /aliyun/developer/group/:type 路由。",
     default_view: Some("articles"),
 };
 

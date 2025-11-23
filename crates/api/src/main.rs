@@ -1,15 +1,15 @@
 //! Captura API service entrypoint (Axum-based).
 
-use captura_api::{build_router, AppState};
+use captura_api::{AppState, build_router};
 use captura_scheduler as scheduler;
 use captura_storage::connect as db_connect;
 use migration::migrate;
 use std::net::SocketAddr;
-use tracing::{info, Level};
+use tracing::{Level, info};
 use tracing_subscriber::EnvFilter;
 
-use argon2::password_hash::SaltString;
 use argon2::PasswordHasher;
+use argon2::password_hash::SaltString;
 use captura_storage::entity::user;
 use chrono::{FixedOffset, Utc};
 use sea_orm::{ActiveModelTrait, EntityTrait, PaginatorTrait, Set};

@@ -83,8 +83,7 @@ pub const META_LANGCHAIN_BLOG: RouteMeta = RouteMeta {
     name: "LangChain Blog",
     maintainers: &["captura"],
     url: "https://blog.langchain.dev/",
-    description:
-        "LangChain official blog posts, with full article content extracted from each post page.",
+    description: "LangChain official blog posts, with full article content extracted from each post page.",
     default_view: Some("articles"),
 };
 

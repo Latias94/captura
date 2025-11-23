@@ -1,6 +1,6 @@
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, ItemConst};
+use syn::{ItemConst, parse_macro_input};
 
 /// Attribute macro used on a `Route` constant to auto-register it
 /// into the Hub registry.

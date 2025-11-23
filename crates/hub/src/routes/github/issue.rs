@@ -46,11 +46,7 @@ pub const META_GITHUB_ISSUE: RouteMeta = RouteMeta {
             name: "state",
             description: "Issue state: open / closed / all (default open)",
             default: Some("open"),
-            options: &[
-                ("open", "Open"),
-                ("closed", "Closed"),
-                ("all", "All"),
-            ],
+            options: &[("open", "Open"), ("closed", "Closed"), ("all", "All")],
         },
         ParamMeta {
             name: "labels",
@@ -66,14 +62,11 @@ pub const META_GITHUB_ISSUE: RouteMeta = RouteMeta {
         },
     ],
     features: Features {
-        require_config: &[
-            FeatureConfig {
-                name: "GITHUB_ACCESS_TOKEN",
-                description:
-                    "GitHub access token (optional) used to authenticate API requests and avoid rate limits.",
-                optional: true,
-            },
-        ],
+        require_config: &[FeatureConfig {
+            name: "GITHUB_ACCESS_TOKEN",
+            description: "GitHub access token (optional) used to authenticate API requests and avoid rate limits.",
+            optional: true,
+        }],
         ..Features::basic()
     },
     radar: &[Radar {

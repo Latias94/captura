@@ -14,8 +14,7 @@ pub const META_DOUBAN_EVENT_HOT: RouteMeta = RouteMeta {
     example: "/douban/event/hot/118172",
     params: &[ParamMeta {
         name: "location_id",
-        description:
-            "位置 id，在 https://www.douban.com/location 打开控制台执行 window.__loc_id__ 获取；默认 118172（杭州）。",
+        description: "位置 id，在 https://www.douban.com/location 打开控制台执行 window.__loc_id__ 获取；默认 118172（杭州）。",
         default: Some("118172"),
         options: &[],
     }],

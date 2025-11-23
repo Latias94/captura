@@ -23,8 +23,7 @@ pub const META_CSDN_BLOG: RouteMeta = RouteMeta {
     example: "/csdn/blog/csdngeeknews",
     params: &[ParamMeta {
         name: "user",
-        description:
-            "CSDN blog username, taken from https://blog.csdn.net/{user}/ URLs.",
+        description: "CSDN blog username, taken from https://blog.csdn.net/{user}/ URLs.",
         default: None,
         options: &[],
     }],
@@ -36,8 +35,7 @@ pub const META_CSDN_BLOG: RouteMeta = RouteMeta {
     name: "CSDN 博客",
     maintainers: &["captura"],
     url: "https://blog.csdn.net",
-    description:
-        "CSDN user blog feed based on the official RSS endpoints at rss.csdn.net, with optional full content extracted from article pages.",
+    description: "CSDN user blog feed based on the official RSS endpoints at rss.csdn.net, with optional full content extracted from article pages.",
     default_view: Some("articles"),
 };
 

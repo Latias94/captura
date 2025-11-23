@@ -1,9 +1,9 @@
 use askama::Template;
 use axum::{
+    Json,
     extract::Query,
     http::HeaderMap,
     response::{Html, IntoResponse, Redirect},
-    Json,
 };
 use serde::Deserialize;
 

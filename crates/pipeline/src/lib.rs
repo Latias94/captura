@@ -4,8 +4,8 @@
 use captura_common::{NormalizedEntry, Result};
 use captura_fetcher::{FetchOptions, HttpFetcher};
 use captura_storage::entity::feed;
-use reqwest::header::HeaderMap;
 use reqwest::Client;
+use reqwest::header::HeaderMap;
 use scraper::{Html, Selector};
 use tracing::instrument;
 use url::Url;
@@ -18,8 +18,8 @@ pub mod content;
 pub mod extractor;
 
 pub use content::{
-    apply_entry_filters as apply_entry_filters_with_cfg, apply_rewrite_rules, clean_url,
-    sanitize_html, ContentTransformConfig,
+    ContentTransformConfig, apply_entry_filters as apply_entry_filters_with_cfg,
+    apply_rewrite_rules, clean_url, sanitize_html,
 };
 pub use hub_bridge::execute_hub_route;
 pub use rules_engine::refresh_rule_v1;

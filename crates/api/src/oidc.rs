@@ -1,10 +1,10 @@
 use argon2::PasswordHasher;
 use axum::http::header::ACCEPT;
 use axum::{
+    Json,
     extract::State,
     response::IntoResponse,
     response::{Html, Redirect, Response},
-    Json,
 };
 use base64::Engine as _;
 use chrono::{FixedOffset, Utc};
@@ -20,9 +20,9 @@ use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
-use crate::error::{bad_request, internal, unauthorized, ApiResult};
-use crate::state::OidcProvider;
 use crate::AppState;
+use crate::error::{ApiResult, bad_request, internal, unauthorized};
+use crate::state::OidcProvider;
 use captura_storage::entity::{token, user};
 
 fn hmac_sign(secret: &str, payload_b64: &str) -> String {

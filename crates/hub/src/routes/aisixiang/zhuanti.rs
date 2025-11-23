@@ -29,8 +29,7 @@ pub const META_AISIXIANG_ZHUANTI: RouteMeta = RouteMeta {
     name: "爱思想专题",
     maintainers: &["captura"],
     url: "https://www.aisixiang.com",
-    description:
-        "Aisixiang topic articles list with full content, aligned with RSSHub /aisixiang/zhuanti/:id.",
+    description: "Aisixiang topic articles list with full content, aligned with RSSHub /aisixiang/zhuanti/:id.",
     default_view: Some("articles"),
 };
 

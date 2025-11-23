@@ -16,24 +16,19 @@ pub const META_TANGSHUFANG_INDEX: RouteMeta = RouteMeta {
     example: "/tangshufang",
     params: &[ParamMeta {
         name: "category",
-        description:
-            "Optional category slug, e.g. shipan, wenda, linian, peidu, taoli, qiye, baijiu, tengxun, fenzhong, haikang, qita, hexin, tougao, suibi, caibao, youji, bamang.",
+        description: "Optional category slug, e.g. shipan, wenda, linian, peidu, taoli, qiye, baijiu, tengxun, fenzhong, haikang, qita, hexin, tougao, suibi, caibao, youji, bamang.",
         default: None,
         options: &[],
     }],
     features: Features::basic(),
     radar: &[Radar {
-        source: &[
-            "tangshufang.com/",
-            "tangshufang.com/:category",
-        ],
+        source: &["tangshufang.com/", "tangshufang.com/:category"],
         target: "/:category?",
     }],
     name: "唐书房 - 分类",
     maintainers: &["captura"],
     url: "https://www.tangshufang.com",
-    description:
-        "Tangshufang article list by category, aligned with RSSHub /tangshufang/:category? route.",
+    description: "Tangshufang article list by category, aligned with RSSHub /tangshufang/:category? route.",
     default_view: Some("articles"),
 };
 

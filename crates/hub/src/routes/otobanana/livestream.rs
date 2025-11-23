@@ -65,14 +65,16 @@ pub const META_OTOBANANA_LIVESTREAM: RouteMeta = RouteMeta {
     }],
     features: Features::basic(),
     radar: &[Radar {
-        source: &["otobanana.com/user/:id/livestream", "otobanana.com/user/:id"],
+        source: &[
+            "otobanana.com/user/:id/livestream",
+            "otobanana.com/user/:id",
+        ],
         target: "/user/:id/livestream",
     }],
     name: "OTOBANANA Livestream ライブ配信",
     maintainers: &["captura"],
     url: "https://otobanana.com",
-    description:
-        "OTOBANANA user livestream sessions, aligned with RSSHub /otobanana/user/:id/livestream route.",
+    description: "OTOBANANA user livestream sessions, aligned with RSSHub /otobanana/user/:id/livestream route.",
     default_view: Some("articles"),
 };
 

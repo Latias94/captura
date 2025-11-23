@@ -81,8 +81,7 @@ pub const META_OTOBANANA_CAST: RouteMeta = RouteMeta {
     name: "OTOBANANA Cast 音声投稿",
     maintainers: &["captura"],
     url: "https://otobanana.com",
-    description:
-        "OTOBANANA user cast posts (audio uploads), aligned with RSSHub /otobanana/user/:id/cast route.",
+    description: "OTOBANANA user cast posts (audio uploads), aligned with RSSHub /otobanana/user/:id/cast route.",
     default_view: Some("podcast"),
 };
 

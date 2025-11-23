@@ -177,8 +177,7 @@ pub const META_THEATLANTIC_NEWS: RouteMeta = RouteMeta {
     example: "/theatlantic/latest",
     params: &[ParamMeta {
         name: "category",
-        description:
-            "Section slug, such as most-popular, latest, politics, technology, business, etc.",
+        description: "Section slug, such as most-popular, latest, politics, technology, business, etc.",
         default: Some("latest"),
         options: &[
             ("most-popular", "Popular"),
@@ -196,8 +195,7 @@ pub const META_THEATLANTIC_NEWS: RouteMeta = RouteMeta {
     name: "The Atlantic News",
     maintainers: &["captura"],
     url: "https://www.theatlantic.com",
-    description:
-        "The Atlantic news river for a given section (popular, latest, politics, technology, business, ...), aligned with RSSHub /theatlantic/:category route.",
+    description: "The Atlantic news river for a given section (popular, latest, politics, technology, business, ...), aligned with RSSHub /theatlantic/:category route.",
     default_view: Some("articles"),
 };
 

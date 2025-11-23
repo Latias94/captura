@@ -157,8 +157,7 @@ pub const META_TRANSFORMER_CIRCUITS: RouteMeta = RouteMeta {
     name: "Transformer Circuits Articles",
     maintainers: &["captura"],
     url: "https://transformer-circuits.pub",
-    description:
-        "Anthropic's Transformer Circuits thread: papers and notes on reverse engineering transformer language models.",
+    description: "Anthropic's Transformer Circuits thread: papers and notes on reverse engineering transformer language models.",
     default_view: Some("articles"),
 };
 

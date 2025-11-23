@@ -1,12 +1,12 @@
 use axum::{extract::Query, response::Response};
 use axum_extra::typed_header::TypedHeader;
-use headers::authorization::Bearer;
 use headers::Authorization;
+use headers::authorization::Bearer;
 use serde::Deserialize;
 
-use crate::auth::AuthUser;
-use crate::error::{bad_request, internal, ApiResult};
 use crate::AppState;
+use crate::auth::AuthUser;
+use crate::error::{ApiResult, bad_request, internal};
 
 #[derive(Deserialize)]
 pub(crate) struct MediaQuery {

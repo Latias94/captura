@@ -38,17 +38,14 @@ pub const META_SYOSETU_INDEX: RouteMeta = RouteMeta {
         options: &[],
     }],
     features: Features::basic(),
-    radar: &[
-        Radar {
-            source: &["ncode.syosetu.com", "novel18.syosetu.com"],
-            target: "/:ncode",
-        },
-    ],
+    radar: &[Radar {
+        source: &["ncode.syosetu.com", "novel18.syosetu.com"],
+        target: "/:ncode",
+    }],
     name: "Syosetu Novel Updates",
     maintainers: &["captura"],
     url: "https://syosetu.com",
-    description:
-        "Syosetu novel chapter updates, roughly aligned with RSSHub /syosetu/:ncode route (using Narou public API + HTML).",
+    description: "Syosetu novel chapter updates, roughly aligned with RSSHub /syosetu/:ncode route (using Narou public API + HTML).",
     default_view: Some("articles"),
 };
 

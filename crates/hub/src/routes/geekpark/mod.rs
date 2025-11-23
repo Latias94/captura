@@ -146,8 +146,7 @@ pub const META_GEEKPARK: RouteMeta = RouteMeta {
     name: "极客公园栏目",
     maintainers: &["captura"],
     url: "https://www.geekpark.net",
-    description:
-        "极客公园首页或指定栏目文章列表，对标 RSSHub /geekpark/:column 路由（含 AI 新浪潮等栏目）。",
+    description: "极客公园首页或指定栏目文章列表，对标 RSSHub /geekpark/:column 路由（含 AI 新浪潮等栏目）。",
     default_view: Some("articles"),
 };
 

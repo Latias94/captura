@@ -21,8 +21,7 @@ pub const META_CSS_TRICKS_POPULAR: RouteMeta = RouteMeta {
     name: "CSS-Tricks Popular this month",
     maintainers: &["captura"],
     url: "https://css-tricks.com",
-    description:
-        "Popular CSS-Tricks articles this month, aligned with RSSHub /css-tricks/popular route.",
+    description: "Popular CSS-Tricks articles this month, aligned with RSSHub /css-tricks/popular route.",
     default_view: Some("articles"),
 };
 

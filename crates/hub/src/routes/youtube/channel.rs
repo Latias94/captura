@@ -35,8 +35,7 @@ pub const META_YOUTUBE_CHANNEL: RouteMeta = RouteMeta {
     name: "YouTube Channel (RSS)",
     maintainers: &["captura"],
     url: "https://www.youtube.com",
-    description:
-        "YouTube channel videos via the official RSS feed, aligned with RSSHub /youtube/channel route in spirit but implemented using feeds.",
+    description: "YouTube channel videos via the official RSS feed, aligned with RSSHub /youtube/channel route in spirit but implemented using feeds.",
     default_view: Some("videos"),
 };
 

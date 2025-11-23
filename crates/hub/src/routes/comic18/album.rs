@@ -57,8 +57,7 @@ pub const META_COMIC18_ALBUM: RouteMeta = RouteMeta {
     name: "禁漫天堂 - 專輯",
     maintainers: &["captura"],
     url: "https://jmcomic.me",
-    description:
-        "JMComic / 禁漫天堂 album detail feed, aligned with RSSHub /18comic/album/:id route.",
+    description: "JMComic / 禁漫天堂 album detail feed, aligned with RSSHub /18comic/album/:id route.",
     default_view: Some("albums"),
 };
 

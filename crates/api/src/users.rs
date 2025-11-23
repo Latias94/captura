@@ -1,19 +1,19 @@
 use argon2::PasswordHasher;
-use axum::extract::Path;
 use axum::Json;
+use axum::extract::Path;
 use axum_extra::typed_header::TypedHeader;
 use chrono::{FixedOffset, Utc};
-use headers::authorization::Bearer;
 use headers::Authorization;
+use headers::authorization::Bearer;
 use md5::Md5;
 use rand_core::OsRng;
 use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, Set};
 use serde::{Deserialize, Serialize};
 use sha2::Digest;
 
-use crate::auth::AuthUser;
-use crate::error::{bad_request, forbidden, internal, ApiResult};
 use crate::AppState;
+use crate::auth::AuthUser;
+use crate::error::{ApiResult, bad_request, forbidden, internal};
 use captura_storage::entity::{user, user_pref};
 
 #[derive(Deserialize)]

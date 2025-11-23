@@ -35,8 +35,7 @@ pub const META_DEV_TO_TOP: RouteMeta = RouteMeta {
     name: "dev.to Top Posts",
     maintainers: &["captura"],
     url: "https://dev.to",
-    description:
-        "Top dev.to articles fetched via the public feed_content API, aligned with RSSHub /dev.to/top/:period route.",
+    description: "Top dev.to articles fetched via the public feed_content API, aligned with RSSHub /dev.to/top/:period route.",
     default_view: Some("articles"),
 };
 

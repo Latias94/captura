@@ -1,10 +1,10 @@
-use super::error::{bad_request, forbidden, from_api_error, internal, not_found, MfResult};
-use crate::auth::mf_auth;
+use super::error::{MfResult, bad_request, forbidden, from_api_error, internal, not_found};
 use crate::AppState;
+use crate::auth::mf_auth;
 use argon2::PasswordHasher;
+use axum::Json;
 use axum::extract::{Path, State};
 use axum::response::IntoResponse;
-use axum::Json;
 use chrono::{FixedOffset, Utc};
 use rand_core::OsRng;
 use sea_orm::{

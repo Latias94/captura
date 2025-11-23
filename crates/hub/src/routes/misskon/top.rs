@@ -53,8 +53,7 @@ pub const META_MISSKON_TOP: RouteMeta = RouteMeta {
     name: "MissKON Top k days",
     maintainers: &["captura"],
     url: "https://misskon.com",
-    description:
-        "MissKON top posts for the past k days, aligned with RSSHub /misskon/top/:k route.",
+    description: "MissKON top posts for the past k days, aligned with RSSHub /misskon/top/:k route.",
     default_view: Some("pictures"),
 };
 

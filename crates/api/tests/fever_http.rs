@@ -1,5 +1,5 @@
 use axum::{body::Body, http::Request};
-use captura_api::{test_router_service, AppState};
+use captura_api::{AppState, test_router_service};
 use md5::Md5;
 use sha2::Digest;
 use tower::ServiceExt;

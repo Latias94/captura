@@ -1,12 +1,12 @@
 use axum::response::Response;
 use axum::{
-    extract::{Path, State},
     Json,
+    extract::{Path, State},
 };
 use axum_extra::typed_header::TypedHeader;
 use chrono::{FixedOffset, Utc};
-use headers::authorization::Bearer;
 use headers::Authorization;
+use headers::authorization::Bearer;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder,
     QuerySelect, Set,
@@ -18,11 +18,11 @@ use captura_service as service;
 use captura_storage::entity::{category, enclosure, entry};
 use captura_storage::entity::{feed, job};
 
-use crate::auth::AuthUser;
-use crate::error::{bad_request, internal, not_found, ApiResult};
-use crate::feed_options::{apply_feed_update_options, FeedUpdateOptions};
-use crate::util::{validate_limit_offset, validate_sort};
 use crate::AppState;
+use crate::auth::AuthUser;
+use crate::error::{ApiResult, bad_request, internal, not_found};
+use crate::feed_options::{FeedUpdateOptions, apply_feed_update_options};
+use crate::util::{validate_limit_offset, validate_sort};
 use captura_types::{EntryView, FeedCountersDto, FeedDto, Paging, Sorting};
 
 #[derive(Deserialize)]

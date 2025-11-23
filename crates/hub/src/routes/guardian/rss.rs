@@ -21,8 +21,7 @@ pub const META_GUARDIAN_RSS: RouteMeta = RouteMeta {
     example: "/guardian/rss/world",
     params: &[ParamMeta {
         name: "section",
-        description:
-            "Guardian section path, e.g. world, uk, us, technology, business.",
+        description: "Guardian section path, e.g. world, uk, us, technology, business.",
         default: Some("world"),
         options: &[],
     }],
@@ -34,8 +33,7 @@ pub const META_GUARDIAN_RSS: RouteMeta = RouteMeta {
     name: "The Guardian RSS",
     maintainers: &["captura"],
     url: "https://www.theguardian.com",
-    description:
-        "Official RSS feeds from The Guardian, parameterized by section (world, uk, us, technology, etc.).",
+    description: "Official RSS feeds from The Guardian, parameterized by section (world, uk, us, technology, etc.).",
     default_view: Some("articles"),
 };
 

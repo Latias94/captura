@@ -2,7 +2,7 @@ use crate::routes::types::{Features, HubCtx, HubData, ParamMeta, Radar, Route, R
 use captura_common::Error;
 use captura_hub_macros::register_hub_route;
 
-use super::{fetch_cnbeta, CnbetaKind, ROOT_URL};
+use super::{CnbetaKind, ROOT_URL, fetch_cnbeta};
 
 pub const META_CNBETA_TOPICS: RouteMeta = RouteMeta {
     hub_id: "cnbeta/topics",
@@ -11,8 +11,7 @@ pub const META_CNBETA_TOPICS: RouteMeta = RouteMeta {
     example: "/cnbeta/topics/453",
     params: &[ParamMeta {
         name: "id",
-        description:
-            "Topic id from the URL, see https://www.cnbeta.com.tw/topics.htm for full list.",
+        description: "Topic id from the URL, see https://www.cnbeta.com.tw/topics.htm for full list.",
         default: None,
         options: &[],
     }],

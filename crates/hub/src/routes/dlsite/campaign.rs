@@ -185,8 +185,7 @@ pub const META_DLSITE_CAMPAIGN: RouteMeta = RouteMeta {
     params: &[
         ParamMeta {
             name: "type",
-            description:
-                "DLsite area type. One of: home, comic, soft, maniax, books, pro, girls, bl.",
+            description: "DLsite area type. One of: home, comic, soft, maniax, books, pro, girls, bl.",
             default: Some("home"),
             options: &[
                 ("home", "DLsite Doujin"),
@@ -222,8 +221,7 @@ pub const META_DLSITE_CAMPAIGN: RouteMeta = RouteMeta {
     name: "DLsite - Discounted Works",
     maintainers: &["captura"],
     url: "https://www.dlsite.com",
-    description:
-        "DLsite discounted works (campaign) list, including optional free-only filter, aligned with RSSHub /dlsite/campaign/:type/:free? route.",
+    description: "DLsite discounted works (campaign) list, including optional free-only filter, aligned with RSSHub /dlsite/campaign/:type/:free? route.",
     default_view: Some("articles"),
 };
 

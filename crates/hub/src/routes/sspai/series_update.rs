@@ -107,7 +107,9 @@ pub async fn handler(ctx: &mut HubCtx<'_>) -> captura_common::Result<HubData> {
         .map_err(|e| Error::Parse(format!("sspai series info json parse: {e}")))?;
 
     let limit = ctx.param_i64("limit").unwrap_or(40).max(1);
-    let list_url = format!("https://sspai.com/api/v1/series/article/search/page/get?series_id={id}&weight=0&sort=desc&title=&limit={limit}&offset=0");
+    let list_url = format!(
+        "https://sspai.com/api/v1/series/article/search/page/get?series_id={id}&weight=0&sort=desc&title=&limit={limit}&offset=0"
+    );
     let list_resp = client
         .get(&list_url)
         .send()

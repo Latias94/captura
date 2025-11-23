@@ -26,8 +26,7 @@ pub const META_MITTR_RSS: RouteMeta = RouteMeta {
     name: "MIT Technology Review",
     maintainers: &["captura"],
     url: "https://www.technologyreview.com",
-    description:
-        "Official RSS feed from MIT Technology Review (global edition) with full article metadata.",
+    description: "Official RSS feed from MIT Technology Review (global edition) with full article metadata.",
     default_view: Some("articles"),
 };
 

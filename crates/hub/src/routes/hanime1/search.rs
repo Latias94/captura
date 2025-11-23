@@ -15,8 +15,7 @@ pub const META_HANIME1_SEARCH: RouteMeta = RouteMeta {
     example: "/hanime1/search/tags%5B%5D=%E7%B4%94%E6%84%9B&",
     params: &[ParamMeta {
         name: "params",
-        description:
-            "Raw query string after /search?, e.g. `query=&genre=裏番&broad=on&sort=最新上市&tags[]=純愛&tags[]=中文字幕`.",
+        description: "Raw query string after /search?, e.g. `query=&genre=裏番&broad=on&sort=最新上市&tags[]=純愛&tags[]=中文字幕`.",
         default: None,
         options: &[],
     }],
@@ -36,8 +35,7 @@ pub const META_HANIME1_SEARCH: RouteMeta = RouteMeta {
     name: "Hanime1 搜索結果",
     maintainers: &["captura"],
     url: "https://hanime1.me",
-    description:
-        "Hanime1 search results view, aligned with RSSHub /hanime1/search/:params route.",
+    description: "Hanime1 search results view, aligned with RSSHub /hanime1/search/:params route.",
     default_view: Some("videos"),
 };
 

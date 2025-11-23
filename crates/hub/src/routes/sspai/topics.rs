@@ -44,8 +44,7 @@ pub const META_SSPAI_TOPICS: RouteMeta = RouteMeta {
     name: "SSPAI Topics",
     maintainers: &["captura"],
     url: "https://sspai.com/topics",
-    description:
-        "少数派专题广场更新推送（专题本身而非专题内文章），对标 RSSHub /sspai/topics 路由。",
+    description: "少数派专题广场更新推送（专题本身而非专题内文章），对标 RSSHub /sspai/topics 路由。",
     default_view: Some("articles"),
 };
 

@@ -1,13 +1,13 @@
-use axum::{extract::State, Json};
+use axum::{Json, extract::State};
 use axum_extra::typed_header::TypedHeader;
 use chrono::{FixedOffset, Utc};
-use headers::authorization::Bearer;
 use headers::Authorization;
+use headers::authorization::Bearer;
 use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set};
 
-use crate::auth::AuthUser;
-use crate::error::{bad_request, internal, ApiResult};
 use crate::AppState;
+use crate::auth::AuthUser;
+use crate::error::{ApiResult, bad_request, internal};
 use captura_storage::entity::{category, feed, label, smart_view, user_pref};
 use captura_types::{
     EntryView, ExportCategory, ExportFeed, ExportFeedFetch, ExportFeedFilters, ExportLabel,
@@ -702,7 +702,7 @@ pub(crate) fn extract_outlines(body: &str) -> Vec<OutlineNode> {
 }
 
 pub(crate) fn parse_opml_quickxml(body: &str) -> Result<Vec<OutlineNode>, String> {
-    use quick_xml::{events::Event, Reader};
+    use quick_xml::{Reader, events::Event};
     let mut reader = Reader::from_str(body);
     reader.config_mut().trim_text(true);
     let mut buf = Vec::new();

@@ -94,8 +94,7 @@ pub const META_NIO_NIORADIO: RouteMeta = RouteMeta {
     name: "NIO Radio",
     maintainers: &["captura"],
     url: "https://www.nio.com",
-    description:
-        "蔚来 NIO Radio 电台专辑节目列表，包含音频播放链接，适合将车机节目转换为播客订阅。",
+    description: "蔚来 NIO Radio 电台专辑节目列表，包含音频播放链接，适合将车机节目转换为播客订阅。",
     default_view: Some("podcast"),
 };
 

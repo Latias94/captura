@@ -24,8 +24,7 @@ pub const META_AISIXIANG_THINKTANK: RouteMeta = RouteMeta {
         },
         ParamMeta {
             name: "type",
-            description:
-                "Article type text shown on page, e.g. 论文 / 时评 / 随笔, empty means all types.",
+            description: "Article type text shown on page, e.g. 论文 / 时评 / 随笔, empty means all types.",
             default: None,
             options: &[],
         },
@@ -38,8 +37,7 @@ pub const META_AISIXIANG_THINKTANK: RouteMeta = RouteMeta {
     name: "爱思想思想库（专栏）",
     maintainers: &["captura"],
     url: "https://www.aisixiang.com",
-    description:
-        "Aisixiang thinktank (author column) articles feed, aligned with RSSHub /aisixiang/thinktank/:id/:type? route.",
+    description: "Aisixiang thinktank (author column) articles feed, aligned with RSSHub /aisixiang/thinktank/:id/:type? route.",
     default_view: Some("articles"),
 };
 

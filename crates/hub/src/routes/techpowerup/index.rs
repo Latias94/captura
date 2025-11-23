@@ -24,8 +24,7 @@ pub const META_TECHPOWERUP_INDEX: RouteMeta = RouteMeta {
     name: "TechPowerUp - Latest Content",
     maintainers: &["captura"],
     url: "https://www.techpowerup.com",
-    description:
-        "Latest news and reviews from TechPowerUp, roughly aligned with RSSHub /techpowerup route (simplified reviews handling).",
+    description: "Latest news and reviews from TechPowerUp, roughly aligned with RSSHub /techpowerup route (simplified reviews handling).",
     default_view: Some("articles"),
 };
 

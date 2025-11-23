@@ -26,8 +26,7 @@ pub const META_OPENAI_NEWS: RouteMeta = RouteMeta {
     name: "OpenAI News",
     maintainers: &["captura"],
     url: "https://openai.com/news",
-    description:
-        "Official OpenAI News RSS feed, covering product updates, partnerships, and policy news.",
+    description: "Official OpenAI News RSS feed, covering product updates, partnerships, and policy news.",
     default_view: Some("articles"),
 };
 

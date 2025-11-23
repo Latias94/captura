@@ -18,8 +18,7 @@ pub const META_BAAI_HUB: RouteMeta = RouteMeta {
     params: &[
         ParamMeta {
             name: "tagId",
-            description:
-                "Tag id from BAAI Hub, can be found on tag pages or via the official tag list API.",
+            description: "Tag id from BAAI Hub, can be found on tag pages or via the official tag list API.",
             default: None,
             options: &[],
         },
@@ -34,8 +33,7 @@ pub const META_BAAI_HUB: RouteMeta = RouteMeta {
         },
         ParamMeta {
             name: "range",
-            description:
-                "Time range in days when sort=readCnt, e.g. 3 / 7 / 30. Optional.",
+            description: "Time range in days when sort=readCnt, e.g. 3 / 7 / 30. Optional.",
             default: None,
             options: &[],
         },
@@ -48,8 +46,7 @@ pub const META_BAAI_HUB: RouteMeta = RouteMeta {
     name: "智源社区 Hub",
     maintainers: &["captura"],
     url: "https://hub.baai.ac.cn",
-    description:
-        "BAAI Hub story list via official JSON API, simplified version of RSSHub /baai/hub route (stories only, events skipped).",
+    description: "BAAI Hub story list via official JSON API, simplified version of RSSHub /baai/hub route (stories only, events skipped).",
     default_view: Some("articles"),
 };
 

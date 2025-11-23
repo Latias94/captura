@@ -37,14 +37,16 @@ pub const META_NPR_FULL: RouteMeta = RouteMeta {
     ],
     features: Features::basic(),
     radar: &[Radar {
-        source: &["www.npr.org/sections/news/", "feeds.npr.org/:endpoint/rss.xml"],
+        source: &[
+            "www.npr.org/sections/news/",
+            "feeds.npr.org/:endpoint/rss.xml",
+        ],
         target: "/full/:endpoint?",
     }],
     name: "NPR News (Full Text + Audio)",
     maintainers: &["captura"],
     url: "https://www.npr.org/sections/news/",
-    description:
-        "NPR 新闻 RSS 的全文 + 音频扩展，对标 RSSHub /npr/full/:endpoint，自动将页面中的音频模块转换为可播放的 <audio>。",
+    description: "NPR 新闻 RSS 的全文 + 音频扩展，对标 RSSHub /npr/full/:endpoint，自动将页面中的音频模块转换为可播放的 <audio>。",
     default_view: Some("articles"),
 };
 
@@ -132,11 +134,7 @@ pub async fn handler(ctx: &mut HubCtx<'_>) -> captura_common::Result<HubData> {
                         .select(&sel_tag)
                         .filter_map(|el| {
                             let text = el.text().collect::<String>().trim().to_string();
-                            if text.is_empty() {
-                                None
-                            } else {
-                                Some(text)
-                            }
+                            if text.is_empty() { None } else { Some(text) }
                         })
                         .collect();
                     if !tags.is_empty() {

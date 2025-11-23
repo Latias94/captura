@@ -23,14 +23,16 @@ pub const META_XIAOYUZHOU_PODCAST: RouteMeta = RouteMeta {
     }],
     features: Features::basic(),
     radar: &[Radar {
-        source: &["xiaoyuzhoufm.com/podcast/:id", "xiaoyuzhoufm.com/episode/:id"],
+        source: &[
+            "xiaoyuzhoufm.com/podcast/:id",
+            "xiaoyuzhoufm.com/episode/:id",
+        ],
         target: "/podcast/:id",
     }],
     name: "小宇宙播客",
     maintainers: &["captura"],
     url: "https://www.xiaoyuzhoufm.com",
-    description:
-        "Xiaoyuzhou podcast feed for a given podcast id (or episode id), aligned with RSSHub /xiaoyuzhou/podcast route using public Next.js JSON.",
+    description: "Xiaoyuzhou podcast feed for a given podcast id (or episode id), aligned with RSSHub /xiaoyuzhou/podcast route using public Next.js JSON.",
     default_view: Some("audios"),
 };
 

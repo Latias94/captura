@@ -22,8 +22,7 @@ pub const META_TECHFLOWPOST_INDEX: RouteMeta = RouteMeta {
     name: "深潮 TechFlow 首页",
     maintainers: &["captura"],
     url: "https://www.techflowpost.com/",
-    description:
-        "深潮 TechFlow homepage articles list via official JSON API, aligned with RSSHub /techflowpost route.",
+    description: "深潮 TechFlow homepage articles list via official JSON API, aligned with RSSHub /techflowpost route.",
     default_view: Some("articles"),
 };
 

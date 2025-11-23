@@ -14,8 +14,7 @@ pub const META_DOUBAN_BOOK_LATEST: RouteMeta = RouteMeta {
     example: "/douban/book/latest/fiction",
     params: &[ParamMeta {
         name: "kind",
-        description:
-            "专题分类，默认 all，可选：all, prose_poetry, fiction, history, biography, science, art, business, comics",
+        description: "专题分类，默认 all，可选：all, prose_poetry, fiction, history, biography, science, art, business, comics",
         default: Some("all"),
         options: &[
             ("all", "全部"),

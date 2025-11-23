@@ -50,11 +50,7 @@ fn apply_scraper_rules(doc: &Html, rules: &str) -> Option<String> {
             }
         }
     }
-    if buf.is_empty() {
-        None
-    } else {
-        Some(buf)
-    }
+    if buf.is_empty() { None } else { Some(buf) }
 }
 
 /// Simplified Readability-like heuristic.

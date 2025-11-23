@@ -1,7 +1,7 @@
 [package]
 name = "captura-hub"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 
 [dependencies]
 anyhow.workspace = true
@@ -24,13 +24,13 @@ inventory.workspace = true
 captura-hub-macros = { path = "../hub-macros" }
 captura-fetcher = { path = "../fetcher" }
 captura-crawler = { path = "../crawler" }
-html-escape = "0.2.13"
+html-escape.workspace = true
 urlencoding.workspace = true
 rand_core.workspace = true
-encoding_rs = "0.8"
-flate2 = "1.0"
+encoding_rs.workspace = true
+flate2.workspace = true
 hmac.workspace = true
 md-5.workspace = true
 hex.workspace = true
 base64.workspace = true
-serde_urlencoded = "0.7"
+serde_urlencoded.workspace = true

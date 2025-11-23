@@ -20,8 +20,7 @@ pub const META_JOSHWCOMEAU_POPULAR: RouteMeta = RouteMeta {
     name: "Josh W. Comeau Popular Content",
     maintainers: &["captura"],
     url: "https://www.joshwcomeau.com",
-    description:
-        "Popular content from Josh W. Comeau's blog, aligned with RSSHub /joshwcomeau/popular route.",
+    description: "Popular content from Josh W. Comeau's blog, aligned with RSSHub /joshwcomeau/popular route.",
     default_view: Some("articles"),
 };
 

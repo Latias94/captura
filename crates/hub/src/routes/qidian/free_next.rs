@@ -25,8 +25,7 @@ pub const META_QIDIAN_FREE_NEXT: RouteMeta = RouteMeta {
     name: "起点中文网 - 限时免费下期预告",
     maintainers: &["captura"],
     url: "https://www.qidian.com/free",
-    description:
-        "Qidian next-period limited free books, aligned with RSSHub /qidian/free-next route.",
+    description: "Qidian next-period limited free books, aligned with RSSHub /qidian/free-next route.",
     default_view: Some("articles"),
 };
 

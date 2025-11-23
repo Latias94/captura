@@ -15,27 +15,24 @@ pub const META_WALLSTREETCN_NEWS: RouteMeta = RouteMeta {
     path: "/wallstreetcn/news/:category?",
     categories: &["finance"],
     example: "/wallstreetcn/news",
-    params: &[
-        ParamMeta {
-            name: "category",
-            description:
-                "News category, e.g. global, shares, bonds, commodities, forex, enterprise, asset-manage, tmt, estate, car, medicine.",
-            default: Some("global"),
-            options: &[
-                ("global", "Latest"),
-                ("shares", "Shares"),
-                ("bonds", "Bonds"),
-                ("commodities", "Commodities"),
-                ("forex", "Forex"),
-                ("enterprise", "Enterprise"),
-                ("asset-manage", "Asset management"),
-                ("tmt", "Technology"),
-                ("estate", "Real estate"),
-                ("car", "Automotive"),
-                ("medicine", "Medicine"),
-            ],
-        },
-    ],
+    params: &[ParamMeta {
+        name: "category",
+        description: "News category, e.g. global, shares, bonds, commodities, forex, enterprise, asset-manage, tmt, estate, car, medicine.",
+        default: Some("global"),
+        options: &[
+            ("global", "Latest"),
+            ("shares", "Shares"),
+            ("bonds", "Bonds"),
+            ("commodities", "Commodities"),
+            ("forex", "Forex"),
+            ("enterprise", "Enterprise"),
+            ("asset-manage", "Asset management"),
+            ("tmt", "Technology"),
+            ("estate", "Real estate"),
+            ("car", "Automotive"),
+            ("medicine", "Medicine"),
+        ],
+    }],
     features: Features::basic(),
     radar: &[Radar {
         source: &["wallstreetcn.com/news/:category", "wallstreetcn.com"],
@@ -44,8 +41,7 @@ pub const META_WALLSTREETCN_NEWS: RouteMeta = RouteMeta {
     name: "华尔街见闻资讯",
     maintainers: &["captura"],
     url: "https://wallstreetcn.com",
-    description:
-        "WallstreetCN news stream via official `api-one.wallstcn.com` JSON API, aligned with RSSHub /wallstreetcn/news/:category route.",
+    description: "WallstreetCN news stream via official `api-one.wallstcn.com` JSON API, aligned with RSSHub /wallstreetcn/news/:category route.",
     default_view: Some("articles"),
 };
 

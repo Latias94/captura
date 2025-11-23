@@ -37,8 +37,7 @@ pub const META_NGA_FORUM: RouteMeta = RouteMeta {
     name: "NGA 分区帖子列表",
     maintainers: &["captura"],
     url: "https://nga.178.com",
-    description:
-        "NGA forum thread list via official mobile JSON API (subject/list), simplified list view inspired by RSSHub /nga/forum route.",
+    description: "NGA forum thread list via official mobile JSON API (subject/list), simplified list view inspired by RSSHub /nga/forum route.",
     default_view: Some("articles"),
 };
 

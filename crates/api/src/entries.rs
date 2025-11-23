@@ -1,23 +1,23 @@
 use axum::{
-    extract::{Path, Query, State},
     Json,
+    extract::{Path, Query, State},
 };
 use axum_extra::typed_header::TypedHeader;
-use headers::authorization::Bearer;
 use headers::Authorization;
+use headers::authorization::Bearer;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QuerySelect,
     RelationTrait,
 };
 use serde::Deserialize;
 
-use crate::auth::AuthUser;
-use crate::entry_options::{apply_entry_flags, EntryUpdateFlags};
-use crate::error::{bad_request, internal, ApiResult};
-use crate::util::{map_entry_to_dto, validate_limit_offset, validate_sort};
 use crate::AppState;
+use crate::auth::AuthUser;
+use crate::entry_options::{EntryUpdateFlags, apply_entry_flags};
+use crate::error::{ApiResult, bad_request, internal};
+use crate::util::{map_entry_to_dto, validate_limit_offset, validate_sort};
 
-use captura_service::query::{list_entries_for_user, TimelineQuery, TimelineStatus};
+use captura_service::query::{TimelineQuery, TimelineStatus, list_entries_for_user};
 use captura_storage::entity::{entry, entry_label, feed, label};
 use captura_types::{EntryContentDto, EntryDto, EntryView, Paging, Sorting};
 

@@ -112,22 +112,19 @@ pub const META_APPLE_APPS_UPDATE: RouteMeta = RouteMeta {
     params: &[
         ParamMeta {
             name: "country",
-            description:
-                "App Store country code from the app URL, e.g. us / cn / jp.",
+            description: "App Store country code from the app URL, e.g. us / cn / jp.",
             default: Some("us"),
             options: &[],
         },
         ParamMeta {
             name: "id",
-            description:
-                "App id from the App Store URL, e.g. id408709785.",
+            description: "App id from the App Store URL, e.g. id408709785.",
             default: None,
             options: &[],
         },
         ParamMeta {
             name: "platform",
-            description:
-                "App platform: all (default), iOS, macOS, or tvOS (case-insensitive).",
+            description: "App platform: all (default), iOS, macOS, or tvOS (case-insensitive).",
             default: Some("all"),
             options: &[
                 ("all", "All platforms"),
@@ -148,8 +145,7 @@ pub const META_APPLE_APPS_UPDATE: RouteMeta = RouteMeta {
     name: "Apple App Store updates",
     maintainers: &["captura"],
     url: "https://apps.apple.com",
-    description:
-        "App Store version history for a specific app, aligned with RSSHub /apple/apps/update route.",
+    description: "App Store version history for a specific app, aligned with RSSHub /apple/apps/update route.",
     default_view: Some("notifications"),
 };
 

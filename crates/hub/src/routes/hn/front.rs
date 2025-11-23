@@ -20,7 +20,10 @@ pub const META_HN_FRONT: RouteMeta = RouteMeta {
             name: "view",
             description: "Logical view: sources or comments",
             default: Some("sources"),
-            options: &[("sources", "External source"), ("comments", "HN comments page")],
+            options: &[
+                ("sources", "External source"),
+                ("comments", "HN comments page"),
+            ],
         },
     ],
     features: Features::basic(),

@@ -17,8 +17,7 @@ pub const META_JIKE_USER: RouteMeta = RouteMeta {
     example: "/jike/user/3EE02BC9-C5B3-4209-8750-4ED1EE0F67BB",
     params: &[ParamMeta {
         name: "id",
-        description:
-            "Jike user id, from m.okjike.com/users/:id or web.okjike.com/u/:uid.",
+        description: "Jike user id, from m.okjike.com/users/:id or web.okjike.com/u/:uid.",
         default: None,
         options: &[],
     }],
@@ -30,8 +29,7 @@ pub const META_JIKE_USER: RouteMeta = RouteMeta {
     name: "即刻用户动态",
     maintainers: &["captura"],
     url: "https://m.okjike.com",
-    description:
-        "User timeline from Jike (即刻) mobile site, aligned with RSSHub /jike/user route but using only public HTML/JSON.",
+    description: "User timeline from Jike (即刻) mobile site, aligned with RSSHub /jike/user route but using only public HTML/JSON.",
     default_view: Some("social"),
 };
 

@@ -1,24 +1,24 @@
 use axum::{
-    extract::{Path, Query, State},
     Json,
+    extract::{Path, Query, State},
 };
 use axum_extra::typed_header::TypedHeader;
 use chrono::{FixedOffset, Utc};
-use headers::authorization::Bearer;
 use headers::Authorization;
+use headers::authorization::Bearer;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, Condition, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder,
     QuerySelect, Set,
 };
 use serde::{Deserialize, Serialize};
 
-use captura_hub::v1::{parse_rule_v1, validate_v1, RuleSpecV1, SourceType};
+use captura_hub::v1::{RuleSpecV1, SourceType, parse_rule_v1, validate_v1};
 use captura_storage::entity::{category, feed, rule};
 
-use crate::auth::AuthUser;
-use crate::error::{bad_request, forbidden, internal, not_found, ApiResult};
-use crate::util::validate_limit_offset;
 use crate::AppState;
+use crate::auth::AuthUser;
+use crate::error::{ApiResult, bad_request, forbidden, internal, not_found};
+use crate::util::validate_limit_offset;
 use captura_types::{EntryView, IdResp, Paging};
 use regex::Regex;
 

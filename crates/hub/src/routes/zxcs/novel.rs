@@ -29,8 +29,7 @@ pub const META_ZXCS_NOVEL: RouteMeta = RouteMeta {
     name: "知轩藏书 - 小说列表",
     maintainers: &["captura"],
     url: "https://www.zxcs.info",
-    description:
-        "ZXCS novel list by category, aligned with RSSHub /zxcs/novel/:type route.",
+    description: "ZXCS novel list by category, aligned with RSSHub /zxcs/novel/:type route.",
     default_view: Some("articles"),
 };
 

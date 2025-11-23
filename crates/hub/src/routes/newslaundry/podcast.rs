@@ -62,8 +62,7 @@ pub const META_NEWSLAUNDRY_PODCAST: RouteMeta = RouteMeta {
     name: "Newslaundry Podcast",
     maintainers: &["captura"],
     url: "https://www.newslaundry.com/podcast",
-    description:
-        "Newslaundry 播客页，对标 RSSHub /newslaundry/podcast/:category，基于官方 collections API 构造带图文与内嵌播放器的条目。",
+    description: "Newslaundry 播客页，对标 RSSHub /newslaundry/podcast/:category，基于官方 collections API 构造带图文与内嵌播放器的条目。",
     default_view: Some("podcast"),
 };
 

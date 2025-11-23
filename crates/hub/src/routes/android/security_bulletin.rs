@@ -26,8 +26,7 @@ pub const META_ANDROID_SECURITY_BULLETIN: RouteMeta = RouteMeta {
     name: "Security Bulletins",
     maintainers: &["captura"],
     url: "https://source.android.com/docs/security/bulletin/asb-overview",
-    description:
-        "Android Security Bulletins overview page, aligned with RSSHub /android/security-bulletin.",
+    description: "Android Security Bulletins overview page, aligned with RSSHub /android/security-bulletin.",
     default_view: Some("security"),
 };
 

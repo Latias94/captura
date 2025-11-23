@@ -351,9 +351,5 @@ fn parse_draft_content(json_str: &str) -> Option<String> {
         html.push('>');
     }
 
-    if html.is_empty() {
-        None
-    } else {
-        Some(html)
-    }
+    if html.is_empty() { None } else { Some(html) }
 }

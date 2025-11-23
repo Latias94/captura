@@ -17,8 +17,7 @@ pub const META_JAVLIBRARY_MAKER: RouteMeta = RouteMeta {
     params: &[
         ParamMeta {
             name: "maker",
-            description:
-                "厂牌 ID，可从 JavLibrary 厂牌页 URL 中获取，例如 vl_maker.php?m=arlq 中的 arlq。",
+            description: "厂牌 ID，可从 JavLibrary 厂牌页 URL 中获取，例如 vl_maker.php?m=arlq 中的 arlq。",
             default: Some("arlq"),
             options: &[],
         },
@@ -36,7 +35,10 @@ pub const META_JAVLIBRARY_MAKER: RouteMeta = RouteMeta {
             name: "mode",
             description: "展示模式：1=按日期带评论，2=按日期所有作品（与 RSSHub 一致）。",
             default: Some("1"),
-            options: &[("1", "videos with comments (by date)"), ("2", "everything (by date)")],
+            options: &[
+                ("1", "videos with comments (by date)"),
+                ("2", "everything (by date)"),
+            ],
         },
     ],
     features: Features {
@@ -55,8 +57,7 @@ pub const META_JAVLIBRARY_MAKER: RouteMeta = RouteMeta {
     name: "JavLibrary 按厂牌列出作品",
     maintainers: &["captura"],
     url: "https://www.javlibrary.com",
-    description:
-        "JavLibrary 指定厂牌下的作品列表（简化版，仅元数据），对齐 RSSHub /javlibrary/videos/maker/:maker/:language?/:mode?。",
+    description: "JavLibrary 指定厂牌下的作品列表（简化版，仅元数据），对齐 RSSHub /javlibrary/videos/maker/:maker/:language?/:mode?。",
     default_view: Some("videos"),
 };
 

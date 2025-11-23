@@ -53,11 +53,7 @@ async fn fetch_topic_detail(link: &str) -> Result<(Option<DateTime<FixedOffset>>
             Some(attr.to_string())
         } else {
             let t = el.text().collect::<String>();
-            if t.trim().is_empty() {
-                None
-            } else {
-                Some(t)
-            }
+            if t.trim().is_empty() { None } else { Some(t) }
         }
     });
 

@@ -36,8 +36,7 @@ pub const META_HANIME1_PREVIEWS: RouteMeta = RouteMeta {
     name: "Hanime1 每月新番",
     maintainers: &["captura"],
     url: "https://hanime1.me",
-    description:
-        "Hanime1 monthly previews list, aligned with RSSHub /hanime1/previews/:date? route.",
+    description: "Hanime1 monthly previews list, aligned with RSSHub /hanime1/previews/:date? route.",
     default_view: Some("videos"),
 };
 

@@ -7,8 +7,8 @@
 
 use once_cell::sync::Lazy;
 use regex::Regex;
-use sea_orm::sea_query::{Expr, SimpleExpr};
 use sea_orm::DatabaseBackend;
+use sea_orm::sea_query::{Expr, SimpleExpr};
 
 /// Parsed representation of a user search query.
 #[derive(Debug, Default, Clone)]

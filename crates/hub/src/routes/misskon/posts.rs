@@ -13,8 +13,7 @@ pub const META_MISSKON_POSTS: RouteMeta = RouteMeta {
     example: "/misskon/posts/search=video&tags_exclude=353,3100&per_page=5",
     params: &[ParamMeta {
         name: "route_params",
-        description:
-            "Additional query parameters passed directly to the WordPress posts API, e.g. `search=video&per_page=5`.",
+        description: "Additional query parameters passed directly to the WordPress posts API, e.g. `search=video&per_page=5`.",
         default: None,
         options: &[],
     }],
@@ -34,8 +33,7 @@ pub const META_MISSKON_POSTS: RouteMeta = RouteMeta {
     name: "MissKON Posts",
     maintainers: &["captura"],
     url: "https://misskon.com",
-    description:
-        "MissKON posts via the official WordPress JSON API, aligned with RSSHub /misskon/posts route.",
+    description: "MissKON posts via the official WordPress JSON API, aligned with RSSHub /misskon/posts route.",
     default_view: Some("pictures"),
 };
 

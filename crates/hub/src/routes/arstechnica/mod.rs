@@ -21,8 +21,7 @@ pub const META_ARSTECHNICA: RouteMeta = RouteMeta {
     example: "/arstechnica",
     params: &[ParamMeta {
         name: "feed",
-        description:
-            "Ars Technica feed name，默认 index，对应 https://feeds.arstechnica.com/arstechnica/{feed}",
+        description: "Ars Technica feed name，默认 index，对应 https://feeds.arstechnica.com/arstechnica/{feed}",
         default: Some("index"),
         options: &[],
     }],

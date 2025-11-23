@@ -312,8 +312,7 @@ pub const META_MIXCLOUD_USER: RouteMeta = RouteMeta {
         },
         ParamMeta {
             name: "type",
-            description:
-                "Feed type: uploads (default), reposts, favorites, listens, stream, or playlist (with playlist slug).",
+            description: "Feed type: uploads (default), reposts, favorites, listens, stream, or playlist (with playlist slug).",
             default: Some("uploads"),
             options: &[
                 ("uploads", "Shows"),
@@ -336,19 +335,24 @@ pub const META_MIXCLOUD_USER: RouteMeta = RouteMeta {
     },
     radar: &[
         Radar {
-            source: &["mixcloud.com/:username/:type?", "www.mixcloud.com/:username/:type?"],
+            source: &[
+                "mixcloud.com/:username/:type?",
+                "www.mixcloud.com/:username/:type?",
+            ],
             target: "/:username/:type?",
         },
         Radar {
-            source: &["mixcloud.com/:username/playlists/:playlist", "www.mixcloud.com/:username/playlists/:playlist"],
+            source: &[
+                "mixcloud.com/:username/playlists/:playlist",
+                "www.mixcloud.com/:username/playlists/:playlist",
+            ],
             target: "/:username/playlist",
         },
     ],
     name: "Mixcloud User / Playlist",
     maintainers: &["captura"],
     url: "https://www.mixcloud.com",
-    description:
-        "Mixcloud user uploads, favorites, reposts, history and playlists, aligned with RSSHub /mixcloud routes.",
+    description: "Mixcloud user uploads, favorites, reposts, history and playlists, aligned with RSSHub /mixcloud routes.",
     default_view: Some("podcast"),
 };
 

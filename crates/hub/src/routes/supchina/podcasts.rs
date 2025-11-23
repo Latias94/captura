@@ -33,8 +33,7 @@ pub const META_SUPCHINA_PODCASTS: RouteMeta = RouteMeta {
     name: "SupChina Podcasts",
     maintainers: &["captura"],
     url: "https://supchina.com/podcasts",
-    description:
-        "SupChina 播客 RSS 聚合，基于官方 https://supchina.com/feed/podcast 提供的节目列表。",
+    description: "SupChina 播客 RSS 聚合，基于官方 https://supchina.com/feed/podcast 提供的节目列表。",
     default_view: Some("articles"),
 };
 

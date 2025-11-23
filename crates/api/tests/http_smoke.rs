@@ -1,4 +1,4 @@
-use captura_api::{test_min_router, AppState};
+use captura_api::{AppState, test_min_router};
 
 #[tokio::test]
 async fn healthz_ok() {

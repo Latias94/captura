@@ -41,8 +41,7 @@ pub const META_SEDAILY_PODCAST: RouteMeta = RouteMeta {
     name: "Software Engineering Daily",
     maintainers: &["captura"],
     url: "https://softwareengineeringdaily.com/",
-    description:
-        "Software Engineering Daily 播客，技术访谈与工程实践主题，基于官方 RSS https://softwareengineeringdaily.com/feed/podcast/。",
+    description: "Software Engineering Daily 播客，技术访谈与工程实践主题，基于官方 RSS https://softwareengineeringdaily.com/feed/podcast/。",
     default_view: Some("podcast"),
 };
 

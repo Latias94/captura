@@ -22,15 +22,13 @@ pub const META_BBC_NEWS: RouteMeta = RouteMeta {
     params: &[
         ParamMeta {
             name: "site",
-            description:
-                "language or channel slug; e.g. 'world-asia', 'chinese', 'traditionalchinese'",
+            description: "language or channel slug; e.g. 'world-asia', 'chinese', 'traditionalchinese'",
             default: None,
             options: &[],
         },
         ParamMeta {
             name: "channel",
-            description:
-                "sub-channel for Chinese sites; e.g. 'china', 'world'; empty for top stories",
+            description: "sub-channel for Chinese sites; e.g. 'china', 'world'; empty for top stories",
             default: None,
             options: &[],
         },
@@ -43,8 +41,7 @@ pub const META_BBC_NEWS: RouteMeta = RouteMeta {
     name: "BBC News",
     maintainers: &["captura"],
     url: "https://www.bbc.co.uk/news",
-    description:
-        "BBC News via official RSS feeds, including English and Chinese top stories (simplified).",
+    description: "BBC News via official RSS feeds, including English and Chinese top stories (simplified).",
     default_view: Some("articles"),
 };
 

@@ -16,8 +16,7 @@ pub const META_KOTLIN_BLOG: RouteMeta = RouteMeta {
     params: &[
         ParamMeta {
             name: "category",
-            description:
-                "文章分类：all（全部）、news、releases、multiplatform、ecosystem，默认 all。",
+            description: "文章分类：all（全部）、news、releases、multiplatform、ecosystem，默认 all。",
             default: Some("all"),
             options: &[
                 ("all", "All"),

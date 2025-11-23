@@ -4,8 +4,8 @@ use crate::routes::types::{
 use captura_hub_macros::register_hub_route;
 use scraper::{Html, Selector};
 
-use super::util::enrich_items;
 use super::util::BASE_URL;
+use super::util::enrich_items;
 
 pub const META_YYSTV_CATEGORY: RouteMeta = RouteMeta {
     hub_id: "yystv/category",
@@ -14,8 +14,7 @@ pub const META_YYSTV_CATEGORY: RouteMeta = RouteMeta {
     example: "/yystv/category/recommend",
     params: &[ParamMeta {
         name: "category",
-        description:
-            "Category type, e.g. recommend, history, big, culture, news, retro, industry. Defaults to recommend.",
+        description: "Category type, e.g. recommend, history, big, culture, news, retro, industry. Defaults to recommend.",
         default: Some("recommend"),
         options: &[
             ("recommend", "推游"),

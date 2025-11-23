@@ -5,7 +5,7 @@ use captura_common::Error;
 use captura_hub_macros::register_hub_route;
 use serde::Deserialize;
 
-use super::{fetch_detail, parse_unix_to_fixed, TagAuthor};
+use super::{TagAuthor, fetch_detail, parse_unix_to_fixed};
 
 #[derive(Debug, Deserialize)]
 struct ColumnMetaResp {

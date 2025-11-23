@@ -70,8 +70,7 @@ pub const META_DLSITE_NEW: RouteMeta = RouteMeta {
     example: "/dlsite/new/home",
     params: &[ParamMeta {
         name: "type",
-        description:
-            "DLsite area type. One of: home, comic, soft, maniax, books, pro, girls, bl.",
+        description: "DLsite area type. One of: home, comic, soft, maniax, books, pro, girls, bl.",
         default: Some("home"),
         options: &[
             ("home", "DLsite Doujin"),

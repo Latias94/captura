@@ -12,8 +12,7 @@ pub const META_GAMERSKY_NEWS: RouteMeta = RouteMeta {
     example: "/gamersky/news/pc",
     params: &[ParamMeta {
         name: "type",
-        description:
-            "News type, defaults to pc, see Gamersky news categories such as pc, ns, mobile, web, industry, hardware, tech.",
+        description: "News type, defaults to pc, see Gamersky news categories such as pc, ns, mobile, web, industry, hardware, tech.",
         default: Some("pc"),
         options: &[],
     }],

@@ -1,8 +1,8 @@
-use super::error::{from_api_error, internal, MfResult};
-use crate::auth::mf_auth;
+use super::error::{MfResult, from_api_error, internal};
 use crate::AppState;
-use axum::extract::{Path, State};
+use crate::auth::mf_auth;
 use axum::Json;
+use axum::extract::{Path, State};
 use base64::Engine as _;
 use chrono::{FixedOffset, Utc};
 use rand_core::{OsRng, RngCore};

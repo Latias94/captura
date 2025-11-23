@@ -8,4 +8,4 @@
 pub mod routes;
 pub mod v1;
 
-pub use v1::{parse_rule_v1, RuleSpecV1};
+pub use v1::{RuleSpecV1, parse_rule_v1};

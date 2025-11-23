@@ -294,15 +294,13 @@ pub const META_NEWZMZ_SERIES: RouteMeta = RouteMeta {
     params: &[
         ParamMeta {
             name: "id",
-            description:
-                "剧集 id，或分类 id（纯数字）；剧集 id 可在剧集下载页 URL 中找到，如 qEzRyY3v。",
+            description: "剧集 id，或分类 id（纯数字）；剧集 id 可在剧集下载页 URL 中找到，如 qEzRyY3v。",
             default: Some("1"),
             options: &[],
         },
         ParamMeta {
             name: "down_link_type",
-            description:
-                "下载链接类型：例如 磁力链 / 百度网盘 / 阿里云盘 / 夸克网盘 / UC网盘 等，默认 磁力链。",
+            description: "下载链接类型：例如 磁力链 / 百度网盘 / 阿里云盘 / 夸克网盘 / UC网盘 等，默认 磁力链。",
             default: Some("磁力链"),
             options: &[],
         },
@@ -323,8 +321,7 @@ pub const META_NEWZMZ_SERIES: RouteMeta = RouteMeta {
     name: "NEW 字幕组指定剧集",
     maintainers: &["captura"],
     url: "https://nzmz.xyz",
-    description:
-        "NEW 字幕组指定剧集或分类的资源列表，对齐 RSSHub /newzmz/:id?/:downLinkType? 路由，提供磁力链等下载方式。",
+    description: "NEW 字幕组指定剧集或分类的资源列表，对齐 RSSHub /newzmz/:id?/:downLinkType? 路由，提供磁力链等下载方式。",
     default_view: Some("articles"),
 };
 

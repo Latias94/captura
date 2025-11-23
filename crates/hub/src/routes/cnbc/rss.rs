@@ -133,8 +133,7 @@ pub const META_CNBC_RSS: RouteMeta = RouteMeta {
     example: "/cnbc/rss",
     params: &[ParamMeta {
         name: "id",
-        description:
-            "Channel ID from official CNBC RSS URLs, defaults to 100003114 (Top News).",
+        description: "Channel ID from official CNBC RSS URLs, defaults to 100003114 (Top News).",
         default: Some("100003114"),
         options: &[],
     }],
@@ -146,8 +145,7 @@ pub const META_CNBC_RSS: RouteMeta = RouteMeta {
     name: "CNBC full article RSS",
     maintainers: &["captura"],
     url: "https://www.cnbc.com/rss-feeds/",
-    description:
-        "Full-article CNBC RSS feeds based on the combinedcms endpoint, aligned with RSSHub /cnbc/rss.",
+    description: "Full-article CNBC RSS feeds based on the combinedcms endpoint, aligned with RSSHub /cnbc/rss.",
     default_view: Some("articles"),
 };
 

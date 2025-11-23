@@ -48,8 +48,7 @@ pub const META_JAVLIBRARY_BESTRATED: RouteMeta = RouteMeta {
     name: "JavLibrary 评分最高",
     maintainers: &["captura"],
     url: "https://www.javlibrary.com",
-    description:
-        "JavLibrary 最佳评分榜（最近一月/全时期），基于 vl_bestrated.php?list&mode= 页面，仅提供元数据。",
+    description: "JavLibrary 最佳评分榜（最近一月/全时期），基于 vl_bestrated.php?list&mode= 页面，仅提供元数据。",
     default_view: Some("videos"),
 };
 

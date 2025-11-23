@@ -27,8 +27,7 @@ pub const META_69SHU_ARTICLE: RouteMeta = RouteMeta {
     name: "69书吧 - 章节",
     maintainers: &["captura"],
     url: "https://www.69shuba.cx",
-    description:
-        "69shuba latest chapter list, roughly aligned with RSSHub /69shu/article/:id route. Encryption-specific reordering is not applied.",
+    description: "69shuba latest chapter list, roughly aligned with RSSHub /69shu/article/:id route. Encryption-specific reordering is not applied.",
     default_view: Some("articles"),
 };
 

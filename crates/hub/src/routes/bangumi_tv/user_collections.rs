@@ -71,8 +71,7 @@ pub const META_BANGUMI_USER_COLLECTIONS: RouteMeta = RouteMeta {
         },
         ParamMeta {
             name: "subject_type",
-            description:
-                "Subject type: 1=book, 2=anime, 3=music, 4=game, 6=real, or 'all' for all types.",
+            description: "Subject type: 1=book, 2=anime, 3=music, 4=game, 6=real, or 'all' for all types.",
             default: Some("all"),
             options: &[
                 ("all", "All types"),
@@ -85,8 +84,7 @@ pub const META_BANGUMI_USER_COLLECTIONS: RouteMeta = RouteMeta {
         },
         ParamMeta {
             name: "status_type",
-            description:
-                "Collection status: 1=wish, 2=done, 3=doing, 4=on_hold, 5=dropped, or 'all'.",
+            description: "Collection status: 1=wish, 2=done, 3=doing, 4=on_hold, 5=dropped, or 'all'.",
             default: Some("all"),
             options: &[
                 ("all", "All statuses"),
@@ -105,15 +103,17 @@ pub const META_BANGUMI_USER_COLLECTIONS: RouteMeta = RouteMeta {
             target: "/user/collections/:id/all/all",
         },
         Radar {
-            source: &["bgm.tv/anime/list/:id/wish", "bangumi.tv/anime/list/:id/wish"],
+            source: &[
+                "bgm.tv/anime/list/:id/wish",
+                "bangumi.tv/anime/list/:id/wish",
+            ],
             target: "/user/collections/:id/2/1",
         },
     ],
     name: "Bangumi 用户收藏列表",
     maintainers: &["captura"],
     url: "https://bangumi.tv",
-    description:
-        "Bangumi.tv user collection list via official v0 API, roughly aligned with RSSHub /bangumi.tv/user/collections/:id/:subjectType/:type route.",
+    description: "Bangumi.tv user collection list via official v0 API, roughly aligned with RSSHub /bangumi.tv/user/collections/:id/:subjectType/:type route.",
     default_view: Some("articles"),
 };
 

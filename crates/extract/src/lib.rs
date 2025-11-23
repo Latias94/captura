@@ -13,11 +13,11 @@ mod v1_exec;
 mod v1_runtime;
 
 pub use entry::{
-    extract_from_html, fetch_and_extract_entry, fetch_and_extract_entry_dto, EntryExtractConfig,
-    ExtractResult,
+    EntryExtractConfig, ExtractResult, extract_from_html, fetch_and_extract_entry,
+    fetch_and_extract_entry_dto,
 };
-pub use v1::{parse_rule_v1, RuleSpecV1};
-pub use v1_exec::{execute_json_v1_stateless, RuleExecCtx, RuleExecHttpCtx};
+pub use v1::{RuleSpecV1, parse_rule_v1};
+pub use v1_exec::{RuleExecCtx, RuleExecHttpCtx, execute_json_v1_stateless};
 pub use v1_runtime::{
     apply_description_template_v1, apply_rule_filters_v1, extract_html, json_get_path,
     xpath_to_css_like,

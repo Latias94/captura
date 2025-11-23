@@ -1,5 +1,5 @@
 use argon2::PasswordVerifier;
-use axum::{extract::State, Json};
+use axum::{Json, extract::State};
 use base64::Engine as _;
 use chrono::{FixedOffset, Utc};
 use rand_core::RngCore;
@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::auth::{create_user_with_random_password, find_user_id_by_username};
-use crate::error::{bad_request, forbidden, internal, unauthorized, ApiResult};
+use crate::error::{ApiResult, bad_request, forbidden, internal, unauthorized};
 use crate::state::AppState;
 use captura_storage::entity::{token, user};
 

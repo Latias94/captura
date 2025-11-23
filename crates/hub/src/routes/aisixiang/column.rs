@@ -29,8 +29,7 @@ pub const META_AISIXIANG_COLUMN: RouteMeta = RouteMeta {
     name: "爱思想栏目",
     maintainers: &["captura"],
     url: "https://www.aisixiang.com",
-    description:
-        "Aisixiang column articles list with full content, aligned with RSSHub /aisixiang/column/:id.",
+    description: "Aisixiang column articles list with full content, aligned with RSSHub /aisixiang/column/:id.",
     default_view: Some("articles"),
 };
 
